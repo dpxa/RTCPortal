@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RTCPortal - P2P File Transfer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a href="https://github.com/dpxa" target="_blank" class="github-link">GitHub</a>
+  <h1>RTCPortal</h1>
+
+  <div class="spacer"></div>
+  <main class="container">
+    <div class="column">
+      <section id="connectionSection">
+        <h2>Connection</h2>
+        <label for="peerId">Your ID:</label>
+        <span id="myId"></span>
+        <input type="text" id="peerId" placeholder="Enter peer ID..." />
+        <button id="connectBtn">🔗 Connect</button>
+      </section>
+
+      <section id="fileSection" style="display: none;">
+        <h2>Send File</h2>
+        <label for="fileInput">Choose File:</label>
+        <input type="file" id="fileInput" class="custom-file-input" />
+        <button id="sendFileBtn">📤 Send File</button>
+        <div id="status"></div>
+      </section>
+    </div>
+
+    <div class="column">
+      <section id="fileHistorySection">
+        <h2>File History</h2>
+        <section id="sentSection">
+          <h3>📁 Sent Files</h3>
+          <div id="sentFiles"></div>
+        </section>
+
+        <section id="receiveSection">
+          <h3>📥 Received Files</h3>
+          <div id="receivedFiles"></div>
+        </section>
+      </section>
+    </div>
+  </main>
+</body>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="webrtc.js"></script>
+  <script src="fileTransfer.js"></script>
+</body>
+</html>
