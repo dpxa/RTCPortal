@@ -1,3 +1,5 @@
+let connectedPeerId = null;
+
 // connection to signaling server
 const socket = io();
 
@@ -21,6 +23,8 @@ socket.on("connect", () => {
 // WebRTC offer
 socket.on("offer", async (data) => {
   peerConnection = createPeerConnection(data.caller, false);
+  connectedPeerId = data.caller;
+  document.getElementById("connectedPeerId").textContent = connectedPeerId;
 
   try {
     await peerConnection.setRemoteDescription(data.sdp);
@@ -40,6 +44,8 @@ socket.on("offer", async (data) => {
 socket.on("answer", async (data) => {
   try {
     await peerConnection.setRemoteDescription(data.sdp);
+    connectedPeerId = data.callee;
+    document.getElementById("connectedPeerId").textContent = connectedPeerId;
   } catch (err) {
     console.error("Error setting remote description:", err);
   }
@@ -53,7 +59,10 @@ socket.on("candidate", (data) => {
 // connect to peer
 document.getElementById("connectBtn").addEventListener("click", () => {
   const peerId = document.getElementById("peerId").value.trim();
-  if (!peerId) return;
+  if (!peerId || !/^[a-zA-Z0-9_-]+$/.test(peerId)) {
+    alert("Invalid peer ID!");
+    return;
+  }
 
   peerConnection = createPeerConnection(peerId, true);
 
