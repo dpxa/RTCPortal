@@ -5,30 +5,36 @@ const helmet = require("helmet");
 
 const app = express();
 const server = http.createServer(app);
+
 const io = socketIO(server);
 
 app.use(helmet());
+
 app.use(express.static("public"));
 
+// when a client connects to Socket.IO server
 io.on("connection", (socket) => {
-  // offer event
+  // listen for an "offer" event from a client
   socket.on("offer", (payload) => {
+    // relay it to payload.target
     io.to(payload.target).emit("offer", {
       sdp: payload.sdp,
       caller: socket.id,
     });
   });
 
-  // answer event
+  // listen for an "answer" event from a client
   socket.on("answer", (payload) => {
+    // relay it to payload.target
     io.to(payload.target).emit("answer", {
       sdp: payload.sdp,
       callee: socket.id,
     });
   });
 
-  // ICE candidate event
+  // listen for ICE "candidate" events
   socket.on("candidate", (payload) => {
+    // relay it to payload.target to add to their RTCPeerConnection
     io.to(payload.target).emit("candidate", {
       candidate: payload.candidate,
       from: socket.id,
@@ -36,6 +42,5 @@ io.on("connection", (socket) => {
   });
 });
 
-// start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
