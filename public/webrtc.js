@@ -72,6 +72,8 @@ document.getElementById("connectBtn").addEventListener("click", () => {
     return;
   }
 
+  document.getElementById("peerId").value = "";
+
   peerConnection = createPeerConnection(peerId, true);
 
   // create a sdp offer
@@ -140,10 +142,27 @@ function createPeerConnection(targetId, isOfferer = false) {
     setupDataChannel(dataChannel);
   };
 
-  // when a connection is established (other state logic is WIP)
+  // when a peer connects or disconnects
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") {
       document.getElementById("fileSection").style.display = "block";
+    } else if (
+      pc.connectionState === "disconnected" ||
+      pc.connectionState === "failed"
+    ) {
+      document.getElementById("fileSection").style.display = "none";
+      document.getElementById("connectedPeerId").textContent = "None";
+
+      if (dataChannel) {
+        dataChannel.close();
+        dataChannel = null;
+      }
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      connectedPeerId = null;
     }
   };
 
