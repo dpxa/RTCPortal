@@ -2,50 +2,60 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" /> 
   <title>RTCPortal - P2P File Transfer</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap">
 </head>
+
 <body>
   <a href="https://github.com/dpxa" target="_blank" class="github-link">GitHub</a>
   <h1>RTCPortal</h1>
-
-  <div class="spacer"></div>
 
   <main class="container">
     <div class="column">
       <section id="connectionSection">
         <h2>Connection</h2>
-        <label for="peerId">Your ID:</label>
-        <span id="myId"></span>
+        <div class="id-container">
+          <label for="peerId">Your ID:</label>
+          <span id="myId"></span>
+          <button id="copyMyId" class="copy-button">Copy My ID</button>
+          <span id="copyStatus"></span>
+        </div>
         <input type="text" id="peerId" placeholder="Enter peer ID..." />
-        <button id="connectBtn">🔗 Connect</button>
-        <p>Connected to: <span id="connectedPeerId">None</span></p>
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" class="disconnect-button" style="display: none;">Disconnect</button>
+        <p id="connectionStatus">Connected to: None</p>
       </section>
 
       <section id="fileSection" style="display: none;">
         <h2>Send File</h2>
         <label for="fileInput">Choose File:</label>
         <input type="file" id="fileInput" class="custom-file-input" />
-        <button id="sendFileBtn">📤 Send File</button>
-        <div id="status"></div>
+        <button id="sendFileBtn">Send File</button>
+        <!-- Progress bar and percentage dynamically created -->
       </section>
     </div>
 
     <div class="column">
       <section id="fileHistorySection">
-        <h2>File History</h2>
+        <div class="file-history-header">
+          <div class="clear-history-container"></div>
+          <div class="file-history-title">
+            <h2>File History</h2>
+          </div>
+          <div class="spacer"></div>
+        </div>
 
         <section id="sentSection">
-          <h3>📁 Sent Files</h3>
+          <h3>Sent Files</h3>
           <div id="sentFiles"></div>
         </section>
 
-        <section id="receiveSection">
-          <h3>📥 Received Files</h3>
+        <section id="receivedSection">
+          <h3>Received Files</h3>
           <div id="receivedFiles"></div>
         </section>
-
       </section>
     </div>
   </main>
@@ -53,5 +63,9 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="webrtc.js"></script>
   <script src="fileTransfer.js"></script>
+
+  <footer>
+    <p>&copy; 2025 RTCPortal. All rights reserved.</p>
+  </footer>
 </body>
 </html>

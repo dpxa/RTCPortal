@@ -1,14 +1,16 @@
-* {
+* { 
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Poppins', sans-serif;
 }
 
 body {
-  background-color: #111;
-  color: #D4A857;
-  padding: 20px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #3CB371, #1E90FF);
+  color: #102A43;
+  padding-top: 20px;
+  padding-bottom: 100px;
 }
 
 h1, h2 {
@@ -16,7 +18,8 @@ h1, h2 {
   letter-spacing: 1px;
   margin-bottom: 10px;
   text-align: center;
-  text-shadow: 0 0 2px #FFFF00;
+  color: #102A43;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 h1 {
@@ -24,51 +27,56 @@ h1 {
   font-size: 2rem;
 }
 
+/* container styles for centralizing content */
 .container {
   display: flex;
   flex-direction: column;
   gap: 20px;
   max-width: 1200px;
-  margin: 10vh auto 0 auto;
-  border: 1px solid #D4A857;
-  border-radius: 5px;
+  margin: auto;
+  border: 1px solid #ccc;
+  border-radius: 10px;
   padding: 25px;
-  background-color: #000;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .column {
-  flex: 1;
-  border: 1px solid #D4A857;
+  border: 1px solid #ccc;
   border-radius: 8px;
   padding: 20px;
-  background-color: #111;
-  box-shadow: 0 0 5px rgba(255,215,0,0.25);
+  background-color: #f9f9f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 section {
   margin-bottom: 20px;
 }
 
-p {
-  margin-bottom: 8px;
-}
-
 input[type="text"],
 input[type="file"] {
+  /* full width of parent container */
   width: 100%;
   padding: 8px;
   margin-bottom: 10px;
-  color: #D4A857;
-  background-color: #000;
-  border: 1px solid #D4A857;
+  color: #102A43;
+  background-color: #fff;
+  border: 1px solid #ccc;
   border-radius: 4px;
   outline: none;
 }
 
+label[for="fileInput"] {
+  margin-bottom: 6px;
+  /* label needs this to use margin */
+  display:inline-block;
+}
+
+/* file upload button */
 input[type="file"]::-webkit-file-upload-button {
-  background-color: #000;
-  color: #D4A857;
-  border: 1px solid #D4A857;
+  background-color: #fff;
+  color: #102A43;
+  border: 1px solid #ccc;
   padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
@@ -76,8 +84,8 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 input[type="file"]::-webkit-file-upload-button:hover {
-  background-color: #111;
-  box-shadow: 0 0 5px #D4A857;
+  background-color: #f0f0f0;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
 }
 
 input[type="file"] {
@@ -88,9 +96,9 @@ button {
   cursor: pointer;
   font-size: 1rem;
   padding: 10px 16px;
-  color: #D4A857;
-  background-color: #000;
-  border: 1px solid #D4A857;
+  color: #fff;
+  background-color: #4a90e2;
+  border: 1px solid #4a90e2;
   border-radius: 4px;
   margin-bottom: 10px;
   text-transform: uppercase;
@@ -99,21 +107,81 @@ button {
 }
 
 button:hover {
-  background-color: #111;
-  box-shadow: 0 0 5px #D4A857;
+  background-color: #357ABD;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+}
+
+button:disabled,
+input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* container for aligning user's id, copy button, and respective p elements */
+.id-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.copy-button {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  margin-bottom: 0;
+}
+
+.disconnect-button {
+  background-color: #e74c3c;
+  border: 1px solid #e74c3c;
+}
+
+.disconnect-button:hover {
+  background-color: #c0392b;
+}
+
+/* flexbox styling for file history header */
+.file-history-header {
+  display: flex;
+  align-items: center;
+}
+
+/* left-aligned clear history button */
+.clear-history-container {
+  flex: 1;
+  text-align: left;
+}
+
+/* center the file history title */
+.file-history-title {
+  flex: 1;
+  text-align: center;
+}
+
+/* empty flex spacer for aligning other 2 elements */
+.spacer {
+  flex: 1;
+}
+
+/* hide clear history button be default */
+.clear-history-button {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  display: none;
 }
 
 #status {
   margin-top: 10px;
   font-style: italic;
-  color: #D4A857;
+  color: #4a90e2;
 }
 
+/* inline style links within received and sent files section */
 #receivedFiles a,
 #sentFiles a {
   display: inline-block;
   margin: 5px 0;
-  color: #FFF;
+  color: #4a90e2;
   text-decoration: none;
   font-weight: 600;
   transition: text-shadow 0.3s;
@@ -121,24 +189,74 @@ button:hover {
 
 #receivedFiles a:hover,
 #sentFiles a:hover {
-  text-shadow: 0 0 3px #FFF;
+  text-shadow: 0 0 3px rgba(74,144,226,0.5);
 }
 
 #myId {
   font-weight: bold;
-  color: #D4A857;
+  color: #4a90e2;
 }
 
+/* gitHub link in top right corner */
 .github-link {
   position: absolute;
   top: 10px;
   right: 20px;
   font-size: 1rem;
-  color: #FFF;
+  color: #1B3A5F;
   text-decoration: none;
   font-weight: bold;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
 .github-link:hover {
-  text-shadow: 0 0 5px #FFF;
+  color: #2563EB;
+  text-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
+}
+
+/* fixed footer */
+footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: #f7f7f7;
+  padding: 2px;
+  text-align: center;
+  border-top: 1px solid #ccc;
+  box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+footer p {
+  margin: 4px 0;
+}
+
+/* hide progress container by default */
+.progress-container {
+  display: none;
+  height: 20px;
+  background: #eee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 10px 0;
+  position: relative;
+}
+
+/* match height of progress container and animate width */
+.progress-bar {
+  height: 100%;
+  background: #4a90e2;
+  transition: width 0.3s ease;
+}
+
+/* progress percentage text on left of progress bar */
+.progress-percentage {
+  position: absolute;
+  left: 10px;
+  /* vertically center in progress bar */
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: bold;
+  color: #102A43;
 }
