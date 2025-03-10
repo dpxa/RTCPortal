@@ -33,7 +33,11 @@ function resetConnection() {
   fileSection.style.display = "none";
   connectionStatus.textContent = "Connected to: None";
   disconnectBtn.style.display = "none";
-  fileInput.value = "";
+
+  // reset file input for if other peer ends connection via exiting tab
+  fileInputFT.value = "";
+  resetProgressBar();
+  sendFileBtnFT.disabled = false;
 }
 
 // when client connects to the server

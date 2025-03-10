@@ -188,6 +188,14 @@ function handleFileChunk(arrayBuffer) {
   updateProgressBar(percent);
 }
 
+function formatBytes(bytes) {
+  if (bytes === 0) return "0 Bytes";
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  // calculate bytes with the appropriate size
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + " " + sizes[i];
+}
+
 function finalizeReceivedFile() {
   const receivedBlob = new Blob(incomingFileData);
   const downloadURL = URL.createObjectURL(receivedBlob);
@@ -200,7 +208,9 @@ function finalizeReceivedFile() {
   // info for each link
   const info = document.createElement("span");
   const now = new Date();
-  info.textContent = ` (received from: ${connectedPeerId} at ${now.toLocaleTimeString()})`;
+  info.textContent = ` (size: ${formatBytes(
+    incomingFileInfo.fileSize
+  )}, received from: ${connectedPeerId}, received at: ${now.toLocaleTimeString()})`;
 
   // create container for link and info
   const container = document.createElement("div");
@@ -234,7 +244,9 @@ function addSentFile(file) {
   // info for each link
   const info = document.createElement("span");
   const now = new Date();
-  info.textContent = ` (sent to: ${connectedPeerId} at ${now.toLocaleTimeString()})`;
+  info.textContent = ` (size: ${formatBytes(
+    file.size
+  )}, sent to: ${connectedPeerId}, sent at: ${now.toLocaleTimeString()})`;
 
   // create container for link and info
   const container = document.createElement("div");
