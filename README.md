@@ -14,6 +14,8 @@ Once the connection is established, all file transfers occur **directly between 
 
 The easy-to-use UI makes it intuitive for any user to share files securely, as no configurations are necessary.
 
+<p align="center"><img src="assets/app_image.png" alt="App Image" width="800"></p>
+
 ---
 
 ## Installation
