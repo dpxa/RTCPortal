@@ -18,7 +18,7 @@ The easy-to-use UI makes it intuitive for any user to share files securely, as n
 
 ---
 
-## Installation
+## Setup and Usage
 
 
 1. **Ensure Node.js is installed**
