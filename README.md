@@ -1,9 +1,13 @@
+<div align="center">
+
 # RTCPortal - Peer-to-Peer File Sharing
 
 ## Live Demo  
 **[RTCPortal](https://dpxa.github.io/RTCPortal/)**
 
-## Overview ##
+</div>
+
+## Overview  
 
 **RTCPortal** is a web-based file-sharing tool that enables direct file transfers using **WebRTC**. Unlike cloud storage services, it doesn't store files on a central server. Instead, files are sent **peer-to-peer**, providing **privacy and efficiency**.  
 
@@ -27,9 +31,9 @@ A **signaling server** using **Socket.io** helps users connect but is only invol
 - **Real-Time Communication:** WebRTC  
 - **Hosting:** GitHub Pages (Frontend) + Render (Backend)  
 
-## Planned
-- **TURN server support** to improve connectivity in restricted networks
-- **Drag-and-drop file sharing** for an even smoother process
+## Planned  
+- **TURN server support** to improve connectivity in restricted networks  
+- **Drag-and-drop file sharing** for an even smoother process  
 
 ## License  
 See the [LICENSE](LICENSE) file for details.  
