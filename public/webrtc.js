@@ -15,7 +15,41 @@ let peerConnection;
 let dataChannel;
 let myId = null;
 // ice server config
-const config = { iceServers: [{ urls: "stun:stun.stunprotocol.org" }] };
+const config = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
+  ],
+};
+
+let heartbeatInterval;
+let heartbeatTimeout;
+let lastHeartbeatReceived = Date.now();
+
+function startHeartbeat() {
+  heartbeatInterval = setInterval(() => {
+    if (dataChannel && dataChannel.readyState === "open") {
+      dataChannel.send(
+        JSON.stringify({ type: "heartbeat", timestamp: Date.now() })
+      );
+    }
+  }, 500);
+
+  heartbeatTimeout = setInterval(() => {
+    if (Date.now() - lastHeartbeatReceived > 1500) {
+      console.warn("Heartbeat timeout, disconnecting...");
+      resetConnection();
+    }
+  }, 750);
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (heartbeatTimeout) clearInterval(heartbeatTimeout);
+}
 
 function resetConnection() {
   // reset webRTC
@@ -27,6 +61,7 @@ function resetConnection() {
     dataChannel.close();
     dataChannel = null;
   }
+  stopHeartbeat();
   connectedPeerId = null;
 
   // reset UI
@@ -144,6 +179,8 @@ function createPeerConnection(targetId, isOfferer = false) {
       clearTimeout(connectionTimeout);
       fileSection.style.display = "block";
       disconnectBtn.style.display = "inline-block";
+      lastHeartbeatReceived = Date.now();
+      startHeartbeat();
     } else if (["disconnected", "failed"].includes(pc.connectionState)) {
       clearTimeout(connectionTimeout);
       resetConnection();
@@ -159,8 +196,13 @@ function setupDataChannel(channel) {
   channel.binaryType = "arraybuffer";
   channel.onmessage = (event) => {
     if (typeof event.data === "string") {
-      // metadata, done
-      handleControlMessage(event.data);
+        const message = JSON.parse(event.data);
+        if (message.type === "heartbeat") {
+          lastHeartbeatReceived = Date.now();
+          return;
+        }
+        // metadata, done
+        handleControlMessage(event.data);
     } else {
       handleFileChunk(event.data);
     }
