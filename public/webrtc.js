@@ -1,7 +1,6 @@
-const isProduction = window.location.hostname !== "localhost";
-const socket = isProduction
-  ? io("https://rtcportal.onrender.com")
-  : io();
+const socket = io("https://rtcportal.onrender.com", {
+  transports: ["websocket", "polling"],
+});
 
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
