@@ -1,4 +1,4 @@
-const socket = io("https://rtcportal.onrender.com");
+const socket = io();
 
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
