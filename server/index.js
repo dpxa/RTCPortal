@@ -1,5 +1,6 @@
 const express = require("express");
 const http = require("http");
+const path = require("path");
 const socketIO = require("socket.io");
 const helmet = require("helmet");
 
@@ -10,7 +11,7 @@ const io = socketIO(server);
 
 app.use(helmet());
 
-app.use(express.static("public"));
+app.use(express.static(path.join(__dirname, "../public"))); 
 
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
