@@ -11,8 +11,6 @@ const io = socketIO(server);
 
 app.use(helmet());
 
-let hi = 0;;
-
 if (process.env.NODE_ENV !== "production") {
   app.use(express.static("public"));
 }
