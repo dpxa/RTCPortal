@@ -1,6 +1,8 @@
-const socket = io("https://rtcportal.onrender.com", {
-  transports: ["websocket", "polling"],
-});
+const socket = isProduction
+  ? io("https://rtcportal.onrender.com", {
+      transports: ["websocket", "polling"],
+    })
+  : io();
 
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
