@@ -3,7 +3,7 @@
 RTCPortal is a web-based file-sharing tool that enables users to send files directly to each other using WebRTC and Socket.IO. Unlike traditional cloud storage services, RTCPortal does not store files on a central server. Instead, files are transferred directly between users, ensuring privacy and efficiency.  
 
 ## Live Demo  
-🔗 **[RTCPortal](https://yourusername.github.io/RTCPortal/)**  
+🔗 **[RTCPortal](https://dpxa.github.io/RTCPortal/)**  
 
 ## ✨ Features  
 - Secure **peer-to-peer file sharing** using WebRTC  
@@ -12,7 +12,7 @@ RTCPortal is a web-based file-sharing tool that enables users to send files dire
 - Simple and intuitive interface  
 
 ## How to Use  
-1. **Open RTCPortal:** [RTCPortal](https://yourusername.github.io/RTCPortal/)  
+1. **Open RTCPortal:** [RTCPortal](https://dpxa.github.io/RTCPortal/)  
 2. **Copy Your ID:** A unique ID is generated automatically  
 3. **Share Your ID:** Send it to the person you want to connect with  
 4. **Enter Their ID:** Type their ID and click "Connect"  
