@@ -1,4 +1,8 @@
-const socket = io("https://rtcportal.onrender.com");
+const socket = isProduction
+  ? io("https://rtcportal.onrender.com", {
+      transports: ["websocket", "polling"],
+    })
+  : io();
 
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
@@ -9,6 +13,7 @@ const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const fileSection = document.getElementById("fileSection");
+
 
 let connectedPeerId = null;
 let peerConnection;
