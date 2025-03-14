@@ -1,4 +1,7 @@
-const socket = io();
+const isProduction = window.location.hostname !== "localhost";
+const socket = isProduction
+  ? io("https://rtcportal.onrender.com")
+  : io();
 
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
@@ -106,9 +109,9 @@ socket.on("offer", async (data) => {
   peerConnection = createPeerConnection(data.caller, false); // create peer connection as callee
 
   try {
-    await peerConnection.setRemoteDescription(data.sdp);  // set remote description from offer
-    const answer = await peerConnection.createAnswer();   // create an answer to the offer
-    await peerConnection.setLocalDescription(answer);     // set local description with the answer
+    await peerConnection.setRemoteDescription(data.sdp); // set remote description from offer
+    const answer = await peerConnection.createAnswer(); // create an answer to the offer
+    await peerConnection.setLocalDescription(answer); // set local description with the answer
 
     // save/display caller's id
     connectedPeerId = data.caller;
@@ -127,7 +130,7 @@ socket.on("offer", async (data) => {
 // when user gets answer from a peer
 socket.on("answer", async (data) => {
   try {
-    await peerConnection.setRemoteDescription(data.sdp);  // set remote description from answer
+    await peerConnection.setRemoteDescription(data.sdp); // set remote description from answer
 
     // save/display callee's id
     connectedPeerId = data.callee;
@@ -197,22 +200,22 @@ function setupDataChannel(channel) {
   channel.binaryType = "arraybuffer";
   channel.onmessage = (event) => {
     if (typeof event.data === "string") {
-        const message = JSON.parse(event.data);
-        if (message.type === "heartbeat") {
-          lastHeartbeatReceived = Date.now();
-          return;
-        } else if (message.type === "disconnect") {
-          resetConnection();
-          return;
-        } else if (message.type === "metadata") {
-          stopHeartbeat();
-          handleControlMessage(event.data);
-          return;
-        } else if (message.type === "done") {
-          handleControlMessage(event.data);
-          startHeartbeat();
-          return;
-        }
+      const message = JSON.parse(event.data);
+      if (message.type === "heartbeat") {
+        lastHeartbeatReceived = Date.now();
+        return;
+      } else if (message.type === "disconnect") {
+        resetConnection();
+        return;
+      } else if (message.type === "metadata") {
+        stopHeartbeat();
+        handleControlMessage(event.data);
+        return;
+      } else if (message.type === "done") {
+        handleControlMessage(event.data);
+        startHeartbeat();
+        return;
+      }
     } else {
       handleFileChunk(event.data);
     }
@@ -240,10 +243,10 @@ connectBtn.addEventListener("click", () => {
   }
 
   connectionStatus.textContent = "Waiting for peer...";
-  peerConnection = createPeerConnection(peerId, true);            // create peer connection as caller
+  peerConnection = createPeerConnection(peerId, true); // create peer connection as caller
   peerConnection
-    .createOffer()                                                // create an offer
-    .then((offer) => peerConnection.setLocalDescription(offer))   // Set local description with the offer
+    .createOffer() // create an offer
+    .then((offer) => peerConnection.setLocalDescription(offer)) // Set local description with the offer
     .then(() => {
       // send the offer to the callee
       socket.emit("offer", {
