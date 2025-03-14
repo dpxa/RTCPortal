@@ -116,6 +116,7 @@ function sendFileInChunks(file) {
     dataChannel.send(chunk);
     offset += chunk.byteLength;
     const percent = Math.floor((offset / file.size) * 100);
+    statusDivFT.textContent = "File sending...";
     updateProgressBar(percent);
 
     if (offset < file.size) { 
@@ -188,6 +189,7 @@ function handleFileChunk(arrayBuffer) {
   incomingFileData.push(arrayBuffer);
   bytesReceived += arrayBuffer.byteLength;
   const percent = Math.floor((bytesReceived / incomingFileInfo.fileSize) * 100);
+  statusDivFT.textContent = "File receiving...";
   updateProgressBar(percent);
 }
 
