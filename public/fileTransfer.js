@@ -216,7 +216,15 @@ function finalizeReceivedFile() {
   const container = document.createElement("div");
   container.appendChild(link);
   container.appendChild(info);
-  receivedFilesContainerFT.appendChild(container);
+  
+  if (receivedFilesContainerFT.firstChild) {
+    receivedFilesContainerFT.insertBefore(
+      container,
+      receivedFilesContainerFT.firstChild
+    );
+  } else {
+    receivedFilesContainerFT.appendChild(container);
+  }
 
   // ensure clear history button is present if needed
   updateClearHistoryVisibility();
@@ -252,7 +260,15 @@ function addSentFile(file) {
   const container = document.createElement("div");
   container.appendChild(link);
   container.appendChild(info);
-  sentFilesContainerFT.appendChild(container);
+  
+  if (sentFilesContainerFT.firstChild) {
+    sentFilesContainerFT.insertBefore(
+      container,
+      sentFilesContainerFT.firstChild
+    );
+  } else {
+    sentFilesContainerFT.appendChild(container);
+  }
 
   updateClearHistoryVisibility();
 }

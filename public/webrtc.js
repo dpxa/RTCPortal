@@ -200,6 +200,9 @@ function setupDataChannel(channel) {
         if (message.type === "heartbeat") {
           lastHeartbeatReceived = Date.now();
           return;
+        } else if (message.type === "disconnect") {
+          resetConnection();
+          return;
         }
         // metadata, done
         handleControlMessage(event.data);
@@ -245,6 +248,10 @@ connectBtn.addEventListener("click", () => {
 });
 
 disconnectBtn.addEventListener("click", () => {
+  if (dataChannel && dataChannel.readyState === "open") {
+    dataChannel.send(JSON.stringify({ type: "disconnect" }));
+  }
+
   resetConnection();
   disconnectBtn.style.display = "none";
 });
