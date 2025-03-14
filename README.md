@@ -1,57 +1,50 @@
-# RTCPortal
+# RTCPortal - P2P File Sharing via WebRTC  
 
-**Peer-to-Peer File Transfer with WebRTC**
-
----
-
-## Overview
-
-RTCPortal is a web-based application that provides a platform for peers to exchange files securely using WebRTC and Socket.IO. It was designed to simplify the file-sharing and communication process by not relying on centralized servers for the transfer process. As of now, RTCPortal does not have a public domain; connections are only established through ports opened by the user.
-
-RTCPortal uses a **signaling server** only during the initial connection phase, which allows peers to find each other. 
-
-Once the connection is established, all file transfers occur **directly between users** via WebRTC. This is why the process is **private and decentralized.**
-
-The easy-to-use UI makes it intuitive for any user to share files securely, as no configurations are necessary.
-
-<p align="center"><img src="assets/app_image.png" alt="App Image" width="800"></p>
+RTCPortal is a web-based file-sharing tool that allows users to send files directly to each other using WebRTC and Socket.IO. Unlike cloud storage services, RTCPortal does not store files on a central server. Instead, files are transferred directly between users, making the process private and efficient.  
 
 ---
 
-## Setup and Usage
+## Live Demo  
 
+🔗 **[RTCPortal](https://yourusername.github.io/RTCPortal/)**
 
-1. **Ensure Node.js is installed**
+---
 
-   RTCPortal requires [Node.js](https://nodejs.org/) to run. You can check if it's installed by running:  
+## Features  
+- Peer-to-peer file sharing with WebRTC  
+- No account or installation required  
+- Direct file transfer between users, no cloud storage  
+- Simple and easy-to-use interface  
 
-   ```bash
-   node -v
-   ```
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/dpxa/RTCPortal
-   ```
-3. **Navigate to the project directory**
-   ```bash
-   cd RTCPortal
-   ```
-4. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-5. **Start the server**
-   ```bash
-   node server/index.js
-   ```
-6. **Open your browser**
+---
 
-   - If you have a **custom port configured**, go to:
-   
-     ```bash
-     http://localhost:<your-port>
-     ```
-   - If you’re using the **default port**, go to:  
-     ```bash
-     http://localhost:3000
-     ```
+## How It Works  
+1. Open the website: [RTCPortal](https://yourusername.github.io/RTCPortal/)  
+2. Copy the unique ID displayed on your screen  
+3. Share your ID with the person you want to connect with  
+4. Enter their ID in the input box and click "Connect"  
+5. Once connected, send and receive files directly  
+
+---
+
+## Tech Stack
+- **Frontend:** HTML, CSS, JavaScript  
+- **Backend:** Node.js, Express, Socket.IO  
+- **Communication:** WebRTC for peer-to-peer file transfer
+- **Hosting:** GitHub Pages + Render
+
+---
+
+## How RTCPortal Works
+RTCPortal uses a signaling server (hosted on Render) to help users find and connect with each other. The signaling server is only used during the connection process. Once a connection is established, files are transferred directly between users through WebRTC. The signaling server does not handle or store any files.  
+
+---
+
+## Planned Improvements  
+- **TURN server support** for better connectivity behind firewalls
+- **Drag-and-drop file sharing** for a smoother user experience  
+
+---
+
+## License  
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.  
