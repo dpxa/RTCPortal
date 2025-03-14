@@ -27,9 +27,11 @@ const config = {
 
 let heartbeatInterval;
 let heartbeatTimeout;
-let lastHeartbeatReceived = Date.now();
+let lastHeartbeatReceived;
 
 function startHeartbeat() {
+  lastHeartbeatReceived = Date.now();
+
   heartbeatInterval = setInterval(() => {
     if (dataChannel && dataChannel.readyState === "open") {
       dataChannel.send(
@@ -40,7 +42,6 @@ function startHeartbeat() {
 
   heartbeatTimeout = setInterval(() => {
     if (Date.now() - lastHeartbeatReceived > 1500) {
-      console.warn("Heartbeat timeout, disconnecting...");
       resetConnection();
     }
   }, 750);
@@ -203,9 +204,15 @@ function setupDataChannel(channel) {
         } else if (message.type === "disconnect") {
           resetConnection();
           return;
+        } else if (message.type === "metadata") {
+          stopHeartbeat();
+          handleControlMessage(event.data);
+          return;
+        } else if (message.type === "done") {
+          handleControlMessage(event.data);
+          startHeartbeat();
+          return;
         }
-        // metadata, done
-        handleControlMessage(event.data);
     } else {
       handleFileChunk(event.data);
     }

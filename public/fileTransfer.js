@@ -81,6 +81,7 @@ sendFileBtnFT.addEventListener("click", () => {
     alert("No file selected!");
     return;
   }
+  stopHeartbeat();
 
   // send file metadata as a JSON string first
   dataChannel.send(
@@ -123,6 +124,7 @@ function sendFileInChunks(file) {
       statusDivFT.textContent = "File sent!"; // Update status message
       // send done message as a JSON string last 
       dataChannel.send(JSON.stringify({ type: "done" }));
+      startHeartbeat();
       // add sent file to UI
       addSentFile(file);
       // pause progress bar and percentage at 100% so user can see completion
@@ -136,6 +138,7 @@ function sendFileInChunks(file) {
   reader.onerror = (err) => {
     // error - reset progress bar and re-enable send button
     console.error("Error reading file:", err);
+    startHeartbeat();
     resetProgressBar();
     sendFileBtnFT.disabled = false;
   };
