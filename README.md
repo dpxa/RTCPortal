@@ -1,4 +1,4 @@
-# RTCPortal – Peer-to-Peer File Sharing
+# RTCPortal - Peer-to-Peer File Sharing
 
 RTCPortal is a web-based file-sharing tool that enables users to send files directly to each other using WebRTC and Socket.IO. Unlike traditional cloud storage services, RTCPortal does not store files on a central server. Instead, files are transferred directly between users, ensuring privacy and efficiency.  
 
