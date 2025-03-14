@@ -11,7 +11,9 @@ const io = socketIO(server);
 
 app.use(helmet());
 
-app.use(express.static("public"));
+if (process.env.NODE_ENV !== "production") {
+  app.use(express.static("public"));
+}
 
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
