@@ -6,9 +6,7 @@ const helmet = require("helmet");
 
 const app = express();
 const server = http.createServer(app);
-
 const io = socketIO(server);
-
 
 app.use(helmet());
 
@@ -47,4 +45,6 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+server.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`)
+);
