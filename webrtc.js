@@ -16,8 +16,8 @@ const fileSection = document.getElementById("fileSection");
 
 
 let connectedPeerId = null;
-let peerConnection;
-let dataChannel;
+let peerConnection = null;
+let dataChannel = null;
 let myId = null;
 // ice server config
 const config = {
@@ -30,9 +30,9 @@ const config = {
   ],
 };
 
-let heartbeatInterval;
-let heartbeatTimeout;
-let lastHeartbeatReceived;
+let heartbeatInterval = null;
+let heartbeatTimeout = null;
+let lastHeartbeatReceived = null;
 
 function startHeartbeat() {
   lastHeartbeatReceived = Date.now();
@@ -57,6 +57,8 @@ function stopHeartbeat() {
   if (heartbeatTimeout) clearInterval(heartbeatTimeout);
 }
 
+let connectionTimeout = null;
+
 function resetConnection() {
   // reset webRTC
   if (peerConnection) {
@@ -79,6 +81,11 @@ function resetConnection() {
   fileInputFT.value = "";
   resetProgressBar();
   sendFileBtnFT.disabled = false;
+}
+
+function clearAndResetConnection() {
+  clearTimeout(connectionTimeout);
+  resetConnection();
 }
 
 // when client connects to the server
@@ -105,7 +112,7 @@ socket.on("connect", () => {
 socket.on("offer", async (data) => {
   // if the user has an active connection, end it
   if (peerConnection) {
-    resetConnection();
+    clearAndResetConnection();
   }
 
   peerConnection = createPeerConnection(data.caller, false); // create peer connection as callee
@@ -152,7 +159,7 @@ function createPeerConnection(targetId, isOfferer = false) {
   const pc = new RTCPeerConnection(config);
 
   // reset attempt to connect if it takes too long
-  const connectionTimeout = setTimeout(() => {
+  connectionTimeout = setTimeout(() => {
     alert("Connection timed out. Peer is not available.");
     resetConnection();
   }, 10000);
@@ -188,8 +195,7 @@ function createPeerConnection(targetId, isOfferer = false) {
       lastHeartbeatReceived = Date.now();
       startHeartbeat();
     } else if (["disconnected", "failed"].includes(pc.connectionState)) {
-      clearTimeout(connectionTimeout);
-      resetConnection();
+      clearAndResetConnection();
     }
   };
 
@@ -241,7 +247,7 @@ connectBtn.addEventListener("click", () => {
 
   // if the user has an active connection, end it
   if (peerConnection) {
-    resetConnection();
+    clearAndResetConnection();
   }
 
   connectionStatus.textContent = "Waiting for peer...";
