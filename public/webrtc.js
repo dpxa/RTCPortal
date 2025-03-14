@@ -14,6 +14,7 @@ const disconnectBtn = document.getElementById("disconnectBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const fileSection = document.getElementById("fileSection");
 
+
 let connectedPeerId = null;
 let peerConnection;
 let dataChannel;
