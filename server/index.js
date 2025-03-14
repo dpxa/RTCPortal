@@ -15,6 +15,8 @@ if (process.env.NODE_ENV !== "production") {
   app.use(express.static("public"));
 }
 
+let hi;
+
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
   // listen for an "offer" event from a client
