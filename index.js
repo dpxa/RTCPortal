@@ -14,6 +14,13 @@ if (process.env.NODE_ENV !== "production") {
   app.use(express.static("public"));
 }
 
+app.get("/test", (req, res) => {
+  res.status(200).send(`
+    <h1>RTC Portal</h1>
+    <p>Server is running.</p>
+  `);
+});
+
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
   // listen for an "offer" event from a client
