@@ -24,9 +24,9 @@ A **signaling server** using **Socket.io** helps users connect but is only invol
 - **Backend:** Node.js, Express, Socket.IO  
 - **Communication and Hosting:** WebRTC, GitHub Pages (Frontend) + Render (Backend)  
 
-## Planned  
-- **TURN server support** to improve connectivity in restricted networks  
-- **Drag-and-drop file sharing** for an even smoother process  
+## WIP
+- **TURN server support**: Improve connectivity in restricted networks  
+- **Drag-and-drop file sharing**
 
 ## License  
 See the [LICENSE](LICENSE) file for details.  
