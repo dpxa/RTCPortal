@@ -3,8 +3,6 @@ const fileInput = document.getElementById("fileInput");
 const sendFileBtn = document.getElementById("sendFileBtn");
 const msgFileSpan = document.getElementById("msgFile");
 
-sendFileBtn.disabled = true;
-
 messageFileTimeout = null;
 
 function showFileError(message) {
