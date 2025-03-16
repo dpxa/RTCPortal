@@ -16,7 +16,7 @@ const fileSection = document.getElementById("fileSection");
 
 messageIdTimeout = null;
 
-function showMessage(message, color = "red", duration = 2000) {
+function showMessage(message, color = "red", duration = 4000) {
   clearTimeout(messageIdTimeout);
   msgIdSpan.textContent = message;
   msgIdSpan.style.color = color;
@@ -169,7 +169,7 @@ function createPeerConnection(targetId, isOfferer = false) {
   connectionTimeout = setTimeout(() => {
     showMessage("Connection timed out. Peer is not available.");
     resetConnection();
-  }, 10000);
+  }, 15000);
 
   // if we are the offerer, create a data channel
   if (isOfferer) {
@@ -249,6 +249,10 @@ connectBtn.addEventListener("click", () => {
   }
   if (peerId === myId) {
     showMessage("Invalid peer ID! Cannot connect to yourself.");
+    return;
+  }
+  if (peerId == connectedPeerId) {
+    showMessage("Already connected to this peer.");
     return;
   }
 

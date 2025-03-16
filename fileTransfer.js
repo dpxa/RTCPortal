@@ -5,7 +5,7 @@ const msgFileSpan = document.getElementById("msgFile");
 
 messageFileTimeout = null;
 
-function showFileError(message, color = "red", duration = 2000) {
+function showFileError(message, color = "red", duration = 4000) {
   clearTimeout(messageFileTimeout);
   msgFileSpan.textContent = message;
   msgFileSpan.style.color = color;
