@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: RTCPortal
-    env: node
-    plan: free
-    buildCommand: npm install
-    startCommand: node index.js

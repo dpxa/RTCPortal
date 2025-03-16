@@ -20,7 +20,7 @@
           <label for="peerId">Your ID:</label>
           <span id="myId"></span>
           <button id="copyMyId" class="copy-button">Copy My ID</button>
-          <span id="copyStatus"></span>
+          <span id="msgId"></span>
         </div>
         <input type="text" id="peerId" placeholder="Enter peer ID..." />
         <button id="connectBtn">Connect</button>
@@ -31,7 +31,8 @@
       <section id="fileSection" style="display: none;">
         <h2>Send File</h2>
         <label for="fileInput">Choose File:</label>
-        <input type="file" id="fileInput" class="custom-file-input" />
+        <span id="msgFile"></span>
+        <input type="file" id="fileInput" class="custom-file-input" required />
         <button id="sendFileBtn">Send File</button>
         <!-- Progress bar and percentage dynamically created -->
       </section>

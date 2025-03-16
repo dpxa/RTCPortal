@@ -7,13 +7,25 @@ const socket = isProduction
 // HTML objects for WebRTC
 const myIdSpan = document.getElementById("myId");
 const copyMyIdBtn = document.getElementById("copyMyId");
-const copyStatusSpan = document.getElementById("copyStatus");
+const msgIdSpan = document.getElementById("msgId");
 const peerIdInput = document.getElementById("peerId");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const fileSection = document.getElementById("fileSection");
 
+messageIdTimeout = null;
+
+function showMessage(message, color = "red", duration = 4000) {
+  clearTimeout(messageIdTimeout);
+  msgIdSpan.textContent = message;
+  msgIdSpan.style.color = color;
+
+  messageIdTimeout = setTimeout(() => {
+    msgIdSpan.textContent = "";
+    msgIdSpan.style.color = "";
+  }, duration);
+}
 
 let connectedPeerId = null;
 let peerConnection = null;
@@ -53,8 +65,8 @@ function startHeartbeat() {
 }
 
 function stopHeartbeat() {
-  if (heartbeatInterval) clearInterval(heartbeatInterval);
-  if (heartbeatTimeout) clearInterval(heartbeatTimeout);
+  clearInterval(heartbeatInterval);
+  clearInterval(heartbeatTimeout);
 }
 
 let connectionTimeout = null;
@@ -98,12 +110,7 @@ socket.on("connect", () => {
   copyMyIdBtn.addEventListener("click", () => {
     navigator.clipboard
       .writeText(myId)
-      .then(() => {
-        copyStatusSpan.textContent = "Copied";
-        setTimeout(() => {
-          copyStatusSpan.textContent = "";
-        }, 2000);
-      })
+      .then(showMessage("Copied", "black"))
       .catch((err) => console.error("Error copying ID:", err));
   });
 });
@@ -160,9 +167,9 @@ function createPeerConnection(targetId, isOfferer = false) {
 
   // reset attempt to connect if it takes too long
   connectionTimeout = setTimeout(() => {
-    alert("Connection timed out. Peer is not available.");
+    showMessage("Connection timed out. Peer is not available.");
     resetConnection();
-  }, 10000);
+  }, 15000);
 
   // if we are the offerer, create a data channel
   if (isOfferer) {
@@ -237,11 +244,15 @@ connectBtn.addEventListener("click", () => {
 
   // validate peer ID
   if (!peerId || !/^[a-zA-Z0-9_-]+$/.test(peerId)) {
-    alert("Invalid peer ID!");
+    showMessage("Invalid peer ID!");
     return;
   }
   if (peerId === myId) {
-    alert("Invalid peer ID! Cannot connect to yourself.");
+    showMessage("Invalid peer ID! Cannot connect to yourself.");
+    return;
+  }
+  if (peerId == connectedPeerId) {
+    showMessage("Already connected to this peer.");
     return;
   }
 
