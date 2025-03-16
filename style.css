@@ -140,6 +140,10 @@ input:disabled {
   background-color: #c0392b;
 }
 
+#msgFile {
+  margin-left: 10px;
+}
+
 /* flexbox styling for file history header */
 .file-history-header {
   display: flex;
