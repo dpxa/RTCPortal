@@ -14,6 +14,7 @@ if (process.env.NODE_ENV !== "production") {
   app.use(express.static("public"));
 }
 
+
 app.get("/test", (req, res) => {
   res.status(200).send(`
     <h1>RTC Portal</h1>
