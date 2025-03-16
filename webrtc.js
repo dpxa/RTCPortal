@@ -90,7 +90,10 @@ const config = {
 
 let connectionTimeout = null;
 
-function resetConnection() {
+function resetConnection(newConnection = false) {
+  if (dataChannel && dataChannel.readyState === "open") {
+    dataChannel.send(JSON.stringify({ type: "disconnect" }));
+  }
   clearTimeout(connectionTimeout);
 
   // reset webRTC
@@ -108,16 +111,17 @@ function resetConnection() {
   }
   connectedPeerId = null;
 
-  // reset UI
-  fileSection.style.display = "none";
-  connectionStatus.textContent = "Connected to: None";
-  disconnectBtn.style.display = "none";
-
-
   // reset file input for if other peer ends connection via exiting tab
   fileInput.value = "";
   resetProgressBar();
   sendFileBtn.disabled = true;
+
+  if (!newConnection) {
+    // reset UI
+    fileSection.style.display = "none";
+    connectionStatus.textContent = "Connected to: None";
+    disconnectBtn.style.display = "none";
+  }
 }
 
 // when client connects to the server
@@ -139,7 +143,7 @@ socket.on("connect", () => {
 socket.on("offer", async (data) => {
   // if the user has an active connection, end it
   if (peerConnection) {
-    resetConnection();
+    resetConnection(true);
   }
 
   peerConnection = createPeerConnection(data.caller, false); // create peer connection as callee
@@ -274,7 +278,7 @@ connectBtn.addEventListener("click", () => {
 
   // if the user has an active connection, end it
   if (peerConnection) {
-    resetConnection();
+    resetConnection(true);
   }
 
   connectionStatus.textContent = "Waiting for peer...";
@@ -293,20 +297,12 @@ connectBtn.addEventListener("click", () => {
 });
 
 disconnectBtn.addEventListener("click", () => {
-  if (dataChannel && dataChannel.readyState === "open") {
-    dataChannel.send(JSON.stringify({ type: "disconnect" }));
-  }
-
   resetIdMessage();
   resetConnection();
 });
 
 window.addEventListener("beforeunload", () => {
   if (connectedPeerId) {
-    if (dataChannel && dataChannel.readyState === "open") {
-      dataChannel.send(JSON.stringify({ type: "disconnect" }));
-    }
-
     resetConnection();
   }
 });
