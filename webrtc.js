@@ -115,7 +115,6 @@ function resetConnection(newConnection = false) {
 
   if (!newConnection) {
     // reset UI
-    console.log(1);
     fileSection.style.display = "none";
     connectionStatus.textContent = "Connected to: None";
     disconnectBtn.style.display = "none";
