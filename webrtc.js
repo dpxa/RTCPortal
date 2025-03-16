@@ -16,15 +16,40 @@ const fileSection = document.getElementById("fileSection");
 
 messageIdTimeout = null;
 
-function showMessage(message, color = "red", duration = 4000) {
+function copyMessage() {
   clearTimeout(messageIdTimeout);
-  msgIdSpan.textContent = message;
-  msgIdSpan.style.color = color;
+  msgIdSpan.textContent = "Copied";
+  msgIdSpan.style.display = "inline-block";
+  msgIdSpan.style.border = "";
+  msgIdSpan.style.color = "black";
+  msgIdSpan.style.padding = "";
+  msgIdSpan.style.fontSize = "0.8rem";
 
   messageIdTimeout = setTimeout(() => {
     msgIdSpan.textContent = "";
+    msgIdSpan.style.display = "none";
     msgIdSpan.style.color = "";
-  }, duration);
+    msgIdSpan.style.fontSize = "";
+  }, 4000);
+}
+
+function showIdError(message) {
+  clearTimeout(messageIdTimeout);
+  msgIdSpan.textContent = message;
+  msgIdSpan.style.display = "inline-block";
+  msgIdSpan.style.border = `1.5px solid red`;
+  msgIdSpan.style.color = "red";
+  msgIdSpan.style.padding = "1px 2px";
+  msgIdSpan.style.fontSize = "0.7rem";
+
+  messageIdTimeout = setTimeout(() => {
+    msgIdSpan.textContent = "";
+    msgIdSpan.style.display = "none";
+    msgIdSpan.style.border = "";
+    msgIdSpan.style.color = "";
+    msgIdSpan.style.padding = "";
+    msgIdSpan.style.fontSize = "";
+  }, 4000);
 }
 
 let connectedPeerId = null;
@@ -41,33 +66,6 @@ const config = {
     { urls: "stun:stun4.l.google.com:19302" },
   ],
 };
-
-let heartbeatInterval = null;
-let heartbeatTimeout = null;
-let lastHeartbeatReceived = null;
-
-function startHeartbeat() {
-  lastHeartbeatReceived = Date.now();
-
-  heartbeatInterval = setInterval(() => {
-    if (dataChannel && dataChannel.readyState === "open") {
-      dataChannel.send(
-        JSON.stringify({ type: "heartbeat", timestamp: Date.now() })
-      );
-    }
-  }, 500);
-
-  heartbeatTimeout = setInterval(() => {
-    if (Date.now() - lastHeartbeatReceived > 1500) {
-      resetConnection();
-    }
-  }, 750);
-}
-
-function stopHeartbeat() {
-  clearInterval(heartbeatInterval);
-  clearInterval(heartbeatTimeout);
-}
 
 let connectionTimeout = null;
 
@@ -87,7 +85,6 @@ function resetConnection() {
     dataChannel.close();
     dataChannel = null;
   }
-  stopHeartbeat();
   connectedPeerId = null;
 
   // reset UI
@@ -96,9 +93,9 @@ function resetConnection() {
   disconnectBtn.style.display = "none";
 
   // reset file input for if other peer ends connection via exiting tab
-  fileInputFT.value = "";
+  fileInput.value = "";
   resetProgressBar();
-  sendFileBtnFT.disabled = false;
+  sendFileBtn.disabled = false;
 }
 
 // when client connects to the server
@@ -111,7 +108,7 @@ socket.on("connect", () => {
   copyMyIdBtn.addEventListener("click", () => {
     navigator.clipboard
       .writeText(myId)
-      .then(showMessage("Copied", "black"))
+      .then(copyMessage())
       .catch((err) => console.error("Error copying ID:", err));
   });
 });
@@ -168,7 +165,7 @@ function createPeerConnection(targetId, isOfferer = false) {
 
   // reset attempt to connect if it takes too long
   connectionTimeout = setTimeout(() => {
-    showMessage("Connection timed out. Peer is not available.");
+    showIdError("Connection timed out. Peer is not available.");
     resetConnection();
   }, 15000);
 
@@ -200,8 +197,6 @@ function createPeerConnection(targetId, isOfferer = false) {
       clearTimeout(connectionTimeout);
       fileSection.style.display = "block";
       disconnectBtn.style.display = "inline-block";
-      lastHeartbeatReceived = Date.now();
-      startHeartbeat();
     } else if (["disconnected", "failed"].includes(pc.connectionState)) {
       resetConnection();
     }
@@ -217,19 +212,11 @@ function setupDataChannel(channel) {
   channel.onmessage = (event) => {
     if (typeof event.data === "string") {
       const message = JSON.parse(event.data);
-      if (message.type === "heartbeat") {
-        lastHeartbeatReceived = Date.now();
-        return;
-      } else if (message.type === "disconnect") {
+      if (message.type === "disconnect") {
         resetConnection();
         return;
-      } else if (message.type === "metadata") {
-        stopHeartbeat();
+      } else {
         handleControlMessage(event.data);
-        return;
-      } else if (message.type === "done") {
-        handleControlMessage(event.data);
-        startHeartbeat();
         return;
       }
     } else {
@@ -245,17 +232,18 @@ connectBtn.addEventListener("click", () => {
 
   // validate peer ID
   if (!peerId || !/^[a-zA-Z0-9_-]+$/.test(peerId)) {
-    showMessage("Invalid peer ID!");
+    showIdError("Invalid peer ID!");
     return;
   }
   if (peerId === myId) {
-    showMessage("Invalid peer ID! Cannot connect to yourself.");
+    showIdError("Invalid peer ID! Cannot connect to yourself.");
     return;
   }
   if (peerId === connectedPeerId) {
-    showMessage("Already connected to this peer.");
+    showIdError("Already connected to this peer.");
     return;
   }
+  clearTimeout(messageIdTimeout);
 
   // if the user has an active connection, end it
   if (peerConnection) {

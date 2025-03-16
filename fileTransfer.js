@@ -5,15 +5,23 @@ const msgFileSpan = document.getElementById("msgFile");
 
 messageFileTimeout = null;
 
-function showFileError(message, color = "red", duration = 4000) {
+function showFileError(message) {
   clearTimeout(messageFileTimeout);
   msgFileSpan.textContent = message;
-  msgFileSpan.style.color = color;
+  msgFileSpan.style.display = "inline-block";
+  msgFileSpan.style.border = `1.5px solid red`;
+  msgFileSpan.style.color = "red";
+  msgFileSpan.style.padding = "1px 2px";
+  msgFileSpan.style.fontSize = "0.7rem";
 
   messageFileTimeout = setTimeout(() => {
     msgFileSpan.textContent = "";
+    msgFileSpan.style.display = "none";
+    msgFileSpan.style.border = "";
     msgFileSpan.style.color = "";
-  }, duration);
+    msgFileSpan.style.padding = "";
+    msgFileSpan.style.fontSize = "";
+  }, 4000);
 }
 
 function ensureStatusElement() {
@@ -95,7 +103,7 @@ sendFileBtn.addEventListener("click", () => {
     showFileError("No file selected!");
     return;
   }
-  stopHeartbeat();
+  clearTimeout(messageFileTimeout);
 
   // send file metadata as a JSON string first
   dataChannel.send(
@@ -139,7 +147,6 @@ function sendFileInChunks(file) {
       statusDiv.textContent = "File sent!";
       // send done message as a JSON string last
       dataChannel.send(JSON.stringify({ type: "done" }));
-      startHeartbeat();
       // add sent file to UI
       addSentFile(file);
       // pause progress bar and percentage at 100% so user can see completion
@@ -153,7 +160,6 @@ function sendFileInChunks(file) {
   reader.onerror = (err) => {
     // error - reset progress bar and re-enable send button
     console.error("Error reading file:", err);
-    startHeartbeat();
     resetProgressBar();
     sendFileBtn.disabled = false;
   };

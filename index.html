@@ -16,11 +16,11 @@
     <div class="column">
       <section id="connectionSection">
         <h2>Connection</h2>
-        <div class="id-container">
+        <div class="label-container">
           <label for="peerId">Your ID:</label>
           <span id="myId"></span>
           <button id="copyMyId" class="copy-button">Copy My ID</button>
-          <span id="msgId"></span>
+          <span id="msgId" class="message"></span>
         </div>
         <input type="text" id="peerId" placeholder="Enter peer ID..." />
         <button id="connectBtn">Connect</button>
@@ -30,8 +30,10 @@
 
       <section id="fileSection" style="display: none;">
         <h2>Send File</h2>
-        <label for="fileInput">Choose File:</label>
-        <span id="msgFile"></span>
+        <div class="label-container">
+          <label for="fileInput">Choose File:</label>
+          <span id="msgFile" class="message"></span>
+        </div>
         <input type="file" id="fileInput" class="custom-file-input" required />
         <button id="sendFileBtn">Send File</button>
         <!-- Progress bar and percentage dynamically created -->
