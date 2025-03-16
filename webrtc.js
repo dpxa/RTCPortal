@@ -288,11 +288,7 @@ disconnectBtn.addEventListener("click", () => {
 window.addEventListener("beforeunload", () => {
   if (connectedPeerId) {
     if (dataChannel && dataChannel.readyState === "open") {
-      try {
-        dataChannel.send(JSON.stringify({ type: "disconnect" }));
-      } catch (err) {
-        console.error("Error sending disconnect over data channel:", err);
-      }
+      dataChannel.send(JSON.stringify({ type: "disconnect" }));
     }
   }
 });
