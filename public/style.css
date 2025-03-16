@@ -66,12 +66,6 @@ input[type="file"] {
   outline: none;
 }
 
-label[for="fileInput"] {
-  margin-bottom: 6px;
-  /* label needs this to use margin */
-  display:inline-block;
-}
-
 /* file upload button */
 input[type="file"]::-webkit-file-upload-button {
   background-color: #fff;
@@ -117,8 +111,8 @@ input:disabled {
   cursor: not-allowed;
 }
 
-/* container for aligning user's id, copy button, and respective p elements */
-.id-container {
+/* container for aligning labels and respectiv inline elements */
+.label-container {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -142,6 +136,13 @@ input:disabled {
 
 #msgFile {
   margin-left: 10px;
+  color: red;
+}
+
+.message {
+  display: none;
+  border-radius: 6px;
+  text-transform: uppercase;
 }
 
 /* flexbox styling for file history header */
