@@ -14,10 +14,15 @@ const disconnectBtn = document.getElementById("disconnectBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const fileSection = document.getElementById("fileSection");
 
+connectBtn.disabled = true;
+
+messageCopyTimeout = null;
 messageIdTimeout = null;
 
 function copyMessage() {
+  clearTimeout(messageCopyTimeout);
   clearTimeout(messageIdTimeout);
+  messageIdTimeout = null;
   msgIdSpan.textContent = "Copied";
   msgIdSpan.style.display = "inline-block";
   msgIdSpan.style.border = "";
@@ -25,7 +30,7 @@ function copyMessage() {
   msgIdSpan.style.padding = "";
   msgIdSpan.style.fontSize = "0.8rem";
 
-  messageIdTimeout = setTimeout(() => {
+  messageCopyTimeout = setTimeout(() => {
     msgIdSpan.textContent = "";
     msgIdSpan.style.display = "none";
     msgIdSpan.style.color = "";
@@ -34,7 +39,9 @@ function copyMessage() {
 }
 
 function showIdError(message) {
+  clearTimeout(messageCopyTimeout);
   clearTimeout(messageIdTimeout);
+  messageIdTimeout = null;
   msgIdSpan.textContent = message;
   msgIdSpan.style.display = "inline-block";
   msgIdSpan.style.border = `1.5px solid red`;
@@ -51,6 +58,20 @@ function showIdError(message) {
     msgIdSpan.style.fontSize = "";
   }, 4000);
 }
+
+function resetIdMessage() {
+  if (messageIdTimeout) {
+    console.log(1);
+    clearTimeout(messageIdTimeout);
+    messageIdTimeout = null;
+    msgIdSpan.textContent = "";
+    msgIdSpan.style.display = "none";
+    msgIdSpan.style.border = "";
+    msgIdSpan.style.color = "";
+    msgIdSpan.style.padding = "";
+    msgIdSpan.style.fontSize = "";
+  }
+} 
 
 let connectedPeerId = null;
 let peerConnection = null;
@@ -92,10 +113,11 @@ function resetConnection() {
   connectionStatus.textContent = "Connected to: None";
   disconnectBtn.style.display = "none";
 
+
   // reset file input for if other peer ends connection via exiting tab
   fileInput.value = "";
   resetProgressBar();
-  sendFileBtn.disabled = false;
+  sendFileBtn.disabled = true;
 }
 
 // when client connects to the server
@@ -225,13 +247,18 @@ function setupDataChannel(channel) {
   };
 }
 
+peerIdInput.addEventListener("input", () => {
+  connectBtn.disabled = peerIdInput.value.trim() === "";
+});
+
 connectBtn.addEventListener("click", () => {
   // get and trim peer ID
   const peerId = peerIdInput.value.trim();
   peerIdInput.value = "";
+  connectBtn.disabled = true;
 
   // validate peer ID
-  if (!peerId || !/^[a-zA-Z0-9_-]+$/.test(peerId)) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
     showIdError("Invalid peer ID!");
     return;
   }
@@ -243,7 +270,7 @@ connectBtn.addEventListener("click", () => {
     showIdError("Already connected to this peer.");
     return;
   }
-  clearTimeout(messageIdTimeout);
+  resetIdMessage();
 
   // if the user has an active connection, end it
   if (peerConnection) {
@@ -270,6 +297,7 @@ disconnectBtn.addEventListener("click", () => {
     dataChannel.send(JSON.stringify({ type: "disconnect" }));
   }
 
+  resetIdMessage();
   resetConnection();
 });
 

@@ -3,10 +3,13 @@ const fileInput = document.getElementById("fileInput");
 const sendFileBtn = document.getElementById("sendFileBtn");
 const msgFileSpan = document.getElementById("msgFile");
 
+sendFileBtn.disabled = true;
+
 messageFileTimeout = null;
 
 function showFileError(message) {
   clearTimeout(messageFileTimeout);
+  messageFileTimeout = null;
   msgFileSpan.textContent = message;
   msgFileSpan.style.display = "inline-block";
   msgFileSpan.style.border = `1.5px solid red`;
@@ -23,6 +26,17 @@ function showFileError(message) {
     msgFileSpan.style.fontSize = "";
   }, 4000);
 }
+
+function resetFileMessage() {
+  clearTimeout(messageFileTimeout);
+  messageFileTimeout = null;
+  msgFileSpan.textContent = "";
+  msgFileSpan.style.display = "none";
+  msgFileSpan.style.border = "";
+  msgFileSpan.style.color = "";
+  msgFileSpan.style.padding = "";
+  msgFileSpan.style.fontSize = "";
+} 
 
 function ensureStatusElement() {
   let statusEl = document.getElementById("status");
@@ -90,6 +104,10 @@ function resetProgressBar() {
   statusDiv.textContent = "";
 }
 
+fileInput.addEventListener("input", () => {
+  sendFileBtn.disabled = fileInput.value.trim() === "";
+});
+
 sendFileBtn.addEventListener("click", () => {
   // if data channel is not available
   if (!dataChannel || dataChannel.readyState !== "open") {
@@ -97,13 +115,9 @@ sendFileBtn.addEventListener("click", () => {
     return;
   }
 
-  // get the selected file and validate
+  // get the selected file
   const file = fileInput.files[0];
-  if (!file) {
-    showFileError("No file selected!");
-    return;
-  }
-  clearTimeout(messageFileTimeout);
+  resetFileMessage();
 
   // send file metadata as a JSON string first
   dataChannel.send(
