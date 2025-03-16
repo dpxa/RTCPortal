@@ -72,8 +72,14 @@ function stopHeartbeat() {
 let connectionTimeout = null;
 
 function resetConnection() {
+  clearTimeout(connectionTimeout);
+
   // reset webRTC
   if (peerConnection) {
+    peerConnection.onicecandidate = null;
+    peerConnection.ondatachannel = null;
+    peerConnection.onconnectionstatechange = null;
+
     peerConnection.close();
     peerConnection = null;
   }
@@ -95,11 +101,6 @@ function resetConnection() {
   sendFileBtnFT.disabled = false;
 }
 
-function clearAndResetConnection() {
-  clearTimeout(connectionTimeout);
-  resetConnection();
-}
-
 // when client connects to the server
 socket.on("connect", () => {
   // save/display our id
@@ -119,7 +120,7 @@ socket.on("connect", () => {
 socket.on("offer", async (data) => {
   // if the user has an active connection, end it
   if (peerConnection) {
-    clearAndResetConnection();
+    resetConnection();
   }
 
   peerConnection = createPeerConnection(data.caller, false); // create peer connection as callee
@@ -202,7 +203,7 @@ function createPeerConnection(targetId, isOfferer = false) {
       lastHeartbeatReceived = Date.now();
       startHeartbeat();
     } else if (["disconnected", "failed"].includes(pc.connectionState)) {
-      clearAndResetConnection();
+      resetConnection();
     }
   };
 
@@ -258,7 +259,7 @@ connectBtn.addEventListener("click", () => {
 
   // if the user has an active connection, end it
   if (peerConnection) {
-    clearAndResetConnection();
+    resetConnection();
   }
 
   connectionStatus.textContent = "Waiting for peer...";
@@ -282,5 +283,14 @@ disconnectBtn.addEventListener("click", () => {
   }
 
   resetConnection();
-  disconnectBtn.style.display = "none";
+});
+
+window.addEventListener("beforeunload", () => {
+  if (connectedPeerId) {
+    if (dataChannel && dataChannel.readyState === "open") {
+      dataChannel.send(JSON.stringify({ type: "disconnect" }));
+    }
+
+    resetConnection();
+  }
 });
