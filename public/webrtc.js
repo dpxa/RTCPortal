@@ -251,7 +251,7 @@ connectBtn.addEventListener("click", () => {
     showMessage("Invalid peer ID! Cannot connect to yourself.");
     return;
   }
-  if (peerId == connectedPeerId) {
+  if (peerId === connectedPeerId) {
     showMessage("Already connected to this peer.");
     return;
   }

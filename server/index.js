@@ -27,7 +27,6 @@ const getTimestampPST = () => {
   });
 };
 
-
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
   console.log(`[${getTimestampPST()}] Socket connected: ${socket.id}`);
