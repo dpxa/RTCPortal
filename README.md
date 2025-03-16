@@ -13,12 +13,6 @@
 
 A **signaling server** using **Socket.io** helps users connect but is only involved in the initial handshake - it does not store or handle file transfers. Once connected, files are exchanged directly.
 
-## ✨ Features  
-- Secure **peer-to-peer file sharing** using WebRTC  
-- No need for an account or installation  
-- Transfers files **directly between users**, avoiding cloud storage  
-- Simple and intuitive interface  
-
 ## How to Use  
 1. **Copy Your ID:** A unique ID is generated automatically  
 2. **Share Your ID:** Send it to the person you want to connect with  
@@ -28,8 +22,7 @@ A **signaling server** using **Socket.io** helps users connect but is only invol
 ## Tech Stack  
 - **Frontend:** HTML, CSS, JavaScript  
 - **Backend:** Node.js, Express, Socket.IO  
-- **Real-Time Communication:** WebRTC  
-- **Hosting:** GitHub Pages (Frontend) + Render (Backend)  
+- **Communication and Hosting:** WebRTC, GitHub Pages (Frontend) + Render (Backend)  
 
 ## Planned  
 - **TURN server support** to improve connectivity in restricted networks  
