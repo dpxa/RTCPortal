@@ -46,7 +46,8 @@ function ensureStatusElement() {
   return statusEl;
 }
 
-const statusDiv = ensureStatusElement();
+const fileStatusDiv = ensureStatusElement();
+const fileHistoryDiv = document.getElementById("fileHistory");
 const sentFilesContainer = document.getElementById("sentFiles");
 const receivedFilesContainer = document.getElementById("receivedFiles");
 const clearHistoryContainer = document.querySelector(
@@ -77,7 +78,7 @@ function ensureProgressContainer() {
     tempDiv.innerHTML = progressContainerHTML;
     container = tempDiv.firstElementChild;
     // insert progress bar and percentage div after status div
-    statusDiv.parentNode.insertBefore(container, statusDiv.nextSibling);
+    fileStatusDiv.parentNode.insertBefore(container, fileStatusDiv.nextSibling);
     progressContainer = container;
     transferProgress = container.querySelector(".progress-bar");
     transferPercentage = container.querySelector(".progress-percentage");
@@ -99,7 +100,7 @@ function resetProgressBar() {
   if (container) {
     container.remove();
   }
-  statusDiv.textContent = "";
+  fileStatusDiv.textContent = "";
 }
 
 fileInput.addEventListener("input", () => {
@@ -132,7 +133,7 @@ sendFileBtn.addEventListener("click", () => {
 function sendFileInChunks(file) {
   // disable send button to prevent multiple transfers
   sendFileBtn.disabled = true;
-  statusDiv.textContent = "File sending...";
+  fileStatusDiv.textContent = "File sending...";
   ensureProgressContainer();
 
   let offset = 0;
@@ -150,13 +151,13 @@ function sendFileInChunks(file) {
     dataChannel.send(chunk);
     offset += chunk.byteLength;
     const percent = Math.floor((offset / file.size) * 100);
-    statusDiv.textContent = "File sending...";
+    fileStatusDiv.textContent = "File sending...";
     updateProgressBar(percent);
 
     if (offset < file.size) {
       readSlice(offset);
     } else {
-      statusDiv.textContent = "File sent!";
+      fileStatusDiv.textContent = "File sent!";
       // send done message as a JSON string last
       dataChannel.send(JSON.stringify({ type: "done" }));
       // add sent file to UI
@@ -200,7 +201,7 @@ function handleControlMessage(str) {
       bytesReceived = 0;
 
       // update UI to show file reception status
-      statusDiv.textContent = "File receiving...";
+      fileStatusDiv.textContent = "File receiving...";
       ensureProgressContainer();
     } else if (message.type === "done") {
       // if done, finalize file reception
@@ -221,7 +222,7 @@ function handleFileChunk(arrayBuffer) {
   incomingFileData.push(arrayBuffer);
   bytesReceived += arrayBuffer.byteLength;
   const percent = Math.floor((bytesReceived / incomingFileInfo.fileSize) * 100);
-  statusDiv.textContent = "File receiving...";
+  fileStatusDiv.textContent = "File receiving...";
   updateProgressBar(percent);
 }
 
@@ -267,7 +268,7 @@ function finalizeReceivedFile() {
   updateClearHistoryVisibility();
 
   // pause progress bar and percentage at 100% so user can see completion
-  statusDiv.textContent = "File received!";
+  fileStatusDiv.textContent = "File received!";
   setTimeout(() => {
     resetProgressBar();
   }, 500);
@@ -314,33 +315,25 @@ function addSentFile(file) {
 function updateClearHistoryVisibility() {
   let clearHistoryBtn = document.getElementById("clearHistoryBtn");
 
-  // if there is at least one file in history
-  if (
-    sentFilesContainer.childElementCount > 0 ||
-    receivedFilesContainer.childElementCount > 0
-  ) {
-    // create clear history button if it doesn't exist
-    if (!clearHistoryBtn) {
-      clearHistoryBtn = document.createElement("button");
-      clearHistoryBtn.id = "clearHistoryBtn";
-      clearHistoryBtn.className = "clear-history-button";
-      clearHistoryBtn.textContent = "Clear History";
+  // create clear history button if it doesn't exist
+  if (!clearHistoryBtn) {
+    clearHistoryBtn = document.createElement("button");
+    clearHistoryBtn.id = "clearHistoryBtn";
+    clearHistoryBtn.className = "clear-history-button";
+    clearHistoryBtn.textContent = "Clear History";
 
-      clearHistoryBtn.addEventListener("click", () => {
-        sentFilesContainer.innerHTML = "";
-        receivedFilesContainer.innerHTML = "";
-        clearHistoryBtn.remove();
-      });
-
-      clearHistoryContainer.appendChild(clearHistoryBtn);
-    }
-
-    // make sure button is visible
-    clearHistoryBtn.style.display = "inline-block";
-  } else {
-    // remove button if no files are le
-    if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener("click", () => {
+      sentFilesContainer.innerHTML = "";
+      receivedFilesContainer.innerHTML = "";
+      fileHistoryDiv.style.display = "none";
       clearHistoryBtn.remove();
-    }
+    });
+
+    clearHistoryContainer.appendChild(clearHistoryBtn);
   }
+  
+  console.log(1);
+  // make sure button is visible
+  fileHistoryDiv.style.display = "block";
+  clearHistoryBtn.style.display = "inline-block";
 }
