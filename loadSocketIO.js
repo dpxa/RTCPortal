@@ -1,3 +1,4 @@
+// load main scripts dynamically
 const isProduction = window.location.hostname !== "localhost";
 const scriptSrc = isProduction
   ? "https://rtcportal.onrender.com/socket.io/socket.io.js"

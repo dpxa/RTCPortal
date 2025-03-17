@@ -53,7 +53,7 @@ const clearHistoryContainer = document.querySelector(
   ".clear-history-container"
 );
 
-// HTML markup for progress container
+// HTML markup for progress container - dynamically created
 const progressContainerHTML = `
   <div class="progress-container">
     <div class="progress-bar" style="width: 0%"></div>
