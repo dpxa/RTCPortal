@@ -7,63 +7,84 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap">
 </head>
-
 <body>
-  <a href="https://github.com/dpxa" target="_blank" class="github-link">GitHub</a>
-  <h1>RTCPortal</h1>
+  <div class="wrapper">
+    <a href="https://github.com/dpxa" target="_blank" class="github-link">GitHub</a>
+    <h1>RTCPortal</h1>
+    <main>
+      <div class="container">
+        <div class="column">
+          <section id="connectionSection">
+            <h2>Connection</h2>
+            <div class="label-container">
+              <label for="peerId">Your ID:</label>
+              <span id="myId"></span>
+              <button id="copyMyId" class="copy-button">Copy My ID</button>
+              <span id="msgId" class="message"></span>
+            </div>
+            <input type="text" id="peerId" placeholder="Enter peer ID..." />
+            <button id="connectBtn" disabled>Connect</button>
+            <button id="disconnectBtn" class="disconnect-button" style="display: none;">Disconnect</button>
+            <div id="connectionStatusContainer" style="display: none;">
+              <label id="connectedToLabel">Connected to:</label>
+              <span id="connectionStatus"></span>
+            </div>
+          </section>
 
-  <main class="container">
-    <div class="column">
-      <section id="connectionSection">
-        <h2>Connection</h2>
-        <div class="label-container">
-          <label for="peerId">Your ID:</label>
-          <span id="myId"></span>
-          <button id="copyMyId" class="copy-button">Copy My ID</button>
-          <span id="msgId" class="message"></span>
-        </div>
-        <input type="text" id="peerId" placeholder="Enter peer ID..." />
-        <button id="connectBtn" disabled>Connect</button>
-        <button id="disconnectBtn" class="disconnect-button" style="display: none;">Disconnect</button>
-        <p id="connectionStatus">Connected to: None</p>
-      </section>
-
-      <section id="fileSection" style="display: none;">
-        <h2>Send File</h2>
-        <div class="label-container">
-          <label for="fileInput">Choose File:</label>
-          <span id="msgFile" class="message"></span>
-        </div>
-        <input type="file" id="fileInput" class="custom-file-input" required />
-        <button id="sendFileBtn" disabled>Send File</button>
-        <!-- Progress bar and percentage dynamically created -->
-      </section>
-    </div>
-
-    <div class="column" id="fileHistory" style="display: none;">
-      <section>
-        <div class="file-history-header">
-          <div class="clear-history-container"></div>
-          <div class="file-history-title">
-            <h2>File History</h2>
-          </div>
-          <div class="spacer"></div>
+          <section id="fileSection" style="display: none;">
+            <h2>Send File</h2>
+            <div class="label-container">
+              <label for="fileInput">Choose File:</label>
+              <span id="msgFile" class="message"></span>
+            </div>
+            <input type="file" id="fileInput" class="custom-file-input" required />
+            <button id="sendFileBtn" disabled>Send File</button>
+            <!-- Progress bar and percentage dynamically created -->
+          </section>
         </div>
 
-        <section id="sentSection">
-          <h3>Sent Files</h3>
-          <div id="sentFiles"></div>
-        </section>
+        <div class="column" id="fileHistory" style="display: none;">
+          <section>
+            <div class="file-history-header">
+              <div class="clear-history-container"></div>
+              <div class="file-history-title">
+                <h2>File History</h2>
+              </div>
+              <div class="spacer"></div>
+            </div>
 
-        <section id="receivedSection">
-          <h3>Received Files</h3>
-          <div id="receivedFiles"></div>
-        </section>
-      </section>
-    </div>
-  </main>
+            <section id="sentSection" style="display: none;">
+              <h3>Sent Files</h3>
+              <div id="sentFiles"></div>
+            </section>
 
-  <!-- Other scripts dynamically loaded -->
+            <section id="receivedSection" style="display: none;">
+              <h3>Received Files</h3>
+              <div id="receivedFiles"></div>
+            </section>
+          </section>
+        </div>
+      </div>
+
+      <!-- About Section -->
+      <div class="container">
+        <div class="column" id="about">
+          <section>
+            <h2>About</h2>
+            <div id="about-text">
+              <p>
+                RTCPortal is a file-sharing tool that enables direct file transfers using <a href="https://en.wikipedia.org/wiki/WebRTC" target="_blank" class="webrtc-link">WebRTC</a>. Unlike cloud storage services, it doesn't store files on a central server. Files are sent through a private peer-to-peer connection.
+              </p>
+              <p>
+                A signaling server using Socket.io helps users connect but is only involved in the initial handshake – it does not store or handle file transfers. Once connected, files are exchanged directly.
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
   <script src="loadSocketIO.js"></script>
 
   <footer>

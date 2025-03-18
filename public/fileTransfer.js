@@ -36,17 +36,19 @@ function resetFileMessage() {
   msgFileSpan.style.fontSize = "";
 } 
 
+let fileStatusDiv = null;
 function ensureStatusElement() {
-  let statusEl = document.getElementById("status");
-  if (!statusEl) {
-    statusEl = document.createElement("div");
-    statusEl.id = "status";
-    fileInput.parentNode.appendChild(statusEl);
+  fileStatusDiv = document.getElementById("status");
+  if (!fileStatusDiv) {
+    fileStatusDiv = document.createElement("div");
+    fileStatusDiv.id = "status";
+    fileInput.parentNode.appendChild(fileStatusDiv);
   }
-  return statusEl;
+  return fileStatusDiv;
 }
 
-const fileStatusDiv = ensureStatusElement();
+const sentSectionDiv = document.getElementById("sentSection");
+const receivedSectionDiv = document.getElementById("receivedSection");
 const fileHistoryDiv = document.getElementById("fileHistory");
 const sentFilesContainer = document.getElementById("sentFiles");
 const receivedFilesContainer = document.getElementById("receivedFiles");
@@ -86,7 +88,6 @@ function ensureProgressContainer() {
 
   container.style.display = "block";
   transferPercentage.style.display = "inline-block";
-  return container;
 }
 
 function updateProgressBar(percent) {
@@ -100,7 +101,9 @@ function resetProgressBar() {
   if (container) {
     container.remove();
   }
-  fileStatusDiv.textContent = "";
+  if (fileStatusDiv) {
+    fileStatusDiv.remove();
+  }
 }
 
 fileInput.addEventListener("input", () => {
@@ -133,6 +136,7 @@ sendFileBtn.addEventListener("click", () => {
 function sendFileInChunks(file) {
   // disable send button to prevent multiple transfers
   sendFileBtn.disabled = true;
+  ensureStatusElement();
   fileStatusDiv.textContent = "File sending...";
   ensureProgressContainer();
 
@@ -201,6 +205,7 @@ function handleControlMessage(str) {
       bytesReceived = 0;
 
       // update UI to show file reception status
+      ensureStatusElement();
       fileStatusDiv.textContent = "File receiving...";
       ensureProgressContainer();
     } else if (message.type === "done") {
@@ -261,6 +266,7 @@ function finalizeReceivedFile() {
       receivedFilesContainer.firstChild
     );
   } else {
+    receivedSectionDiv.style.display = "block";
     receivedFilesContainer.appendChild(container);
   }
 
@@ -305,6 +311,7 @@ function addSentFile(file) {
       sentFilesContainer.firstChild
     );
   } else {
+    sentSectionDiv.style.display = "block";
     sentFilesContainer.appendChild(container);
   }
 
@@ -326,13 +333,14 @@ function updateClearHistoryVisibility() {
       sentFilesContainer.innerHTML = "";
       receivedFilesContainer.innerHTML = "";
       fileHistoryDiv.style.display = "none";
+      sentSectionDiv.style.display = "none";
+      receivedSectionDiv.style.display = "none";
       clearHistoryBtn.remove();
     });
 
     clearHistoryContainer.appendChild(clearHistoryBtn);
   }
   
-  console.log(1);
   // make sure button is visible
   fileHistoryDiv.style.display = "block";
   clearHistoryBtn.style.display = "inline-block";
