@@ -9,7 +9,7 @@
 
 ## Overview  
 
-**RTCPortal** is a web-based file-sharing tool that enables direct file transfers using **WebRTC**. Unlike cloud storage services, it doesn't store files on a central server. Instead, files are sent **peer-to-peer**, providing **privacy and efficiency**.  
+**RTCPortal** is a web-based file-sharing tool that enables direct file transfers using **WebRTC**. Unlike cloud storage services, it doesn't store files on a central server. Instead, files are sent through a private **peer-to-peer** connection.
 
 A **signaling server** using **Socket.io** helps users connect but is only involved in the initial handshake - it does not store or handle file transfers. Once connected, files are exchanged directly.
 
