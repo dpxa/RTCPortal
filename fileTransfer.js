@@ -332,7 +332,6 @@ function updateClearHistoryVisibility() {
     clearHistoryContainer.appendChild(clearHistoryBtn);
   }
   
-  console.log(1);
   // make sure button is visible
   fileHistoryDiv.style.display = "block";
   clearHistoryBtn.style.display = "inline-block";
