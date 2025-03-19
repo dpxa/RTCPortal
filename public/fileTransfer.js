@@ -1,4 +1,3 @@
-// Grab elements for handling file transfers
 const uploadField = document.getElementById("uploadField");
 const fileTransferTrigger = document.getElementById("fileTransferTrigger");
 const fileStatusMessage = document.getElementById("fileStatusMessage");
@@ -12,117 +11,115 @@ const eraseHistoryContainer = document.querySelector(
 );
 
 let fileMsgTimer = null;
-
-function displayFileAlert(alertText) {
-  clearTimeout(fileMsgTimer);
-  fileStatusMessage.textContent = alertText;
-  fileStatusMessage.style.display = "inline-block";
-  fileStatusMessage.style.border = "1.5px solid red";
-  fileStatusMessage.style.color = "red";
-  fileStatusMessage.style.padding = "1px 2px";
-  fileStatusMessage.style.fontSize = "0.7rem";
-  fileMsgTimer = setTimeout(clearFileAlert, 2000);
-}
-
-function clearFileAlert() {
-  clearTimeout(fileMsgTimer);
-  fileStatusMessage.textContent = "";
-  fileStatusMessage.style.display = "none";
-  fileStatusMessage.style.border = "";
-  fileStatusMessage.style.color = "";
-  fileStatusMessage.style.padding = "";
-  fileStatusMessage.style.fontSize = "";
-}
-
 let transferStatusDiv = null;
 let progressContainer = null;
 let progressBar = null;
 let progressPercent = null;
 
-// need a status element on the page
-function ensureTransferStatus() {
-  transferStatusDiv = document.getElementById("transferStatus");
-  if (!transferStatusDiv) {
-    transferStatusDiv = document.createElement("div");
-    transferStatusDiv.id = "transferStatus";
-    uploadField.parentNode.appendChild(transferStatusDiv);
-  }
-  return transferStatusDiv;
-}
+const fileTransferUI = {
+  showAlert(message) {
+    clearTimeout(fileMsgTimer);
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
+    fileStatusMessage.textContent = message;
+    fileStatusMessage.style.display = "inline-block";
+    fileStatusMessage.style.border = "1.5px solid red";
+    fileStatusMessage.style.color = "red";
+    fileStatusMessage.style.padding = "1px 2px";
+    fileStatusMessage.style.fontSize = "0.7rem";
+    fileMsgTimer = setTimeout(() => this.clearAlert(), 4000);
+  },
 
-// HTML snippet for progress bar
-const progressHTML = `
-  <div class="progress-container">
-    <div class="progress-bar" style="width: 0%"></div>
-    <span class="progress-percentage" style="display:none;">0%</span>
-  </div>
-`;
+  clearAlert() {
+    clearTimeout(fileMsgTimer);
+    fileStatusMessage.textContent = "";
+    fileStatusMessage.style.display = "none";
+    fileStatusMessage.style.border = "";
+    fileStatusMessage.style.color = "";
+    fileStatusMessage.style.padding = "";
+    fileStatusMessage.style.fontSize = "";
+  },
 
-// creates or reveals the progress bar container
-function showProgressContainer() {
-  progressContainer = document.querySelector(".progress-container");
-  if (!progressContainer) {
-    const temp = document.createElement("div");
-    temp.innerHTML = progressHTML;
-    progressContainer = temp.firstElementChild;
-    ensureTransferStatus();
-    transferStatusDiv.parentNode.insertBefore(
-      progressContainer,
-      transferStatusDiv.nextSibling
-    );
-    progressBar = progressContainer.querySelector(".progress-bar");
-    progressPercent = progressContainer.querySelector(".progress-percentage");
-  }
-  progressContainer.style.display = "block";
-  progressPercent.style.display = "inline-block";
-  return progressContainer;
-}
+  ensureStatusElement() {
+    transferStatusDiv = document.getElementById("transferStatus");
+    if (!transferStatusDiv) {
+      transferStatusDiv = document.createElement("div");
+      transferStatusDiv.id = "transferStatus";
+      uploadField.parentNode.appendChild(transferStatusDiv);
+    }
+    return transferStatusDiv;
+  },
 
-// updates the progress bar width and label
-function updateProgressBarValue(value) {
-  showProgressContainer();
-  progressBar.style.width = `${value}%`;
-  progressPercent.textContent = `${value}%`;
-}
+  progressHTML: `
+    <div class="progress-container">
+      <div class="progress-bar" style="width: 0%"></div>
+      <span class="progress-percentage" style="display:none;">0%</span>
+    </div>
+  `,
 
-// removes the progress bar and status text
-function resetTransferUI() {
-  if (progressContainer) {
-    progressContainer.remove();
-  }
-  if (transferStatusDiv) {
-    transferStatusDiv.remove();
-  }
-}
+  showProgressContainer() {
+    progressContainer = document.querySelector(".progress-container");
+    if (!progressContainer) {
+      const temp = document.createElement("div");
+      temp.innerHTML = this.progressHTML;
+      progressContainer = temp.firstElementChild;
+      this.ensureStatusElement();
+      transferStatusDiv.parentNode.insertBefore(
+        progressContainer,
+        transferStatusDiv.nextSibling
+      );
+      progressBar = progressContainer.querySelector(".progress-bar");
+      progressPercent = progressContainer.querySelector(".progress-percentage");
+    }
+    progressContainer.style.display = "block";
+    progressPercent.style.display = "inline-block";
+    return progressContainer;
+  },
 
-// Manages incoming file details
+  updateProgressBarValue(value) {
+    this.showProgressContainer();
+    progressBar.style.width = `${value}%`;
+    progressPercent.textContent = `${value}%`;
+  },
+
+  resetTransferUI() {
+    if (progressContainer) {
+      progressContainer.remove();
+      progressContainer = null;
+      progressBar = null;
+      progressPercent = null;
+    }
+    if (transferStatusDiv) {
+      transferStatusDiv.remove();
+      transferStatusDiv = null;
+    }
+  },
+};
+
 let receivedFileDetails = null;
 let collectedChunks = [];
 let receivedBytes = 0;
 const SLICE_SIZE = 16 * 1024;
 
-// enable file send button if valid
 uploadField.addEventListener("input", () => {
   fileTransferTrigger.disabled = uploadField.value.trim() === "";
 });
 
-// initiaites file send
 fileTransferTrigger.addEventListener("click", () => {
   if (!dataChannel || dataChannel.readyState !== "open") {
-    displayFileAlert("Data channel not open! Ending connection...");
+    fileTransferUI.showAlert("Data channel not open! Ending connection...");
     setTimeout(() => {
       resetCurrentConnection();
-    }, 2000);
+    }, 4000);
     return;
   }
   const selectedFile = uploadField.files[0];
-
   if (selectedFile.size === 0) {
-    displayFileAlert("Cannot send. File is Empty.");
+    fileTransferUI.showAlert("Cannot send. File is Empty.");
     return;
   }
+  fileTransferUI.clearAlert();
 
-  clearFileAlert();
   dataChannel.send(
     JSON.stringify({
       type: "metadata",
@@ -133,18 +130,18 @@ fileTransferTrigger.addEventListener("click", () => {
   sendFileSlices(selectedFile);
 });
 
-// reads and transmits the file in slices
 function sendFileSlices(fileObj) {
   fileTransferTrigger.disabled = true;
-  ensureTransferStatus();
+  fileTransferUI.ensureStatusElement();
   transferStatusDiv.textContent = "Sending file...";
-  showProgressContainer();
+  fileTransferUI.showProgressContainer();
 
   let offset = 0;
   const reader = new FileReader();
 
   reader.onload = async (evt) => {
     const chunk = evt.target.result;
+
     while (dataChannel.bufferedAmount > 65535) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -153,7 +150,7 @@ function sendFileSlices(fileObj) {
     offset += chunk.byteLength;
     const pct = Math.floor((offset / fileObj.size) * 100);
     transferStatusDiv.textContent = "Sending file...";
-    updateProgressBarValue(pct);
+    fileTransferUI.updateProgressBarValue(pct);
 
     if (offset < fileObj.size) {
       readChunk(offset);
@@ -162,7 +159,7 @@ function sendFileSlices(fileObj) {
       dataChannel.send(JSON.stringify({ type: "done" }));
       recordSentFile(fileObj);
       setTimeout(() => {
-        resetTransferUI();
+        fileTransferUI.resetTransferUI();
         fileTransferTrigger.disabled = false;
       }, 500);
     }
@@ -170,7 +167,7 @@ function sendFileSlices(fileObj) {
 
   reader.onerror = (error) => {
     console.error("File read error:", error);
-    resetTransferUI();
+    fileTransferUI.resetTransferUI();
     fileTransferTrigger.disabled = false;
   };
 
@@ -180,7 +177,6 @@ function sendFileSlices(fileObj) {
   readChunk(0);
 }
 
-// handles control or metadata messages from the peer
 function processControlInstruction(input) {
   try {
     const info = JSON.parse(input);
@@ -191,9 +187,9 @@ function processControlInstruction(input) {
       };
       collectedChunks = [];
       receivedBytes = 0;
-      ensureTransferStatus();
+      fileTransferUI.ensureStatusElement();
       transferStatusDiv.textContent = "Receiving file...";
-      showProgressContainer();
+      fileTransferUI.showProgressContainer();
     } else if (info.type === "done") {
       finalizeIncomingFile();
     }
@@ -202,18 +198,15 @@ function processControlInstruction(input) {
   }
 }
 
-// handles incoming file chunk data
 function processIncomingChunk(arrayBuffer) {
   if (!receivedFileDetails) return;
   collectedChunks.push(arrayBuffer);
   receivedBytes += arrayBuffer.byteLength;
   const pct = Math.floor((receivedBytes / receivedFileDetails.fileSize) * 100);
   transferStatusDiv.textContent = "Receiving file...";
-  updateProgressBarValue(pct);
+  fileTransferUI.updateProgressBarValue(pct);
 }
 
-// converts the array of chunks into a file object
-// provides link
 function finalizeIncomingFile() {
   const finalBlob = new Blob(collectedChunks);
   const downloadURL = URL.createObjectURL(finalBlob);
@@ -244,14 +237,13 @@ function finalizeIncomingFile() {
   toggleClearHistoryOption();
 
   transferStatusDiv.textContent = "File received!";
-  setTimeout(resetTransferUI, 500);
+  setTimeout(() => fileTransferUI.resetTransferUI(), 500);
 
   receivedFileDetails = null;
   collectedChunks = [];
   receivedBytes = 0;
 }
 
-// convert bytes to a more readable format
 function displayFileSize(numBytes) {
   if (numBytes === 0) return "0 Bytes";
   const units = ["Bytes", "KB", "MB", "GB", "TB"];
@@ -259,7 +251,6 @@ function displayFileSize(numBytes) {
   return `${(numBytes / Math.pow(1024, order)).toFixed(2)} ${units[order]}`;
 }
 
-// records sent files in the UI
 function recordSentFile(fileObj) {
   const fileURL = URL.createObjectURL(fileObj);
   const link = document.createElement("a");
@@ -289,7 +280,6 @@ function recordSentFile(fileObj) {
   toggleClearHistoryOption();
 }
 
-// makes clear history button visible when there is any history
 function toggleClearHistoryOption() {
   let eraseHistoryBtn = document.getElementById("eraseHistoryBtn");
   if (!eraseHistoryBtn) {
