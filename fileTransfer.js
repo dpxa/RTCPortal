@@ -20,6 +20,8 @@ let progressPercent = null;
 const fileTransferUI = {
   showAlert(message) {
     clearTimeout(fileMsgTimer);
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
     fileStatusMessage.textContent = message;
     fileStatusMessage.style.display = "inline-block";
     fileStatusMessage.style.border = "1.5px solid red";
@@ -31,7 +33,6 @@ const fileTransferUI = {
 
   clearAlert() {
     clearTimeout(fileMsgTimer);
-    uploadField.value = "";
     fileStatusMessage.textContent = "";
     fileStatusMessage.style.display = "none";
     fileStatusMessage.style.border = "";
