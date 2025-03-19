@@ -1,4 +1,3 @@
-// Grab elements for handling file transfers
 const uploadField = document.getElementById("uploadField");
 const fileTransferTrigger = document.getElementById("fileTransferTrigger");
 const fileStatusMessage = document.getElementById("fileStatusMessage");
