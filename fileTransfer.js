@@ -11,24 +11,21 @@ const eraseHistoryContainer = document.querySelector(
   ".erase-history-container"
 );
 
-// Timers for showing file-related alerts
 let fileMsgTimer = null;
 
-// Creates a brief alert for file errors
 function displayFileAlert(alertText) {
-  clearFileTimer();
+  clearTimeout(fileMsgTimer);
   fileStatusMessage.textContent = alertText;
   fileStatusMessage.style.display = "inline-block";
   fileStatusMessage.style.border = "1.5px solid red";
   fileStatusMessage.style.color = "red";
   fileStatusMessage.style.padding = "1px 2px";
   fileStatusMessage.style.fontSize = "0.7rem";
-  fileMsgTimer = setTimeout(clearFileAlert, 4000);
+  fileMsgTimer = setTimeout(clearFileAlert, 2000);
 }
 
-// Clears any existing file alerts
 function clearFileAlert() {
-  clearFileTimer();
+  clearTimeout(fileMsgTimer);
   fileStatusMessage.textContent = "";
   fileStatusMessage.style.display = "none";
   fileStatusMessage.style.border = "";
@@ -37,19 +34,12 @@ function clearFileAlert() {
   fileStatusMessage.style.fontSize = "";
 }
 
-// Clears the active timeout, if any
-function clearFileTimer() {
-  clearTimeout(fileMsgTimer);
-  fileMsgTimer = null;
-}
-
-// Elements used for showing file transfer status
 let transferStatusDiv = null;
 let progressContainer = null;
 let progressBar = null;
 let progressPercent = null;
 
-// Ensures we have a dedicated status element on the page
+// need a status element on the page
 function ensureTransferStatus() {
   transferStatusDiv = document.getElementById("transferStatus");
   if (!transferStatusDiv) {
@@ -68,39 +58,37 @@ const progressHTML = `
   </div>
 `;
 
-// Creates or reveals the progress bar container
+// creates or reveals the progress bar container
 function showProgressContainer() {
-  let container = document.querySelector(".progress-container");
-  if (!container) {
+  progressContainer = document.querySelector(".progress-container");
+  if (!progressContainer) {
     const temp = document.createElement("div");
     temp.innerHTML = progressHTML;
-    container = temp.firstElementChild;
+    progressContainer = temp.firstElementChild;
     ensureTransferStatus();
     transferStatusDiv.parentNode.insertBefore(
-      container,
+      progressContainer,
       transferStatusDiv.nextSibling
     );
-    progressContainer = container;
-    progressBar = container.querySelector(".progress-bar");
-    progressPercent = container.querySelector(".progress-percentage");
+    progressBar = progressContainer.querySelector(".progress-bar");
+    progressPercent = progressContainer.querySelector(".progress-percentage");
   }
-  container.style.display = "block";
+  progressContainer.style.display = "block";
   progressPercent.style.display = "inline-block";
-  return container;
+  return progressContainer;
 }
 
-// Updates the progress bar width and label
+// updates the progress bar width and label
 function updateProgressBarValue(value) {
   showProgressContainer();
   progressBar.style.width = `${value}%`;
   progressPercent.textContent = `${value}%`;
 }
 
-// Removes the progress bar and status text
+// removes the progress bar and status text
 function resetTransferUI() {
-  const container = document.querySelector(".progress-container");
-  if (container) {
-    container.remove();
+  if (progressContainer) {
+    progressContainer.remove();
   }
   if (transferStatusDiv) {
     transferStatusDiv.remove();
@@ -113,18 +101,27 @@ let collectedChunks = [];
 let receivedBytes = 0;
 const SLICE_SIZE = 16 * 1024;
 
-// Enables or disables the send button based on file selection
+// enable file send button if valid
 uploadField.addEventListener("input", () => {
   fileTransferTrigger.disabled = uploadField.value.trim() === "";
 });
 
-// Initiates file send when button is clicked
+// initiaites file send
 fileTransferTrigger.addEventListener("click", () => {
   if (!dataChannel || dataChannel.readyState !== "open") {
-    displayFileAlert("Data channel not open!");
+    displayFileAlert("Data channel not open! Ending connection...");
+    setTimeout(() => {
+      resetCurrentConnection();
+    }, 2000);
     return;
   }
   const selectedFile = uploadField.files[0];
+
+  if (selectedFile.size === 0) {
+    displayFileAlert("Cannot send. File is Empty.");
+    return;
+  }
+
   clearFileAlert();
   dataChannel.send(
     JSON.stringify({
@@ -136,7 +133,7 @@ fileTransferTrigger.addEventListener("click", () => {
   sendFileSlices(selectedFile);
 });
 
-// Reads and transmits the file in slices
+// reads and transmits the file in slices
 function sendFileSlices(fileObj) {
   fileTransferTrigger.disabled = true;
   ensureTransferStatus();
@@ -152,6 +149,7 @@ function sendFileSlices(fileObj) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     dataChannel.send(chunk);
+
     offset += chunk.byteLength;
     const pct = Math.floor((offset / fileObj.size) * 100);
     transferStatusDiv.textContent = "Sending file...";
@@ -182,7 +180,7 @@ function sendFileSlices(fileObj) {
   readChunk(0);
 }
 
-// Handles control or metadata messages from the peer
+// handles control or metadata messages from the peer
 function processControlInstruction(input) {
   try {
     const info = JSON.parse(input);
@@ -204,7 +202,7 @@ function processControlInstruction(input) {
   }
 }
 
-// Handles incoming file chunk data
+// handles incoming file chunk data
 function processIncomingChunk(arrayBuffer) {
   if (!receivedFileDetails) return;
   collectedChunks.push(arrayBuffer);
@@ -214,7 +212,8 @@ function processIncomingChunk(arrayBuffer) {
   updateProgressBarValue(pct);
 }
 
-// Converts the array of chunks into a file object
+// converts the array of chunks into a file object
+// provides link
 function finalizeIncomingFile() {
   const finalBlob = new Blob(collectedChunks);
   const downloadURL = URL.createObjectURL(finalBlob);
@@ -252,7 +251,7 @@ function finalizeIncomingFile() {
   receivedBytes = 0;
 }
 
-// Utility to convert bytes to a more readable format
+// convert bytes to a more readable format
 function displayFileSize(numBytes) {
   if (numBytes === 0) return "0 Bytes";
   const units = ["Bytes", "KB", "MB", "GB", "TB"];
@@ -260,7 +259,7 @@ function displayFileSize(numBytes) {
   return `${(numBytes / Math.pow(1024, order)).toFixed(2)} ${units[order]}`;
 }
 
-// Creates a record of sent files in the UI
+// records sent files in the UI
 function recordSentFile(fileObj) {
   const fileURL = URL.createObjectURL(fileObj);
   const link = document.createElement("a");
@@ -290,7 +289,7 @@ function recordSentFile(fileObj) {
   toggleClearHistoryOption();
 }
 
-// Ensures visibility of the "Clear History" button when appropriate
+// makes clear history button visible when there is any history
 function toggleClearHistoryOption() {
   let eraseHistoryBtn = document.getElementById("eraseHistoryBtn");
   if (!eraseHistoryBtn) {
