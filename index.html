@@ -42,10 +42,8 @@
             <!-- Progress bar and percentage dynamically created -->
           </section>
         </div>
-      </div>
 
-      <div class="container" id="fileHistory" style="display: none;">
-        <div class="column">
+        <div class="column" id="fileHistory" style="display: none;">
           <section>
             <div class="file-history-header">
               <div class="clear-history-container"></div>
@@ -71,15 +69,17 @@
       <!-- About Section -->
       <div class="container">
         <div class="column" id="about">
-          <h2>About</h2>
-          <div id="about-text">
-            <p>
-              RTCPortal is a file-sharing tool that enables direct file transfers using <a href="https://en.wikipedia.org/wiki/WebRTC" target="_blank" class="webrtc-link">WebRTC</a>. Unlike cloud storage services, it doesn't store files on a central server. Files are sent through a private peer-to-peer connection.
-            </p>
-            <p>
-              A signaling server using Socket.io helps users connect but is only involved in the initial handshake – it does not store or handle file transfers. Once connected, files are exchanged directly.
-            </p>
-          </div>
+          <section>
+            <h2>About</h2>
+            <div id="about-text">
+              <p>
+                RTCPortal is a file-sharing tool that enables direct file transfers using <a href="https://en.wikipedia.org/wiki/WebRTC" target="_blank" class="webrtc-link">WebRTC</a>. Unlike cloud storage services, it doesn't store files on a central server. Files are sent through a private peer-to-peer connection.
+              </p>
+              <p>
+                A signaling server using Socket.io helps users connect but is only involved in the initial handshake – it does not store or handle file transfers. Once connected, files are exchanged directly.
+              </p>
+            </div>
+          </section>
         </div>
       </div>
     </main>
