@@ -54,6 +54,8 @@ const uiManager = {
   },
 
   showIdError(msg) {
+    clearTimeout(copyMsgTimer);
+    clearTimeout(idMsgTimer);
     statusIdMessage.textContent = msg;
     statusIdMessage.style.display = "inline-block";
     statusIdMessage.style.border = "1.5px solid red";
