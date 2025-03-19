@@ -1,4 +1,3 @@
-// Dynamically load main scripts from production or local environment.
 const environmentIsProd = window.location.hostname !== "localhost";
 const socketIoSrc = environmentIsProd
   ? "https://rtcportal.onrender.com/socket.io/socket.io.js"
