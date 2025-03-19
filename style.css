@@ -30,15 +30,11 @@ h1, h2 {
 }
 
 h1 {
-  margin-bottom: 10px;
   font-size: 2rem;
 }
 
 /* Container styles for centralizing content */
 .container {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   max-width: 1200px;
   margin: 20px auto 0 auto;
   border: 1px solid #4a90e2;
@@ -49,15 +45,13 @@ h1 {
 }
 
 .column {
+  display: flex;
+  flex-direction: column;
   border: 1px solid #4a90e2;
   border-radius: 8px;
-  padding: 20px;
+  padding: 20px 20px 30px 20px;
   background-color: #e9f7fc;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-section {
-  margin-bottom: 20px;
 }
 
 input[type="text"],
@@ -100,7 +94,6 @@ button {
   background-color: #4a90e2;
   border: 1px solid #4a90e2;
   border-radius: 4px;
-  margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 1px;
   transition: box-shadow 0.3s, background-color 0.3s;
@@ -151,6 +144,10 @@ input:disabled {
   text-transform: uppercase;
 }
 
+#fileSection {
+  margin-top: 20px;
+}
+
 /* File history header styling */
 .file-history-header {
   display: flex;
@@ -183,14 +180,18 @@ input:disabled {
   color: #4a90e2;
 }
 
+#receivedSection, #sentSection {
+  margin-top: 10px;
+}
+
 #receivedFiles a,
 #sentFiles a {
-  display: inline-block;
   margin: 5px 0;
   color: #4a90e2;
   text-decoration: none;
   font-weight: 600;
   transition: text-shadow 0.3s;
+  line-height: 1.6;
 }
 
 #receivedFiles a:hover,
@@ -199,6 +200,18 @@ input:disabled {
 }
 
 #myId {
+  font-weight: bold;
+  color: #27ae60;
+}
+
+#connectionStatusContainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+#connectionStatus {
   font-weight: bold;
   color: #4a90e2;
 }
@@ -256,24 +269,13 @@ footer {
   color: #102A43;
 }
 
-.info-section {
-  border: 1px solid #4a90e2;
-  border-radius: 8px;
-  padding: 20px;
-  background-color: #e9f7fc;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+#about {
+  padding-bottom: 20px;
 }
 
-.info-section h2 {
-  margin-bottom: 15px;
-  text-align: center;
-  color: #102A43;
-}
-
-.info-section p {
+#about-text > p {
   line-height: 1.6;
   margin-bottom: 10px;
-  color: #102A43;
 }
 
 .webrtc-link {

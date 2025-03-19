@@ -9,8 +9,10 @@ const myIdSpan = document.getElementById("myId");
 const copyMyIdBtn = document.getElementById("copyMyId");
 const msgIdSpan = document.getElementById("msgId");
 const peerIdInput = document.getElementById("peerId");
+const connectionStatusContainer = document.getElementById("connectionStatusContainer");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
+const connectedToLabel = document.getElementById("connectedToLabel");
 const connectionStatus = document.getElementById("connectionStatus");
 const fileSection = document.getElementById("fileSection");
 
@@ -68,7 +70,7 @@ function resetIdMessage() {
     msgIdSpan.style.padding = "";
     msgIdSpan.style.fontSize = "";
   }
-} 
+}
 
 let connectedPeerId = null;
 let peerConnection = null;
@@ -86,12 +88,15 @@ const config = {
 };
 
 let connectionTimeout = null;
+let newConnectionTimeout = null;
 
 function resetConnection(newConnection = false) {
   if (dataChannel && dataChannel.readyState === "open") {
     dataChannel.send(JSON.stringify({ type: "disconnect" }));
   }
   clearTimeout(connectionTimeout);
+  clearTimeout(newConnectionTimeout);
+  clearTimeout(messageFileTimeout);
 
   // reset webRTC
   if (peerConnection) {
@@ -115,10 +120,12 @@ function resetConnection(newConnection = false) {
 
   if (!newConnection) {
     // reset UI
+    connectionStatusContainer.style.display = "none";
     fileSection.style.display = "none";
-    connectionStatus.textContent = "Connected to: None";
+    connectionStatus.textContent = "None";
     disconnectBtn.style.display = "none";
   }
+
 }
 
 // when client connects to the server
@@ -152,7 +159,15 @@ socket.on("offer", async (data) => {
 
     // save/display caller's id
     connectedPeerId = data.caller;
-    connectionStatus.textContent = `Connected to: ${connectedPeerId}`;
+    clearTimeout(newConnectionTimeout);
+    connectionStatusContainer.style.display = "flex";
+    connectionStatusContainer.style.gap = "10px";
+    connectedToLabel.textContent = "Connected to:";
+    connectionStatus.textContent = `${connectedPeerId}`;
+    connectionStatus.style.borderBottom = "2px solid #4a90e2";
+    newConnectionTimeout = setTimeout(() => {
+      connectionStatus.style.borderBottom = "";
+    }, 2000);
 
     // send the answer to the caller
     socket.emit("answer", {
@@ -171,7 +186,15 @@ socket.on("answer", async (data) => {
 
     // save/display callee's id
     connectedPeerId = data.callee;
-    connectionStatus.textContent = `Connected to: ${connectedPeerId}`;
+    clearTimeout(newConnectionTimeout);
+    connectionStatusContainer.style.display = "flex";
+    connectionStatusContainer.style.gap = "10px";
+    connectionStatus.style.borderBottom = "2px solid #4a90e2";
+    connectedToLabel.textContent = "Connected to:";
+    connectionStatus.textContent = `${connectedPeerId}`;
+    setTimeout(() => {
+      connectionStatus.style.borderBottom = "";
+    }, 2000);
   } catch (err) {
     console.error("Error setting remote description:", err);
   }
@@ -185,12 +208,6 @@ socket.on("candidate", (data) => {
 function createPeerConnection(targetId, isOfferer = false) {
   // new peer connection with ICE servers
   const pc = new RTCPeerConnection(config);
-
-  // reset attempt to connect if it takes too long
-  connectionTimeout = setTimeout(() => {
-    showIdError("Connection timed out. Peer is not available.");
-    resetConnection();
-  }, 15000);
 
   // if we are the offerer, create a data channel
   if (isOfferer) {
@@ -278,7 +295,25 @@ connectBtn.addEventListener("click", () => {
     resetConnection(true);
   }
 
+  clearTimeout(newConnectionTimeout);
+  if (connectedPeerId) {
+    connectionStatus.style.borderBottom = "";
+  }
+  connectionStatusContainer.style.display = "flex";
+  connectionStatusContainer.style.gap = 0;
+  connectedToLabel.textContent = "";
   connectionStatus.textContent = "Waiting for peer...";
+  // reset attempt to connect if it takes too long
+  connectionTimeout = setTimeout(() => {
+    showIdError("Connection timed out. Peer is not available.");
+    if (!connectedPeerId) {
+      connectionStatusContainer.style.display = "none";
+    } else {
+      connectedToLabel.textContent = "Connected to:";
+      connectionStatus.textContent = `${connectedPeerId}`;
+    }
+  }, 15000);
+
   peerConnection = createPeerConnection(peerId, true); // create peer connection as caller
   peerConnection
     .createOffer() // create an offer
