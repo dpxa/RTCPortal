@@ -96,6 +96,14 @@ function updateConnectionUI(opts) {
   endTrigger.style.display = opts.endTriggerDisplay || "none";
 }
 
+function resetConnectionUI() {
+  uploadField.value = "";
+  fileTransferSection.style.display = "none";
+  activeConnectionContainer.style.display = "none";
+  activeConnectionStatus.textContent = "None";
+  endTrigger.style.display = "none";
+}
+
 // close in progress offer/answer attempts
 function abortPendingConnection() {
   clearTimeout(newConnTimer);
@@ -143,11 +151,7 @@ function resetCurrentConnection(sendDisconnect = true) {
     dataChannel = null;
   }
   activePeerId = null;
-  uploadField.value = "";
-  fileTransferSection.style.display = "none";
-  activeConnectionContainer.style.display = "none";
-  activeConnectionStatus.textContent = "None";
-  endTrigger.style.display = "none";
+  resetConnectionUI();
 }
 
 function resetAllConnections() {
@@ -363,6 +367,9 @@ connectTrigger.addEventListener("click", () => {
 
 endTrigger.addEventListener("click", () => {
   resetIdMessage();
+  if (!peerConnection) {
+    resetConnectionUI();
+  }
   if (pendingPeerConnection) {
     abortPendingConnection();
   } else {
