@@ -40,6 +40,7 @@ const fileTransferUI = {
     fileStatusMessage.style.fontSize = "";
   },
 
+  // make sure a file status element exists
   ensureStatusElement() {
     transferStatusDiv = document.getElementById("transferStatus");
     if (!transferStatusDiv) {
@@ -47,9 +48,9 @@ const fileTransferUI = {
       transferStatusDiv.id = "transferStatus";
       uploadField.parentNode.appendChild(transferStatusDiv);
     }
-    return transferStatusDiv;
   },
 
+  // HTML template for progress bar
   progressHTML: `
     <div class="progress-container">
       <div class="progress-bar" style="width: 0%"></div>
@@ -57,13 +58,13 @@ const fileTransferUI = {
     </div>
   `,
 
+  // dynamically create progress bar
   showProgressContainer() {
     progressContainer = document.querySelector(".progress-container");
     if (!progressContainer) {
       const temp = document.createElement("div");
       temp.innerHTML = this.progressHTML;
       progressContainer = temp.firstElementChild;
-      this.ensureStatusElement();
       transferStatusDiv.parentNode.insertBefore(
         progressContainer,
         transferStatusDiv.nextSibling
@@ -73,11 +74,9 @@ const fileTransferUI = {
     }
     progressContainer.style.display = "block";
     progressPercent.style.display = "inline-block";
-    return progressContainer;
   },
 
   updateProgressBarValue(value) {
-    this.showProgressContainer();
     progressBar.style.width = `${value}%`;
     progressPercent.textContent = `${value}%`;
   },
@@ -99,13 +98,14 @@ const fileTransferUI = {
 let receivedFileDetails = null;
 let collectedChunks = [];
 let receivedBytes = 0;
-const SLICE_SIZE = 16 * 1024;
+const SLICE_SIZE = 16384;
 
 uploadField.addEventListener("input", () => {
   fileTransferTrigger.disabled = uploadField.value.trim() === "";
 });
 
 fileTransferTrigger.addEventListener("click", () => {
+  // in case internet drops for either partner
   if (!dataChannel || dataChannel.readyState !== "open") {
     fileTransferUI.showAlert("Data channel not open! Ending connection...");
     setTimeout(() => {
@@ -113,6 +113,7 @@ fileTransferTrigger.addEventListener("click", () => {
     }, 4000);
     return;
   }
+
   const selectedFile = uploadField.files[0];
   if (selectedFile.size === 0) {
     fileTransferUI.showAlert("Cannot send. File is Empty.");
@@ -120,6 +121,7 @@ fileTransferTrigger.addEventListener("click", () => {
   }
   fileTransferUI.clearAlert();
 
+  // send file name and size first so receiver knows when to start
   dataChannel.send(
     JSON.stringify({
       type: "metadata",
@@ -130,7 +132,9 @@ fileTransferTrigger.addEventListener("click", () => {
   sendFileSlices(selectedFile);
 });
 
+// send the actual file
 function sendFileSlices(fileObj) {
+  // make sure dynamically created status elements are present
   fileTransferTrigger.disabled = true;
   fileTransferUI.ensureStatusElement();
   transferStatusDiv.textContent = "Sending file...";
@@ -156,8 +160,10 @@ function sendFileSlices(fileObj) {
       readChunk(offset);
     } else {
       transferStatusDiv.textContent = "File sent!";
+      // send done when file finished sending so receiver knows when to stop
       dataChannel.send(JSON.stringify({ type: "done" }));
       recordSentFile(fileObj);
+      // leave progress bar at 100% for some time
       setTimeout(() => {
         fileTransferUI.resetTransferUI();
         fileTransferTrigger.disabled = false;
@@ -180,6 +186,7 @@ function sendFileSlices(fileObj) {
 function processControlInstruction(input) {
   try {
     const info = JSON.parse(input);
+    // start receiving file
     if (info.type === "metadata") {
       receivedFileDetails = {
         fileName: info.fileName,
@@ -187,9 +194,12 @@ function processControlInstruction(input) {
       };
       collectedChunks = [];
       receivedBytes = 0;
+
+      // make sure dynamically created status elements are present
       fileTransferUI.ensureStatusElement();
       transferStatusDiv.textContent = "Receiving file...";
       fileTransferUI.showProgressContainer();
+    // end receiving file
     } else if (info.type === "done") {
       finalizeIncomingFile();
     }
@@ -207,6 +217,7 @@ function processIncomingChunk(arrayBuffer) {
   fileTransferUI.updateProgressBarValue(pct);
 }
 
+// create and show link to download on receiver's side
 function finalizeIncomingFile() {
   const finalBlob = new Blob(collectedChunks);
   const downloadURL = URL.createObjectURL(finalBlob);
@@ -237,6 +248,7 @@ function finalizeIncomingFile() {
   toggleClearHistoryOption();
 
   transferStatusDiv.textContent = "File received!";
+  // leave progress bar at 100% for some time
   setTimeout(() => fileTransferUI.resetTransferUI(), 500);
 
   receivedFileDetails = null;
@@ -251,6 +263,8 @@ function displayFileSize(numBytes) {
   return `${(numBytes / Math.pow(1024, order)).toFixed(2)} ${units[order]}`;
 }
 
+// create and show link to download on sender's side
+// in case they forgot what they sent
 function recordSentFile(fileObj) {
   const fileURL = URL.createObjectURL(fileObj);
   const link = document.createElement("a");
@@ -280,6 +294,7 @@ function recordSentFile(fileObj) {
   toggleClearHistoryOption();
 }
 
+// history button should be shown whenever there is anything in the history
 function toggleClearHistoryOption() {
   let eraseHistoryBtn = document.getElementById("eraseHistoryBtn");
   if (!eraseHistoryBtn) {
