@@ -94,6 +94,8 @@ const uiManager = {
     activeConnectionStatus.style.textDecorationThickness = "";
     endTrigger.textContent = "Cancel";
     endTrigger.style.display = "inline-block";
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
   },
   updateToConnectedAfterWait(peerId) {
     activeConnectionContainer.style.display = "flex";
@@ -102,6 +104,8 @@ const uiManager = {
     endTrigger.textContent = "Disconnect";
     endTrigger.style.display = "inline-block";
     fileTransferSection.style.display = "block";
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
   },
   updateToConnected(peerId) {
     clearTimeout(newIdAlertTimer);
@@ -114,6 +118,8 @@ const uiManager = {
     endTrigger.textContent = "Disconnect";
     endTrigger.style.display = "inline-block";
     fileTransferSection.style.display = "block";
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
     // briefly underline peer id on connection
     newIdAlertTimer = setTimeout(() => {
       activeConnectionStatus.style.textDecoration = "";
@@ -231,6 +237,7 @@ connectTrigger.addEventListener("click", async () => {
 
 socket.on("offer", async (data) => {
   uiManager.clearAlert();
+  abortPendingConnection();
   if (peerConnection) {
     resetCurrentConnection();
   }
