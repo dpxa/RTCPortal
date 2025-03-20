@@ -231,7 +231,6 @@ connectTrigger.addEventListener("click", async () => {
 
 socket.on("offer", async (data) => {
   uiManager.clearAlert();
-  abortPendingConnection();
   if (peerConnection) {
     resetCurrentConnection();
   }
