@@ -94,8 +94,6 @@ const uiManager = {
     activeConnectionStatus.style.textDecorationThickness = "";
     endTrigger.textContent = "Cancel";
     endTrigger.style.display = "inline-block";
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
   },
   updateToConnectedAfterWait(peerId) {
     activeConnectionContainer.style.display = "flex";
@@ -104,8 +102,6 @@ const uiManager = {
     endTrigger.textContent = "Disconnect";
     endTrigger.style.display = "inline-block";
     fileTransferSection.style.display = "block";
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
   },
   updateToConnected(peerId) {
     clearTimeout(newIdAlertTimer);
@@ -118,8 +114,6 @@ const uiManager = {
     endTrigger.textContent = "Disconnect";
     endTrigger.style.display = "inline-block";
     fileTransferSection.style.display = "block";
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
     // briefly underline peer id on connection
     newIdAlertTimer = setTimeout(() => {
       activeConnectionStatus.style.textDecoration = "";
@@ -311,6 +305,8 @@ function configureConnection(conn, targetId, isInitiator) {
     if (conn.connectionState === "connected") {
       // end pending connection timeout and change UI
       clearTimeout(newConnTimer);
+      uploadField.value = "";
+      fileTransferTrigger.disabled = true;
       uiManager.updateToConnected(activePeerId);
     } else if (["disconnected", "failed"].includes(conn.connectionState)) {
       resetCurrentConnection();
