@@ -1,3 +1,5 @@
+// load main scripts in separate script
+// this way I am able to use local scripts to test
 const environmentIsProd = window.location.hostname !== "localhost";
 const socketIoSrc = environmentIsProd
   ? "https://rtcportal.onrender.com/socket.io/socket.io.js"
