@@ -192,6 +192,8 @@ function processControlInstruction(input) {
         fileName: info.fileName,
         fileSize: info.fileSize,
       };
+      collectedChunks = [];
+      receivedBytes = 0;
 
       // make sure dynamically created status elements are present
       fileTransferUI.ensureStatusElement();
