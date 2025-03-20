@@ -76,12 +76,12 @@ const uiManager = {
   // no current connection
   updateToIdle() {
     fileTransferUI.clearAlert();
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
     activeConnectionContainer.style.display = "none";
     activeConnectionStatus.textContent = "";
     endTrigger.style.display = "none";
     fileTransferSection.style.display = "none";
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
   },
   // waiting for connection
   // always called before new conenction is established on initiators end
@@ -305,8 +305,6 @@ function configureConnection(conn, targetId, isInitiator) {
     if (conn.connectionState === "connected") {
       // end pending connection timeout and change UI
       clearTimeout(newConnTimer);
-      uploadField.value = "";
-      fileTransferTrigger.disabled = true;
       uiManager.updateToConnected(activePeerId);
     } else if (["disconnected", "failed"].includes(conn.connectionState)) {
       resetCurrentConnection();
