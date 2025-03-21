@@ -166,7 +166,13 @@ input:disabled {
   display: none;
 }
 
-#transferStatus {
+#transferStatusSent {
+  margin-top: 10px;
+  font-style: italic;
+  color: #27ae60;
+}
+
+#transferStatusReceived {
   margin-top: 10px;
   font-style: italic;
   color: #4a90e2;
