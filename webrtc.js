@@ -129,14 +129,13 @@ const uiManager = {
 socket.on("connect", () => {
   selfId = socket.id;
   myIdDisplay.textContent = selfId;
-});
-
-// copy user's id
-copyIdTrigger.addEventListener("click", () => {
-  navigator.clipboard
-    .writeText(selfId)
-    .then(() => uiManager.showCopied())
-    .catch((error) => console.error("Error copying ID:", error));
+  // copy user's id
+  copyIdTrigger.addEventListener("click", () => {
+    navigator.clipboard
+      .writeText(selfId)
+      .then(() => uiManager.showCopied())
+      .catch((error) => console.error("Error copying ID:", error));
+  });
 });
 
 partnerIdField.addEventListener("input", () => {
@@ -183,9 +182,12 @@ function resetCurrentConnection(resetUI = true) {
     dataChannel = null;
   }
   activePeerId = null;
-  console.log(1);
   if (resetUI) {
     uiManager.updateToIdle();
+  } else {
+    // ensure file can't be sent before active peer id updated
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
   }
 }
 
@@ -239,8 +241,6 @@ socket.on("offer", async (data) => {
   abortPendingConnection();
   if (peerConnection) {
     resetCurrentConnection(false);
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
   }
 
   peerConnection = new RTCPeerConnection(rtcConfig);
