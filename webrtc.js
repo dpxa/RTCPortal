@@ -140,7 +140,7 @@ copyIdTrigger.addEventListener("click", () => {
       .then(() => uiManager.showCopied())
       .catch((error) => console.error("Error copying ID:", error));
   } else {
-    showIdError("No ID to copy yet.")
+    uiManager.showIdError("No ID to copy yet.")
   }
 });
 
