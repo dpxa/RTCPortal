@@ -50,7 +50,7 @@ const uiManager = {
     statusIdMessage.style.border = "1px solid #ccc";
     statusIdMessage.style.color = "black";
     statusIdMessage.style.padding = "2px 4px";
-    statusIdMessage.style.fontSize = "0.8rem";
+    statusIdMessage.style.fontSize = "0.7rem";
     idMsgTimer = setTimeout(() => this.clearAlert(), 4000);
   },
   showIdError(msg) {
@@ -128,15 +128,20 @@ const uiManager = {
 // when user connects, save their id
 socket.on("connect", () => {
   selfId = socket.id;
+  myIdDisplay.classList.add("active");
   myIdDisplay.textContent = selfId;
 });
 
 // copy user's id
 copyIdTrigger.addEventListener("click", () => {
-  navigator.clipboard
-    .writeText(selfId)
-    .then(() => uiManager.showCopied())
-    .catch((error) => console.error("Error copying ID:", error));
+  if (selfId) {
+    navigator.clipboard
+      .writeText(selfId)
+      .then(() => uiManager.showCopied())
+      .catch((error) => console.error("Error copying ID:", error));
+  } else {
+    uiManager.showIdError("No ID to copy yet.")
+  }
 });
 
 partnerIdField.addEventListener("input", () => {
@@ -183,9 +188,12 @@ function resetCurrentConnection(resetUI = true) {
     dataChannel = null;
   }
   activePeerId = null;
-  console.log(1);
   if (resetUI) {
     uiManager.updateToIdle();
+  } else {
+    // ensure file can't be sent before active peer id updated
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
   }
 }
 
@@ -239,8 +247,6 @@ socket.on("offer", async (data) => {
   abortPendingConnection();
   if (peerConnection) {
     resetCurrentConnection(false);
-    uploadField.value = "";
-    fileTransferTrigger.disabled = true;
   }
 
   peerConnection = new RTCPeerConnection(rtcConfig);
