@@ -95,7 +95,7 @@ const uiManager = {
     endTrigger.textContent = "Cancel";
     endTrigger.style.display = "inline-block";
   },
-  updateToConnectedAfterWait(peerId) {
+  updateToConnectedAfterAbort(peerId) {
     activeConnectionContainer.style.display = "flex";
     activeConnectionLabel.textContent = "Connected to:";
     activeConnectionStatus.textContent = peerId;
@@ -105,6 +105,8 @@ const uiManager = {
   },
   updateToConnected(peerId) {
     clearTimeout(newIdAlertTimer);
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
     activeConnectionContainer.style.display = "flex";
     activeConnectionLabel.textContent = "Connected to:";
     activeConnectionStatus.textContent = peerId;
@@ -158,11 +160,11 @@ function abortPendingConnection() {
     pendingDataChannel = null;
   }
   if (peerConnection) {
-    uiManager.updateToConnectedAfterWait(activePeerId);
+    uiManager.updateToConnectedAfterAbort(activePeerId);
   }
 }
 
-function resetCurrentConnection() {
+function resetCurrentConnection(resetUI = true) {
   uiManager.clearAlert();
   clearTimeout(newConnTimer);
   clearTimeout(fileMsgTimer);
@@ -181,7 +183,10 @@ function resetCurrentConnection() {
     dataChannel = null;
   }
   activePeerId = null;
-  uiManager.updateToIdle();
+  console.log(1);
+  if (resetUI) {
+    uiManager.updateToIdle();
+  }
 }
 
 connectTrigger.addEventListener("click", async () => {
@@ -233,7 +238,9 @@ socket.on("offer", async (data) => {
   uiManager.clearAlert();
   abortPendingConnection();
   if (peerConnection) {
-    resetCurrentConnection();
+    resetCurrentConnection(false);
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
   }
 
   peerConnection = new RTCPeerConnection(rtcConfig);
