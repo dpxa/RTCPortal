@@ -197,7 +197,7 @@ input:disabled {
   text-shadow: 0 0 3px rgba(74, 144, 226, 0.5);
 }
 
-#myIdDisplay {
+#myIdDisplay.active {
   font-weight: bold;
   color: #27ae60;
 }

@@ -50,7 +50,7 @@ const uiManager = {
     statusIdMessage.style.border = "1px solid #ccc";
     statusIdMessage.style.color = "black";
     statusIdMessage.style.padding = "2px 4px";
-    statusIdMessage.style.fontSize = "0.8rem";
+    statusIdMessage.style.fontSize = "0.7rem";
     idMsgTimer = setTimeout(() => this.clearAlert(), 4000);
   },
   showIdError(msg) {
@@ -128,14 +128,20 @@ const uiManager = {
 // when user connects, save their id
 socket.on("connect", () => {
   selfId = socket.id;
+  myIdDisplay.classList.add("active");
   myIdDisplay.textContent = selfId;
-  // copy user's id
-  copyIdTrigger.addEventListener("click", () => {
+});
+
+// copy user's id
+copyIdTrigger.addEventListener("click", () => {
+  if (selfId) {
     navigator.clipboard
       .writeText(selfId)
       .then(() => uiManager.showCopied())
       .catch((error) => console.error("Error copying ID:", error));
-  });
+  } else {
+    showIdError("No ID to copy yet.")
+  }
 });
 
 partnerIdField.addEventListener("input", () => {
