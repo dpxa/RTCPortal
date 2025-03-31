@@ -130,6 +130,7 @@ socket.on("connect", () => {
   selfId = socket.id;
   myIdDisplay.classList.add("active");
   myIdDisplay.textContent = selfId;
+  copyIdTrigger.style.display = "inline-block";
 });
 
 // copy user's id
