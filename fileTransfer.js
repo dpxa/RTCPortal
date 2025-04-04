@@ -54,7 +54,6 @@ const fileTransferUI = {
     fileStatusMessage.style.border = "1.5px solid red";
     fileStatusMessage.style.color = "red";
     fileStatusMessage.style.padding = "1px 2px";
-    fileStatusMessage.style.fontSize = "0.7rem";
     fileMsgTimer = setTimeout(() => this.clearAlert(), 4000);
   },
 
@@ -65,7 +64,6 @@ const fileTransferUI = {
     fileStatusMessage.style.border = "";
     fileStatusMessage.style.color = "";
     fileStatusMessage.style.padding = "";
-    fileStatusMessage.style.fontSize = "";
   },
 
   ensureSentContainer() {
