@@ -47,10 +47,9 @@ const uiManager = {
     clearTimeout(idMsgTimer);
     statusIdMessage.textContent = "Copied";
     statusIdMessage.style.display = "inline-block";
-    statusIdMessage.style.border = "1px solid #ccc";
+    statusIdMessage.style.border = "";
     statusIdMessage.style.color = "black";
-    statusIdMessage.style.padding = "2px 4px";
-    statusIdMessage.style.fontSize = "0.7rem";
+    statusIdMessage.style.padding = "2px 4px 2px 0";
     idMsgTimer = setTimeout(() => this.clearAlert(), 4000);
   },
   showIdError(msg) {
@@ -60,7 +59,6 @@ const uiManager = {
     statusIdMessage.style.border = "1.5px solid red";
     statusIdMessage.style.color = "red";
     statusIdMessage.style.padding = "1px 2px";
-    statusIdMessage.style.fontSize = "0.7rem";
     idMsgTimer = setTimeout(() => uiManager.clearAlert(), 4000);
   },
   clearAlert() {
@@ -70,7 +68,6 @@ const uiManager = {
     statusIdMessage.style.border = "";
     statusIdMessage.style.color = "";
     statusIdMessage.style.padding = "";
-    statusIdMessage.style.fontSize = "";
   },
 
   // no current connection
@@ -128,6 +125,7 @@ const uiManager = {
 // when user connects, save their id
 socket.on("connect", () => {
   selfId = socket.id;
+  myIdDisplay.classList.remove("inactive");
   myIdDisplay.classList.add("active");
   myIdDisplay.textContent = selfId;
   copyIdTrigger.style.display = "inline-block";
