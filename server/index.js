@@ -14,22 +14,16 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 app.get("/test", (req, res) => {
-  console.log(`[${getTimestampPST()}] Ping`);
+  console.log("Ping");
   res.status(200).send(`
     <h1>RTC Portal</h1>
     <p>Server is running.</p>
   `);
 });
 
-const getTimestampPST = () => {
-  return new Date().toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles",
-  });
-};
-
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
-  console.log(`[${getTimestampPST()}] Socket connected: ${socket.id}`);
+  console.log(`Socket connected: ${socket.id}`);
 
   // listen for an "offer" event from a client
   socket.on("offer", (payload) => {
