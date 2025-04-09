@@ -139,7 +139,7 @@ copyIdTrigger.addEventListener("click", () => {
       .then(() => uiManager.showCopied())
       .catch((error) => console.error("Error copying ID:", error));
   } else {
-    uiManager.showIdError("No ID to copy yet.")
+    uiManager.showIdError("No ID to copy yet.");
   }
 });
 
@@ -258,7 +258,7 @@ socket.on("offer", async (data) => {
     const ans = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(ans);
     activePeerId = data.caller;
-    
+
     // send the answer to the caller
     socket.emit("answer", {
       target: data.caller,
