@@ -63,6 +63,7 @@ async function initializeTurnCredentials() {
     const turnServers = await response.json();
 
     if (turnServers && Array.isArray(turnServers) && turnServers.length > 0) {
+      // add TURN servers after STUN servers
       rtcConfig.iceServers = rtcConfig.iceServers.concat(turnServers);
     } else {
       console.warn(
