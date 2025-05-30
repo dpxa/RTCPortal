@@ -1,26 +1,36 @@
-const socket = isProduction
+const socket = environmentIsProd
   ? io("https://rtcportal.onrender.com", {
       transports: ["websocket", "polling"],
     })
   : io();
 
-// HTML objects for WebRTC
-const myIdSpan = document.getElementById("myId");
-const copyMyIdBtn = document.getElementById("copyMyId");
-const copyStatusSpan = document.getElementById("copyStatus");
-const peerIdInput = document.getElementById("peerId");
-const connectBtn = document.getElementById("connectBtn");
-const disconnectBtn = document.getElementById("disconnectBtn");
-const connectionStatus = document.getElementById("connectionStatus");
-const fileSection = document.getElementById("fileSection");
+const myIdDisplay = document.getElementById("myIdDisplay");
+const copyIdTrigger = document.getElementById("copyIdTrigger");
+const statusIdMessage = document.getElementById("statusIdMessage");
+const partnerIdField = document.getElementById("partnerIdField");
+const activeConnectionContainer = document.getElementById(
+  "activeConnectionContainer"
+);
+const connectTrigger = document.getElementById("connectTrigger");
+const endTrigger = document.getElementById("endTrigger");
+const activeConnectionLabel = document.getElementById("activeConnectionLabel");
+const activeConnectionStatus = document.getElementById(
+  "activeConnectionStatus"
+);
+const fileTransferSection = document.getElementById("fileTransferSection");
 
+let idMsgTimer = null;
+let newConnTimer = null;
+let newIdAlertTimer = null;
 
-let connectedPeerId = null;
 let peerConnection = null;
 let dataChannel = null;
-let myId = null;
-// ice server config
-const config = {
+let pendingPeerConnection = null;
+let pendingDataChannel = null;
+let activePeerId = null;
+let selfId = null;
+
+const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -30,38 +40,145 @@ const config = {
   ],
 };
 
-let heartbeatInterval = null;
-let heartbeatTimeout = null;
-let lastHeartbeatReceived = null;
+// encapsulates all changes to UI
+const uiManager = {
+  // change message box above id
+  showCopied() {
+    clearTimeout(idMsgTimer);
+    statusIdMessage.textContent = "Copied";
+    statusIdMessage.style.display = "inline-block";
+    statusIdMessage.style.border = "";
+    statusIdMessage.style.color = "black";
+    statusIdMessage.style.padding = "2px 4px 2px 0";
+    idMsgTimer = setTimeout(() => this.clearAlert(), 4000);
+  },
+  showIdError(msg) {
+    clearTimeout(idMsgTimer);
+    statusIdMessage.textContent = msg;
+    statusIdMessage.style.display = "inline-block";
+    statusIdMessage.style.border = "1.5px solid red";
+    statusIdMessage.style.color = "red";
+    statusIdMessage.style.padding = "1px 2px";
+    idMsgTimer = setTimeout(() => uiManager.clearAlert(), 4000);
+  },
+  clearAlert() {
+    clearTimeout(idMsgTimer);
+    statusIdMessage.textContent = "";
+    statusIdMessage.style.display = "none";
+    statusIdMessage.style.border = "";
+    statusIdMessage.style.color = "";
+    statusIdMessage.style.padding = "";
+  },
 
-function startHeartbeat() {
-  lastHeartbeatReceived = Date.now();
+  // no current connection
+  updateToIdle() {
+    fileTransferUI.clearAlert();
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
+    activeConnectionContainer.style.display = "none";
+    activeConnectionStatus.textContent = "";
+    endTrigger.style.display = "none";
+    fileTransferSection.style.display = "none";
+  },
+  // waiting for connection
+  // always called before new conenction is established on initiators end
+  updateToWaiting() {
+    activeConnectionContainer.style.display = "flex";
+    activeConnectionLabel.textContent = "Waiting for peer...";
+    activeConnectionStatus.textContent = "";
+    activeConnectionStatus.style.textDecoration = "";
+    activeConnectionStatus.style.textDecorationColor = "";
+    activeConnectionStatus.style.textDecorationThickness = "";
+    endTrigger.textContent = "Cancel";
+    endTrigger.style.display = "inline-block";
+  },
+  updateToConnectedAfterAbort(peerId) {
+    activeConnectionContainer.style.display = "flex";
+    activeConnectionLabel.textContent = "Connected to:";
+    activeConnectionStatus.textContent = peerId;
+    endTrigger.textContent = "Disconnect";
+    endTrigger.style.display = "inline-block";
+    fileTransferSection.style.display = "block";
+  },
+  updateToConnected(peerId) {
+    clearTimeout(newIdAlertTimer);
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
+    activeConnectionContainer.style.display = "flex";
+    activeConnectionLabel.textContent = "Connected to:";
+    activeConnectionStatus.textContent = peerId;
+    activeConnectionStatus.style.textDecoration = "underline";
+    activeConnectionStatus.style.textDecorationColor = "#27ae60";
+    activeConnectionStatus.style.textDecorationThickness = "3px";
+    endTrigger.textContent = "Disconnect";
+    endTrigger.style.display = "inline-block";
+    fileTransferSection.style.display = "block";
+    // briefly underline peer id on connection
+    newIdAlertTimer = setTimeout(() => {
+      activeConnectionStatus.style.textDecoration = "";
+      activeConnectionStatus.style.textDecorationColor = "";
+      activeConnectionStatus.style.textDecorationThickness = "";
+    }, 4000);
+  },
+};
 
-  heartbeatInterval = setInterval(() => {
-    if (dataChannel && dataChannel.readyState === "open") {
-      dataChannel.send(
-        JSON.stringify({ type: "heartbeat", timestamp: Date.now() })
-      );
-    }
-  }, 500);
+// when user connects, save their id
+socket.on("connect", () => {
+  selfId = socket.id;
+  myIdDisplay.classList.remove("inactive");
+  myIdDisplay.classList.add("active");
+  myIdDisplay.textContent = selfId;
+  copyIdTrigger.style.display = "inline-block";
+});
 
-  heartbeatTimeout = setInterval(() => {
-    if (Date.now() - lastHeartbeatReceived > 1500) {
-      resetConnection();
-    }
-  }, 750);
-}
+// copy user's id
+copyIdTrigger.addEventListener("click", () => {
+  if (selfId) {
+    navigator.clipboard
+      .writeText(selfId)
+      .then(() => uiManager.showCopied())
+      .catch((error) => console.error("Error copying ID:", error));
+  } else {
+    uiManager.showIdError("No ID to copy yet.");
+  }
+});
 
-function stopHeartbeat() {
-  if (heartbeatInterval) clearInterval(heartbeatInterval);
-  if (heartbeatTimeout) clearInterval(heartbeatTimeout);
-}
+partnerIdField.addEventListener("input", () => {
+  connectTrigger.disabled = partnerIdField.value.trim() === "";
+});
 
-let connectionTimeout = null;
-
-function resetConnection() {
-  // reset webRTC
+// if there is a pending connection ("waiting"), end it
+// cancel was pressed
+function abortPendingConnection() {
+  uiManager.clearAlert();
+  clearTimeout(newConnTimer);
+  if (pendingPeerConnection) {
+    pendingPeerConnection.onicecandidate = null;
+    pendingPeerConnection.ondatachannel = null;
+    pendingPeerConnection.onconnectionstatechange = null;
+    pendingPeerConnection.close();
+    pendingPeerConnection = null;
+  }
+  if (pendingDataChannel) {
+    pendingDataChannel.close();
+    pendingDataChannel = null;
+  }
   if (peerConnection) {
+    uiManager.updateToConnectedAfterAbort(activePeerId);
+  }
+}
+
+function resetCurrentConnection(resetUI = true) {
+  uiManager.clearAlert();
+  clearTimeout(newConnTimer);
+  clearTimeout(fileMsgTimer);
+  if (dataChannel && dataChannel.readyState === "open") {
+    dataChannel.send(JSON.stringify({ type: "disconnect" }));
+  }
+  if (peerConnection) {
+    peerConnection.onicecandidate = null;
+    peerConnection.ondatachannel = null;
+    peerConnection.onconnectionstatechange = null;
     peerConnection.close();
     peerConnection = null;
   }
@@ -69,62 +186,78 @@ function resetConnection() {
     dataChannel.close();
     dataChannel = null;
   }
-  stopHeartbeat();
-  connectedPeerId = null;
-
-  // reset UI
-  fileSection.style.display = "none";
-  connectionStatus.textContent = "Connected to: None";
-  disconnectBtn.style.display = "none";
-
-  // reset file input for if other peer ends connection via exiting tab
-  fileInputFT.value = "";
-  resetProgressBar();
-  sendFileBtnFT.disabled = false;
+  activePeerId = null;
+  if (resetUI) {
+    uiManager.updateToIdle();
+  } else {
+    // ensure file can't be sent before active peer id updated
+    uploadField.value = "";
+    fileTransferTrigger.disabled = true;
+  }
 }
 
-function clearAndResetConnection() {
-  clearTimeout(connectionTimeout);
-  resetConnection();
-}
+connectTrigger.addEventListener("click", async () => {
+  const peerId = partnerIdField.value.trim();
+  partnerIdField.value = "";
+  connectTrigger.disabled = true;
 
-// when client connects to the server
-socket.on("connect", () => {
-  // save/display our id
-  myId = socket.id;
-  myIdSpan.textContent = myId;
-
-  // event listener for copy button
-  copyMyIdBtn.addEventListener("click", () => {
-    navigator.clipboard
-      .writeText(myId)
-      .then(() => {
-        copyStatusSpan.textContent = "Copied";
-        setTimeout(() => {
-          copyStatusSpan.textContent = "";
-        }, 2000);
-      })
-      .catch((err) => console.error("Error copying ID:", err));
-  });
-});
-
-// when user gets offer from a peer
-socket.on("offer", async (data) => {
-  // if the user has an active connection, end it
-  if (peerConnection) {
-    clearAndResetConnection();
+  // basic handling
+  if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
+    uiManager.showIdError("Invalid peer ID!");
+    return;
+  }
+  if (peerId === selfId) {
+    uiManager.showIdError("Cannot connect to yourself.");
+    return;
+  }
+  if (peerId === activePeerId) {
+    uiManager.showIdError("Already connected.");
+    return;
   }
 
-  peerConnection = createPeerConnection(data.caller, false); // create peer connection as callee
+  // this user will have brief waiting screen
+  uiManager.clearAlert();
+  abortPendingConnection();
+  uiManager.updateToWaiting();
+  newConnTimer = setTimeout(() => {
+    uiManager.showIdError("Connection timed out.");
+    abortPendingConnection();
+  }, 30000);
+
+  pendingPeerConnection = new RTCPeerConnection(rtcConfig);
+  configureConnection(pendingPeerConnection, peerId, true);
 
   try {
-    await peerConnection.setRemoteDescription(data.sdp); // set remote description from offer
-    const answer = await peerConnection.createAnswer(); // create an answer to the offer
-    await peerConnection.setLocalDescription(answer); // set local description with the answer
+    // set local SDP answer
+    const offer = await pendingPeerConnection.createOffer();
+    await pendingPeerConnection.setLocalDescription(offer);
 
-    // save/display caller's id
-    connectedPeerId = data.caller;
-    connectionStatus.textContent = `Connected to: ${connectedPeerId}`;
+    socket.emit("offer", {
+      target: peerId,
+      sdp: pendingPeerConnection.localDescription,
+    });
+  } catch (err) {
+    console.error("Error creating offer:", err);
+  }
+});
+
+socket.on("offer", async (data) => {
+  uiManager.clearAlert();
+  abortPendingConnection();
+  if (peerConnection) {
+    resetCurrentConnection(false);
+  }
+
+  peerConnection = new RTCPeerConnection(rtcConfig);
+  configureConnection(peerConnection, data.caller, false);
+
+  try {
+    // set received SDP answer
+    await peerConnection.setRemoteDescription(data.sdp);
+    // set local SDP answer
+    const ans = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(ans);
+    activePeerId = data.caller;
 
     // send the answer to the caller
     socket.emit("answer", {
@@ -136,140 +269,100 @@ socket.on("offer", async (data) => {
   }
 });
 
-// when user gets answer from a peer
 socket.on("answer", async (data) => {
+  if (activePeerId) {
+    resetCurrentConnection();
+  }
   try {
-    await peerConnection.setRemoteDescription(data.sdp); // set remote description from answer
+    // set received SDP answer
+    await pendingPeerConnection.setRemoteDescription(data.sdp);
+    activePeerId = data.callee;
 
-    // save/display callee's id
-    connectedPeerId = data.callee;
-    connectionStatus.textContent = `Connected to: ${connectedPeerId}`;
+    // pending connection was successful, so set it as current connection
+    peerConnection = pendingPeerConnection;
+    dataChannel = pendingDataChannel;
+    pendingPeerConnection = null;
+    pendingDataChannel = null;
   } catch (err) {
-    console.error("Error setting remote description:", err);
+    console.error("Error applying remote description:", err);
   }
 });
 
-// when user gets ICE candidate from a peer
 socket.on("candidate", (data) => {
-  peerConnection.addIceCandidate(data.candidate).catch((e) => console.error(e));
+  // if pending connection exists, that connection should receive the candidate
+  const targetConnection = pendingPeerConnection || peerConnection;
+  if (targetConnection) {
+    targetConnection
+      .addIceCandidate(data.candidate)
+      .catch((e) => console.error(e));
+  }
 });
 
-function createPeerConnection(targetId, isOfferer = false) {
-  // new peer connection with ICE servers
-  const pc = new RTCPeerConnection(config);
-
-  // reset attempt to connect if it takes too long
-  connectionTimeout = setTimeout(() => {
-    alert("Connection timed out. Peer is not available.");
-    resetConnection();
-  }, 10000);
-
-  // if we are the offerer, create a data channel
-  if (isOfferer) {
-    dataChannel = pc.createDataChannel("fileChannel");
-    setupDataChannel(dataChannel);
+function configureConnection(conn, targetId, isInitiator) {
+  // event handler as ICE candiates become avaliable
+  conn.onicecandidate = (evt) => {
+    if (evt.candidate) {
+      socket.emit("candidate", { target: targetId, candidate: evt.candidate });
+    }
+  };
+  // only the initiator creates the data channel
+  conn.ondatachannel = (evt) => {
+    const channel = evt.channel;
+    initializeDataChannel(channel);
+    if (!isInitiator) {
+      dataChannel = channel;
+    }
+  };
+  conn.onconnectionstatechange = () => {
+    if (conn.connectionState === "connected") {
+      // end pending connection timeout and change UI
+      clearTimeout(newConnTimer);
+      uiManager.updateToConnected(activePeerId);
+    } else if (["disconnected", "failed"].includes(conn.connectionState)) {
+      resetCurrentConnection();
+    }
+  };
+  if (isInitiator) {
+    pendingDataChannel = conn.createDataChannel("fileChannel");
+    initializeDataChannel(pendingDataChannel);
   }
-
-  // send ICE candidate to the peer
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("candidate", {
-        target: targetId,
-        candidate: event.candidate,
-      });
-    }
-  };
-
-  // when data channel is received
-  pc.ondatachannel = (event) => {
-    dataChannel = event.channel;
-    setupDataChannel(dataChannel);
-  };
-
-  // monitor connection state to update UI accordingly
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "connected") {
-      clearTimeout(connectionTimeout);
-      fileSection.style.display = "block";
-      disconnectBtn.style.display = "inline-block";
-      lastHeartbeatReceived = Date.now();
-      startHeartbeat();
-    } else if (["disconnected", "failed"].includes(pc.connectionState)) {
-      clearAndResetConnection();
-    }
-  };
-
-  // return configured peer connection
-  return pc;
 }
 
-function setupDataChannel(channel) {
-  // set binary type to arraybuffer for file chunks
+// handle all non file messages
+function initializeDataChannel(channel) {
   channel.binaryType = "arraybuffer";
-  channel.onmessage = (event) => {
-    if (typeof event.data === "string") {
-      const message = JSON.parse(event.data);
-      if (message.type === "heartbeat") {
-        lastHeartbeatReceived = Date.now();
-        return;
-      } else if (message.type === "disconnect") {
-        resetConnection();
-        return;
-      } else if (message.type === "metadata") {
-        stopHeartbeat();
-        handleControlMessage(event.data);
-        return;
-      } else if (message.type === "done") {
-        handleControlMessage(event.data);
-        startHeartbeat();
-        return;
-      }
+  channel.onmessage = (evt) => {
+    if (typeof evt.data === "string") {
+      try {
+        const message = JSON.parse(evt.data);
+        if (message.type === "disconnect") {
+          resetCurrentConnection();
+          return;
+        }
+      } catch (e) {}
+      processControlInstruction(evt.data);
     } else {
-      handleFileChunk(event.data);
+      processIncomingChunk(evt.data);
     }
   };
 }
 
-connectBtn.addEventListener("click", () => {
-  // get and trim peer ID
-  const peerId = peerIdInput.value.trim();
-  peerIdInput.value = "";
-
-  // validate peer ID
-  if (!peerId || !/^[a-zA-Z0-9_-]+$/.test(peerId)) {
-    alert("Invalid peer ID!");
-    return;
+// doubles as cancel button if pending connection exists
+endTrigger.addEventListener("click", () => {
+  if (!peerConnection) {
+    uiManager.updateToIdle();
   }
-  if (peerId === myId) {
-    alert("Invalid peer ID! Cannot connect to yourself.");
-    return;
+  if (pendingPeerConnection) {
+    abortPendingConnection();
+  } else {
+    resetCurrentConnection();
   }
-
-  // if the user has an active connection, end it
-  if (peerConnection) {
-    clearAndResetConnection();
-  }
-
-  connectionStatus.textContent = "Waiting for peer...";
-  peerConnection = createPeerConnection(peerId, true); // create peer connection as caller
-  peerConnection
-    .createOffer() // create an offer
-    .then((offer) => peerConnection.setLocalDescription(offer)) // Set local description with the offer
-    .then(() => {
-      // send the offer to the callee
-      socket.emit("offer", {
-        target: peerId,
-        sdp: peerConnection.localDescription,
-      });
-    })
-    .catch((err) => console.error("Error creating offer:", err));
 });
 
-disconnectBtn.addEventListener("click", () => {
-  if (dataChannel && dataChannel.readyState === "open") {
-    dataChannel.send(JSON.stringify({ type: "disconnect" }));
+// close all possible connections on tab close
+window.addEventListener("beforeunload", () => {
+  if (activePeerId) {
+    resetCurrentConnection();
+    abortPendingConnection();
   }
-
-  resetConnection();
-  disconnectBtn.style.display = "none";
 });
