@@ -8,24 +8,23 @@
 
 ## Overview  
 
-**RTCPortal** is a file-sharing tool that allows for direct file transfers using **WebRTC**. Unlike cloud storage services, it doesn't store files on a central server. Instead, files are sent through a private **peer-to-peer** connection.
+**RTCPortal** is a file-sharing tool that enables direct file transfers between users leveraging **WebRTC**. Unlike cloud storage services, RTCPortal does not store your files on any central server. Instead, files are intended to be sent directly through a **peer-to-peer** (P2P) connection.
 
-A **signaling server** using **Socket.io** helps users connect but is only involved in the initial handshake - it does not store or handle file transfers. Once connected, files are exchanged directly.
+A **signaling server** (using **Socket.io**) is necessary for initiating connections. It helps users discover each other and negotiate the P2P connection details (the "handshake"). This signaling server is only involved in this setup process and does not handle or store the files themselves.
+
+To establish the P2P link, **STUN** servers are first utilized to help peers discover their public network addresses. If a direct connection cannot be established (often due to restrictive network configurations), **TURN** servers are then used as a fallback to relay file data between peers. While this ensures connectivity, data relayed via TURN does pass through the TURN server.
 
 ## How to Use  
-1. **Copy Your ID:** A unique ID is generated automatically  
-2. **Share Your ID:** Send it to the person you want to connect with  
-3. **Enter Their ID:** Type their ID and click "Connect"  
-4. **Start Transferring Files:** Once connected, share files directly  
+1. **Get Your Unique ID:** When you open RTCPortal, a unique ID is automatically generated and displayed for you. Click the "Copy" button next to your ID.
+2. **Share Your ID:** Send this copied ID to the person you want to share files with.
+3. **Get Their ID:** Ask the other person for their RTCPortal ID.
+4. **Connect to Your Peer:** Once connected, share files directly
+5. **Transfer Files:** Once the connection is established, you can select and send files directly to your peer.
 
 ## Tech Stack  
 - **Frontend:** HTML, CSS, JavaScript  
 - **Backend:** Node.js, Express, Socket.IO  
-- **Communication and Hosting:** WebRTC, GitHub Pages (Frontend) + Render (Backend)  
-
-## WIP
-- **TURN server support**: Improve connectivity in restricted networks  
-- **Drag-and-drop file sharing**
+- **Communication and Hosting:** WebRTC, GitHub Pages (Frontend) + Render (Backend)
 
 ## License  
 See the [LICENSE](LICENSE) file for details.  
