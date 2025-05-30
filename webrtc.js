@@ -64,9 +64,6 @@ async function initializeTurnCredentials() {
 
     if (turnServers && Array.isArray(turnServers) && turnServers.length > 0) {
       rtcConfig.iceServers = rtcConfig.iceServers.concat(turnServers);
-      console.log(
-        "Successfully fetched and added TURN servers. Using STUN and TURN."
-      );
     } else {
       console.warn(
         "Fetched TURN credentials list was empty or invalid. Using default STUN servers only."
