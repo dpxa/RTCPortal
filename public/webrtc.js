@@ -40,6 +40,48 @@ const rtcConfig = {
   ],
 };
 
+// get TURN servers
+async function initializeTurnCredentials() {
+  try {
+    const baseApiUrl = environmentIsProd
+      ? "https://rtcportal.onrender.com"
+      : "";
+    const apiUrl = `${baseApiUrl}/api/turn-credentials`;
+    const response = await fetch(apiUrl);
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: "Failed to parse error response" }));
+      throw new Error(
+        `Failed to fetch TURN credentials: ${response.status} ${
+          response.statusText
+        }. ${errorData.details || errorData.error}`
+      );
+    }
+
+    const turnServers = await response.json();
+
+    if (turnServers && Array.isArray(turnServers) && turnServers.length > 0) {
+      rtcConfig.iceServers = rtcConfig.iceServers.concat(turnServers);
+      console.log(
+        "Successfully fetched and added TURN servers. Using STUN and TURN."
+      );
+    } else {
+      console.warn(
+        "Fetched TURN credentials list was empty or invalid. Using default STUN servers only."
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Error fetching TURN credentials, using default STUN servers only:",
+      error
+    );
+  }
+}
+
+initializeTurnCredentials();
+
 // encapsulates all changes to UI
 const uiManager = {
   // change message box above id
