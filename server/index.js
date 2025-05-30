@@ -3,11 +3,19 @@ const http = require("http");
 const socketIO = require("socket.io");
 const helmet = require("helmet");
 const fetch = require("node-fetch");
+const cors = require("cors");
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
+// Configure CORS
+const corsOptions = {
+  origin: "https://dpxa.github.io",
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
 app.use(helmet());
 
 if (process.env.NODE_ENV !== "production") {
@@ -27,7 +35,6 @@ app.get("/api/turn-credentials", async (req, res) => {
   const apiKey = process.env.METERED_API_KEY;
 
   if (!apiKey) {
-    console.error("METERED_API_KEY environment variable is not set.");
     return res
       .status(500)
       .json({ error: "API key not configured on the server." });
@@ -39,21 +46,14 @@ app.get("/api/turn-credentials", async (req, res) => {
     const response = await fetch(meteredApiUrl);
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(
-        `Metered API request failed: ${response.status} ${response.statusText}`,
-        errorText
-      );
-      return res
-        .status(response.status)
-        .json({
-          error: "Failed to fetch TURN credentials from Metered API.",
-          details: errorText,
-        });
+      return res.status(response.status).json({
+        error: "Failed to fetch TURN credentials from Metered API.",
+        details: errorText,
+      });
     }
     const iceServers = await response.json();
     res.status(200).json(iceServers);
   } catch (error) {
-    console.error("Error fetching or processing TURN credentials:", error);
     res
       .status(500)
       .json({ error: "Server error while fetching TURN credentials." });
