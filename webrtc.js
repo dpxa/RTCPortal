@@ -43,7 +43,10 @@ const rtcConfig = {
 // get TURN servers
 async function initializeTurnCredentials() {
   try {
-    const apiUrl = "/api/turn-credentials";
+    const baseApiUrl = environmentIsProd
+      ? "https://rtcportal.onrender.com"
+      : "";
+    const apiUrl = `${baseApiUrl}/api/turn-credentials`;
     const response = await fetch(apiUrl);
 
     if (!response.ok) {
