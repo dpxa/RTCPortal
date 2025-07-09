@@ -37,7 +37,15 @@ const rtcConfig = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
+    { urls: "stun:stun.sipgate.net:3478" },
+    { urls: "stun:stun.ekiga.net:3478" },
+    { urls: "stun:stun.ideasip.com:3478" },
   ],
+
+  iceCandidatePoolSize: 10,
+  iceTransportPolicy: "all",
+  bundlePolicy: "max-bundle",
+  rtcpMuxPolicy: "require",
 };
 
 // get TURN servers
