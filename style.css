@@ -125,16 +125,16 @@ input:disabled {
   margin-bottom: 0;
 }
 
-.end-trigger {
+.end-btn {
   background-color: #e74c3c;
   border: 1px solid #e74c3c;
 }
 
-.end-trigger:hover {
+.end-btn:hover {
   background-color: #c0392b;
 }
 
-#fileStatusMessage {
+#file-status-message {
   margin-left: 10px;
 }
 
@@ -160,31 +160,31 @@ input:disabled {
   text-align: center;
 }
 
-.erase-history-trigger {
+.erase-history-btn {
   font-size: 0.8rem;
   padding: 4px 8px;
   display: none;
 }
 
-#transferStatusSent {
+#transfer-status-sent {
   margin-top: 10px;
   font-style: italic;
   color: #27ae60;
 }
 
-#transferStatusReceived {
+#transfer-status-received {
   margin-top: 10px;
   font-style: italic;
   color: #4a90e2;
 }
 
-#outgoingSection,
-#incomingSection {
+#outgoing-section,
+#incoming-section {
   margin-top: 10px;
 }
 
-#outgoingFiles a,
-#incomingFiles a {
+#outgoing-files a,
+#incoming-files a {
   color: #4a90e2;
   text-decoration: none;
   font-weight: 600;
@@ -192,31 +192,31 @@ input:disabled {
   transition: text-shadow 0.3s;
 }
 
-#outgoingFiles a:hover,
-#incomingFiles a:hover {
+#outgoing-files a:hover,
+#incoming-files a:hover {
   text-shadow: 0 0 3px rgba(74, 144, 226, 0.5);
 }
 
-#myIdDisplay {
+#my-id-display {
   font-weight: bold;
 }
 
-#myIdDisplay.inactive {
+#my-id-display.inactive {
   color: #e74c3c;
 }
 
-#myIdDisplay.active {
+#my-id-display.active {
   color: #27ae60;
 }
 
-#activeConnectionContainer {
+#active-connection-container {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 6px;
 }
 
-#activeConnectionStatus {
+#active-connection-status {
   font-weight: bold;
   color: #4a90e2;
 }
@@ -271,7 +271,7 @@ footer {
   color: #102a43;
 }
 
-#aboutSection > h2 {
+#about-section > h2 {
   margin-bottom: 0px;
 }
 

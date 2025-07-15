@@ -1,100 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RTCPortal - P2P File Sharing</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap">
-  <link rel="apple-touch-icon" sizes="180x180" href="images/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16x16.png">
-  <link rel="manifest" href="images/site.webmanifest">
-</head>
-<body>
-  <div class="wrapper">
-    <a href="https://github.com/dpxa" target="_blank" class="repo-link">GitHub</a>
-    <h1>RTCPortal</h1>
-    <main>
-      <div class="container">
-        <div class="column">
-          <section id="connectionPanel">
-            <h2>Connection</h2>
-            <div class="label-container">
-              <label for="myIdDisplay">Your ID:</label>
-              <span id="myIdDisplay" class="inactive">Waiting for ID</span>
-              <button id="copyIdTrigger" class="copy-button" style="display: none;">Copy My ID</button>
-              <span id="statusIdMessage" class="message"></span>
-            </div>
-            <input type="text" id="partnerIdField" placeholder="Enter peer ID..." />
-            <button id="connectTrigger" disabled>Connect</button>
-            <button id="endTrigger" class="end-trigger" style="display: none;">Disconnect</button>
-            <div id="activeConnectionContainer" style="display: none;">
-              <label id="activeConnectionLabel">Connected to:</label>
-              <span id="activeConnectionStatus"></span>
-            </div>
-          </section>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTCPortal - P2P File Sharing</title>
+    <meta
+      name="description"
+      content="Secure peer-to-peer file sharing using WebRTC. No cloud storage needed - files transfer directly between users."
+    />
 
-          <section id="fileTransferSection" style="display: none;">
-            <h2>Send File</h2>
-            <div class="label-container">
-              <label for="uploadField">Choose File:</label>
-              <span id="fileStatusMessage" class="message"></span>
-            </div>
-            <input type="file" id="uploadField" class="custom-file-input" required />
-            <button id="fileTransferTrigger" disabled>Send File</button>
-          </section>
-
-          <!-- Dynamically create progress bar -->
-        </div>
-
-        <div class="column" id="transferHistory" style="display: none;">
-          <section>
-            <div class="file-history-header">
-              <div class="erase-history-container"></div>
-              <div class="file-history-title">
-                <h2>File History</h2>
+    <link rel="canonical" href="https://dpxa.github.io/RTCPortal/" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="images/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="images/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="images/favicon-16x16.png"
+    />
+    <link rel="manifest" href="images/site.webmanifest" />
+  </head>
+  <body>
+    <div class="wrapper">
+      <a href="https://github.com/dpxa" target="_blank" class="repo-link"
+        >GitHub</a
+      >
+      <h1>RTCPortal</h1>
+      <main>
+        <div class="container">
+          <div class="column">
+            <section id="connection-panel">
+              <h2>Connection</h2>
+              <div class="label-container">
+                <label for="my-id-display">Your ID:</label>
+                <span
+                  id="my-id-display"
+                  class="inactive"
+                  role="status"
+                  aria-live="polite"
+                >
+                  Waiting for ID
+                </span>
+                <button
+                  id="copy-id-btn"
+                  class="copy-button"
+                  style="display: none"
+                >
+                  Copy My ID
+                </button>
+                <span id="status-id-message" class="message"></span>
               </div>
-              <div class="spacer"></div>
-            </div>
-
-            <section id="outgoingSection" style="display: none;">
-              <h3>Sent Files</h3>
-              <div id="outgoingFiles"></div>
+              <input
+                type="text"
+                id="partner-id-field"
+                placeholder="Enter peer ID..."
+              />
+              <button id="connect-btn" disabled>Connect</button>
+              <button id="end-btn" class="end-btn" style="display: none">
+                Disconnect
+              </button>
+              <div id="active-connection-container" style="display: none">
+                <label id="active-connection-label">Connected to:</label>
+                <span id="active-connection-status"></span>
+              </div>
             </section>
 
-            <section id="incomingSection" style="display: none;">
-              <h3>Received Files</h3>
-              <div id="incomingFiles"></div>
+            <section id="file-transfer-section" style="display: none">
+              <h2>Send File</h2>
+              <div class="label-container">
+                <label for="upload-field">Choose File:</label>
+                <span
+                  id="file-status-message"
+                  class="message"
+                  role="alert"
+                  aria-live="assertive"
+                ></span>
+              </div>
+              <input
+                type="file"
+                id="upload-field"
+                class="custom-file-input"
+                required
+              />
+              <button id="file-transfer-btn" disabled>Send File</button>
             </section>
-          </section>
-        </div>
-      </div>
 
-      <div class="container">
-        <div class="column" id="aboutSection">
-          <h2>About</h2>
-          <div id="about-text">
-            <p>
-              RTCPortal is a file-sharing tool that is built with
-              <a href="https://en.wikipedia.org/wiki/WebRTC" target="_blank" class="webrtc-link">WebRTC</a>
-              for direct peer-to-peer transfers. Files are never routed through a central server.
-            </p>
-            <p>
-              A Socket.io signaling service is used to set up initial connections. Once
-              established, data is sent directly between peers.
-            </p>
+            <!-- Dynamically create progress bar -->
+          </div>
+
+          <div class="column" id="transfer-history" style="display: none">
+            <section>
+              <div class="file-history-header">
+                <div class="erase-history-container"></div>
+                <div class="file-history-title">
+                  <h2>File History</h2>
+                </div>
+                <div class="spacer"></div>
+              </div>
+
+              <section id="outgoing-section" style="display: none">
+                <h3>Sent Files</h3>
+                <div id="outgoing-files"></div>
+              </section>
+
+              <section id="incoming-section" style="display: none">
+                <h3>Received Files</h3>
+                <div id="incoming-files"></div>
+              </section>
+            </section>
           </div>
         </div>
-      </div>
-    </main>
-  </div>
 
-  <script src="loadSocketIO.js"></script>
-  <!-- Dynamically load main scripts -->
+        <div class="container">
+          <div class="column" id="about-section">
+            <h2>About RTCPortal</h2>
+            <div id="about-text">
+              <p>
+                RTCPortal is a secure file-sharing tool that uses
+                <a
+                  href="https://en.wikipedia.org/wiki/WebRTC"
+                  target="_blank"
+                  class="webrtc-link"
+                  rel="noopener noreferrer"
+                  >WebRTC</a
+                >
+                for direct peer-to-peer transfers. Files are never stored on any
+                central server.
+              </p>
+              <p>
+                A Socket.io signaling service helps establish initial
+                connections. Once connected, all data transfers happen directly
+                between peers for maximum privacy and security.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
 
-  <footer>
-    <p>&copy; 2025 RTCPortal</p>
-  </footer>
-</body>
+    <script src="loadSocketIO.js"></script>
+    <!-- Dynamically load main scripts -->
+
+    <footer>
+      <p>&copy; 2025 RTCPortal</p>
+    </footer>
+  </body>
 </html>
