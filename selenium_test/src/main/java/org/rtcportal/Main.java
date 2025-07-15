@@ -37,14 +37,14 @@ public class Main {
             wait1.until(ExpectedConditions.titleIs(expectedTitle));
             System.out.println("Peer 1 Page Title: " + driver1.getTitle());
 
-            WebElement myIdDisplay1 = wait1.until(ExpectedConditions.visibilityOfElementLocated(By.id("myIdDisplay")));
+            WebElement myIdDisplay1 = wait1.until(ExpectedConditions.visibilityOfElementLocated(By.id("my-id-display")));
             wait1.until(driverLambda -> {
                 String text = myIdDisplay1.getText();
                 return !text.equals("Waiting for ID") && !text.isEmpty();
             });
             peer1Id = myIdDisplay1.getText();
             System.out.println("Peer 1 'Your ID': " + peer1Id);
-            WebElement copyIdButton1 = driver1.findElement(By.id("copyIdTrigger"));
+            WebElement copyIdButton1 = driver1.findElement(By.id("copy-id-btn"));
             wait1.until(ExpectedConditions.visibilityOf(copyIdButton1));
             System.out.println("Peer 1 'Copy My ID' button visible: " + copyIdButton1.isDisplayed());
 
@@ -55,20 +55,20 @@ public class Main {
             wait2.until(ExpectedConditions.titleIs(expectedTitle));
             System.out.println("Peer 2 Page Title: " + driver2.getTitle());
 
-            WebElement myIdDisplay2 = wait2.until(ExpectedConditions.visibilityOfElementLocated(By.id("myIdDisplay")));
+            WebElement myIdDisplay2 = wait2.until(ExpectedConditions.visibilityOfElementLocated(By.id("my-id-display")));
             wait2.until(driverLambda -> {
                 String text = myIdDisplay2.getText();
                 return !text.equals("Waiting for ID") && !text.isEmpty();
             });
             peer2Id = myIdDisplay2.getText();
             System.out.println("Peer 2 'Your ID': " + peer2Id);
-            WebElement copyIdButton2 = driver2.findElement(By.id("copyIdTrigger"));
+            WebElement copyIdButton2 = driver2.findElement(By.id("copy-id-btn"));
             wait2.until(ExpectedConditions.visibilityOf(copyIdButton2));
             System.out.println("Peer 2 'Copy My ID' button visible: " + copyIdButton2.isDisplayed());
 
             System.out.println("\nPeer 1 connecting to Peer 2");
-            WebElement partnerIdField1 = driver1.findElement(By.id("partnerIdField"));
-            WebElement connectButton1 = driver1.findElement(By.id("connectTrigger"));
+            WebElement partnerIdField1 = driver1.findElement(By.id("partner-id-field"));
+            WebElement connectButton1 = driver1.findElement(By.id("connect-btn"));
 
             System.out.println("Peer 1 'Connect' button initial enabled state: " + connectButton1.isEnabled());
             partnerIdField1.sendKeys(peer2Id);
@@ -81,10 +81,10 @@ public class Main {
 
             System.out.println("\nVerifying connection status");
 
-            WebElement activeConnectionContainer1 = driver1.findElement(By.id("activeConnectionContainer"));
-            WebElement activeConnectionStatus1 = driver1.findElement(By.id("activeConnectionStatus"));
-            WebElement endButton1 = driver1.findElement(By.id("endTrigger"));
-            WebElement fileTransferSection1 = driver1.findElement(By.id("fileTransferSection"));
+            WebElement activeConnectionContainer1 = driver1.findElement(By.id("active-connection-container"));
+            WebElement activeConnectionStatus1 = driver1.findElement(By.id("active-connection-status"));
+            WebElement endButton1 = driver1.findElement(By.id("end-btn"));
+            WebElement fileTransferSection1 = driver1.findElement(By.id("file-transfer-section"));
 
             wait1.until(ExpectedConditions.visibilityOf(activeConnectionContainer1));
             System.out.println("Peer 1 'Active Connection Container' visible: " + activeConnectionContainer1.isDisplayed());
@@ -96,10 +96,10 @@ public class Main {
             wait1.until(ExpectedConditions.visibilityOf(fileTransferSection1));
             System.out.println("Peer 1 'File Transfer Section' visible: " + fileTransferSection1.isDisplayed());
 
-            WebElement activeConnectionContainer2 = driver2.findElement(By.id("activeConnectionContainer"));
-            WebElement activeConnectionStatus2 = driver2.findElement(By.id("activeConnectionStatus"));
-            WebElement endButton2 = driver2.findElement(By.id("endTrigger"));
-            WebElement fileTransferSection2 = driver2.findElement(By.id("fileTransferSection"));
+            WebElement activeConnectionContainer2 = driver2.findElement(By.id("active-connection-container"));
+            WebElement activeConnectionStatus2 = driver2.findElement(By.id("active-connection-status"));
+            WebElement endButton2 = driver2.findElement(By.id("end-btn"));
+            WebElement fileTransferSection2 = driver2.findElement(By.id("file-transfer-section"));
 
             wait2.until(ExpectedConditions.visibilityOf(activeConnectionContainer2));
             System.out.println("Peer 2 'Active Connection Container' visible: " + activeConnectionContainer2.isDisplayed());

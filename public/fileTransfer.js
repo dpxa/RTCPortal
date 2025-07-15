@@ -1,11 +1,11 @@
-const uploadField = document.getElementById("uploadField");
-const fileTransferTrigger = document.getElementById("fileTransferTrigger");
-const fileStatusMessage = document.getElementById("fileStatusMessage");
-const outgoingSectionDiv = document.getElementById("outgoingSection");
-const incomingSectionDiv = document.getElementById("incomingSection");
-const transferHistoryDiv = document.getElementById("transferHistory");
-const outgoingFilesContainer = document.getElementById("outgoingFiles");
-const incomingFilesContainer = document.getElementById("incomingFiles");
+const uploadField = document.getElementById("upload-field");
+const fileTransferBtn = document.getElementById("file-transfer-btn");
+const fileStatusMessage = document.getElementById("file-status-message");
+const outgoingSectionDiv = document.getElementById("outgoing-section");
+const incomingSectionDiv = document.getElementById("incoming-section");
+const transferHistoryDiv = document.getElementById("transfer-history");
+const outgoingFilesContainer = document.getElementById("outgoing-files");
+const incomingFilesContainer = document.getElementById("incoming-files");
 const eraseHistoryContainer = document.querySelector(
   ".erase-history-container"
 );
@@ -24,9 +24,9 @@ let progressPercentReceived = null;
 
 // template for sending UI
 const sentTemplateHTML = `
-  <div id="sentContainer">
-    <div id="transferStatusSent"></div>
-    <div class="progress-container" id="sentProgressContainer">
+  <div id="sent-container">
+    <div id="transfer-status-sent"></div>
+    <div class="progress-container" id="sent-progress-container">
       <div class="progress-bar" style="width: 0%; background: #27ae60;"></div>
       <span class="progress-percentage" style="display:none;">0%</span>
     </div>
@@ -35,9 +35,9 @@ const sentTemplateHTML = `
 
 // template for receiving UI
 const receivedTemplateHTML = `
-  <div id="receivedContainer">
-    <div id="transferStatusReceived"></div>
-    <div class="progress-container" id="receivedProgressContainer">
+  <div id="received-container">
+    <div id="transfer-status-received"></div>
+    <div class="progress-container" id="received-progress-container">
       <div class="progress-bar" style="width: 0%; background: #4a90e2;"></div>
       <span class="progress-percentage" style="display:none;">0%</span>
     </div>
@@ -48,7 +48,7 @@ const fileTransferUI = {
   showAlert(message) {
     clearTimeout(fileMsgTimer);
     uploadField.value = "";
-    fileTransferTrigger.disabled = true;
+    fileTransferBtn.disabled = true;
     fileStatusMessage.textContent = message;
     fileStatusMessage.style.display = "inline-block";
     fileStatusMessage.style.border = "1.5px solid red";
@@ -67,15 +67,15 @@ const fileTransferUI = {
   },
 
   ensureSentContainer() {
-    let container = document.getElementById("sentContainer");
+    let container = document.getElementById("sent-container");
     if (!container) {
       const temp = document.createElement("div");
       temp.innerHTML = sentTemplateHTML;
       container = temp.firstElementChild;
       uploadField.parentNode.appendChild(container);
     }
-    transferStatusDivSent = container.querySelector("#transferStatusSent");
-    progressContainerSent = container.querySelector("#sentProgressContainer");
+    transferStatusDivSent = container.querySelector("#transfer-status-sent");
+    progressContainerSent = container.querySelector("#sent-progress-container");
     progressBarSent = progressContainerSent.querySelector(".progress-bar");
     progressPercentSent = progressContainerSent.querySelector(
       ".progress-percentage"
@@ -91,7 +91,7 @@ const fileTransferUI = {
   },
 
   resetSentTransferUI() {
-    const container = document.getElementById("sentContainer");
+    const container = document.getElementById("sent-container");
     if (container) {
       container.remove();
     }
@@ -103,7 +103,7 @@ const fileTransferUI = {
   },
 
   ensureReceivedContainer() {
-    let container = document.getElementById("receivedContainer");
+    let container = document.getElementById("received-container");
     if (!container) {
       const temp = document.createElement("div");
       temp.innerHTML = receivedTemplateHTML;
@@ -111,10 +111,10 @@ const fileTransferUI = {
       uploadField.parentNode.appendChild(container);
     }
     transferStatusDivReceived = container.querySelector(
-      "#transferStatusReceived"
+      "#transfer-status-received"
     );
     progressContainerReceived = container.querySelector(
-      "#receivedProgressContainer"
+      "#received-progress-container"
     );
     progressBarReceived =
       progressContainerReceived.querySelector(".progress-bar");
@@ -132,7 +132,7 @@ const fileTransferUI = {
   },
 
   resetReceivedTransferUI() {
-    const container = document.getElementById("receivedContainer");
+    const container = document.getElementById("received-container");
     if (container) {
       container.remove();
     }
@@ -149,10 +149,10 @@ let receivedBytes = 0;
 const SLICE_SIZE = 16384;
 
 uploadField.addEventListener("input", () => {
-  fileTransferTrigger.disabled = uploadField.value.trim() === "";
+  fileTransferBtn.disabled = uploadField.value.trim() === "";
 });
 
-fileTransferTrigger.addEventListener("click", () => {
+fileTransferBtn.addEventListener("click", () => {
   // in case internet drops for either partner
   if (!dataChannel || dataChannel.readyState !== "open") {
     fileTransferUI.showAlert("Data channel not open! Ending connection...");
@@ -183,7 +183,7 @@ fileTransferTrigger.addEventListener("click", () => {
 // send the actual file
 function sendFileSlices(fileObj) {
   // make sure dynamically created status elements are present
-  fileTransferTrigger.disabled = true;
+  fileTransferBtn.disabled = true;
   fileTransferUI.ensureSentContainer();
   transferStatusDivSent.textContent = "Sending file...";
 
@@ -213,7 +213,7 @@ function sendFileSlices(fileObj) {
       // leave progress bar at 100% for some time
       setTimeout(() => {
         fileTransferUI.resetSentTransferUI();
-        fileTransferTrigger.disabled = false;
+        fileTransferBtn.disabled = false;
       }, 500);
     }
   };
@@ -221,7 +221,7 @@ function sendFileSlices(fileObj) {
   reader.onerror = (error) => {
     console.error("File read error:", error);
     fileTransferUI.resetSentTransferUI();
-    fileTransferTrigger.disabled = false;
+    fileTransferBtn.disabled = false;
   };
 
   function readChunk(position) {
@@ -342,11 +342,11 @@ function recordSentFile(fileObj) {
 
 // history button should be shown whenever there is anything in the history
 function toggleClearHistoryOption() {
-  let eraseHistoryBtn = document.getElementById("eraseHistoryBtn");
+  let eraseHistoryBtn = document.getElementById("erase-history-btn");
   if (!eraseHistoryBtn) {
     eraseHistoryBtn = document.createElement("button");
-    eraseHistoryBtn.id = "eraseHistoryBtn";
-    eraseHistoryBtn.className = "erase-history-trigger";
+    eraseHistoryBtn.id = "erase-history-btn";
+    eraseHistoryBtn.className = "erase-history-btn";
     eraseHistoryBtn.textContent = "Clear History";
     eraseHistoryBtn.addEventListener("click", () => {
       outgoingFilesContainer.innerHTML = "";

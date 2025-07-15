@@ -4,20 +4,22 @@ const socket = environmentIsProd
     })
   : io();
 
-const myIdDisplay = document.getElementById("myIdDisplay");
-const copyIdTrigger = document.getElementById("copyIdTrigger");
-const statusIdMessage = document.getElementById("statusIdMessage");
-const partnerIdField = document.getElementById("partnerIdField");
+const myIdDisplay = document.getElementById("my-id-display");
+const copyIdBtn = document.getElementById("copy-id-btn");
+const statusIdMessage = document.getElementById("status-id-message");
+const partnerIdField = document.getElementById("partner-id-field");
 const activeConnectionContainer = document.getElementById(
-  "activeConnectionContainer"
+  "active-connection-container"
 );
-const connectTrigger = document.getElementById("connectTrigger");
-const endTrigger = document.getElementById("endTrigger");
-const activeConnectionLabel = document.getElementById("activeConnectionLabel");
+const connectBtn = document.getElementById("connect-btn");
+const endBtn = document.getElementById("end-btn");
+const activeConnectionLabel = document.getElementById(
+  "active-connection-label"
+);
 const activeConnectionStatus = document.getElementById(
-  "activeConnectionStatus"
+  "active-connection-status"
 );
-const fileTransferSection = document.getElementById("fileTransferSection");
+const fileTransferSection = document.getElementById("file-transfer-section");
 
 let idMsgTimer = null;
 let newConnTimer = null;
@@ -122,10 +124,10 @@ const uiManager = {
   updateToIdle() {
     fileTransferUI.clearAlert();
     uploadField.value = "";
-    fileTransferTrigger.disabled = true;
+    fileTransferBtn.disabled = true;
     activeConnectionContainer.style.display = "none";
     activeConnectionStatus.textContent = "";
-    endTrigger.style.display = "none";
+    endBtn.style.display = "none";
     fileTransferSection.style.display = "none";
   },
   // waiting for connection
@@ -137,29 +139,29 @@ const uiManager = {
     activeConnectionStatus.style.textDecoration = "";
     activeConnectionStatus.style.textDecorationColor = "";
     activeConnectionStatus.style.textDecorationThickness = "";
-    endTrigger.textContent = "Cancel";
-    endTrigger.style.display = "inline-block";
+    endBtn.textContent = "Cancel";
+    endBtn.style.display = "inline-block";
   },
   updateToConnectedAfterAbort(peerId) {
     activeConnectionContainer.style.display = "flex";
     activeConnectionLabel.textContent = "Connected to:";
     activeConnectionStatus.textContent = peerId;
-    endTrigger.textContent = "Disconnect";
-    endTrigger.style.display = "inline-block";
+    endBtn.textContent = "Disconnect";
+    endBtn.style.display = "inline-block";
     fileTransferSection.style.display = "block";
   },
   updateToConnected(peerId) {
     clearTimeout(newIdAlertTimer);
     uploadField.value = "";
-    fileTransferTrigger.disabled = true;
+    fileTransferBtn.disabled = true;
     activeConnectionContainer.style.display = "flex";
     activeConnectionLabel.textContent = "Connected to:";
     activeConnectionStatus.textContent = peerId;
     activeConnectionStatus.style.textDecoration = "underline";
     activeConnectionStatus.style.textDecorationColor = "#27ae60";
     activeConnectionStatus.style.textDecorationThickness = "3px";
-    endTrigger.textContent = "Disconnect";
-    endTrigger.style.display = "inline-block";
+    endBtn.textContent = "Disconnect";
+    endBtn.style.display = "inline-block";
     fileTransferSection.style.display = "block";
     // briefly underline peer id on connection
     newIdAlertTimer = setTimeout(() => {
@@ -176,11 +178,11 @@ socket.on("connect", () => {
   myIdDisplay.classList.remove("inactive");
   myIdDisplay.classList.add("active");
   myIdDisplay.textContent = selfId;
-  copyIdTrigger.style.display = "inline-block";
+  copyIdBtn.style.display = "inline-block";
 });
 
 // copy user's id
-copyIdTrigger.addEventListener("click", () => {
+copyIdBtn.addEventListener("click", () => {
   if (selfId) {
     navigator.clipboard
       .writeText(selfId)
@@ -192,7 +194,7 @@ copyIdTrigger.addEventListener("click", () => {
 });
 
 partnerIdField.addEventListener("input", () => {
-  connectTrigger.disabled = partnerIdField.value.trim() === "";
+  connectBtn.disabled = partnerIdField.value.trim() === "";
 });
 
 // if there is a pending connection ("waiting"), end it
@@ -240,14 +242,14 @@ function resetCurrentConnection(resetUI = true) {
   } else {
     // ensure file can't be sent before active peer id updated
     uploadField.value = "";
-    fileTransferTrigger.disabled = true;
+    fileTransferBtn.disabled = true;
   }
 }
 
-connectTrigger.addEventListener("click", async () => {
+connectBtn.addEventListener("click", async () => {
   const peerId = partnerIdField.value.trim();
   partnerIdField.value = "";
-  connectTrigger.disabled = true;
+  connectBtn.disabled = true;
 
   // basic handling
   if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
@@ -396,7 +398,7 @@ function initializeDataChannel(channel) {
 }
 
 // doubles as cancel button if pending connection exists
-endTrigger.addEventListener("click", () => {
+endBtn.addEventListener("click", () => {
   if (!peerConnection) {
     uiManager.updateToIdle();
   }
