@@ -37,7 +37,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1200px;
+  width: min(1200px, 90vw);
   margin: 20px auto 0;
   border: 1px solid #4a90e2;
   border-radius: 10px;
