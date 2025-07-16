@@ -1,28 +1,27 @@
 {
   "name": "rtcportal",
   "version": "1.0.0",
-  "description": "",
+  "description": "Peer-to-peer file transfer using WebRTC and Socket.IO signaling.",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "node server/index.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dpxa/RTCPortal.git"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/dpxa/RTCPortal/issues"
   },
   "homepage": "https://github.com/dpxa/RTCPortal#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.21.2",
+    "express": "^5.1.0",
     "helmet": "^8.0.0",
-    "node-fetch": "^2.7.0",
+    "node-fetch": "^3.3.2",
     "socket.io": "^4.8.1"
   }
 }
