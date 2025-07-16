@@ -2,7 +2,6 @@ const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
 const helmet = require("helmet");
-const fetch = require("node-fetch");
 const cors = require("cors");
 
 const app = express();
@@ -32,6 +31,7 @@ app.get("/test", (req, res) => {
 
 // return TURN servers from Open Relay
 app.get("/api/turn-credentials", async (req, res) => {
+  const fetch = (await import("node-fetch")).default;
   const apiKey = process.env.METERED_API_KEY;
 
   if (!apiKey) {

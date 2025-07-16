@@ -62,7 +62,7 @@ async function initializeTurnCredentials() {
     if (!response.ok) {
       const errorData = await response
         .json()
-        .catch(() => ({ error: "Failed to parse error response" }));
+        .catch(() => ({ error: "Failed to parse error response." }));
       throw new Error(
         `Failed to fetch TURN credentials: ${response.status} ${
           response.statusText
@@ -82,7 +82,7 @@ async function initializeTurnCredentials() {
     }
   } catch (error) {
     console.error(
-      "Error fetching TURN credentials, using default STUN servers only:",
+      "Error fetching TURN credentials, using default STUN servers only.",
       error
     );
   }
