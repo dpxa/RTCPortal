@@ -117,6 +117,7 @@ input:disabled {
   align-items: center;
   gap: 10px;
   margin-bottom: 6px;
+  flex-wrap: flex;
 }
 
 .copy-button {
@@ -214,6 +215,7 @@ input:disabled {
   align-items: center;
   gap: 10px;
   margin-top: 6px;
+  flex-wrap: wrap;
 }
 
 #active-connection-status {
