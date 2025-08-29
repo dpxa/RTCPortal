@@ -149,7 +149,8 @@ let receivedBytes = 0;
 const SLICE_SIZE = 16384;
 
 uploadField.addEventListener("input", () => {
-  fileTransferBtn.disabled = uploadField.value.trim() === "";
+  fileTransferBtn.disabled =
+    uploadField.value.trim() === "" || dataChannel.readyState !== "open";
 });
 
 fileTransferBtn.addEventListener("click", () => {
