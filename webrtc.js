@@ -293,6 +293,8 @@ connectBtn.addEventListener("click", async () => {
     return;
   }
 
+  socket.emit("connection-attempt");
+
   // this user will have brief waiting screen
   uiManager.clearAlert();
   abortPendingConnection();
@@ -408,6 +410,10 @@ function configureConnection(conn, targetId, isInitiator) {
   };
   conn.onconnectionstatechange = () => {
     if (conn.connectionState === "connected") {
+      if (isInitiator) {
+        socket.emit("connection-success");
+      }
+
       if (connectionStartTime) {
         totalConnectionDuration = performance.now() - connectionStartTime;
 
@@ -422,6 +428,8 @@ function configureConnection(conn, targetId, isInitiator) {
       // end pending connection timeout and change UI
       clearTimeout(newConnTimer);
       uiManager.updateToConnected(activePeerId);
+      
+      fetchConnectionStats();
     } else if (["disconnected", "failed"].includes(conn.connectionState)) {
       resetCurrentConnection();
     }

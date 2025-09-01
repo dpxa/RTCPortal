@@ -288,3 +288,35 @@ footer {
   font-weight: bold;
   transition: color 0.2s ease, text-shadow 0.3s ease;
 }
+
+#stats-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.stats-label {
+  font-weight: 400;
+  color: #102a43;
+  font-size: 1rem;
+}
+
+.stats-value {
+  font-weight: bold;
+  color: #4a90e2;
+  font-size: 1rem;
+}
+
+#success-rate-display {
+  font-size: 1.1rem;
+}
