@@ -60,13 +60,65 @@ app.get("/api/turn-credentials", async (req, res) => {
   }
 });
 
+// Connection statistics storage
+let connectionStats = {
+  totalAttempts: 0,
+  successfulConnections: 0,
+  startTime: Date.now(),
+};
+
+// return connection success rate statistics
+app.get("/api/connection-stats", (req, res) => {
+  const successRate =
+    connectionStats.totalAttempts > 0
+      ? (
+          (connectionStats.successfulConnections /
+            connectionStats.totalAttempts) *
+          100
+        ).toFixed(1)
+      : "0.0";
+
+  const uptimeHours = (
+    (Date.now() - connectionStats.startTime) /
+    (1000 * 60 * 60)
+  ).toFixed(1);
+
+  res.status(200).json({
+    successRate: parseFloat(successRate),
+    uptimeHours: parseFloat(uptimeHours),
+  });
+});
+
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
+  // track connection attempts and successes
+  socket.on("connection-attempt", () => {
+    connectionStats.totalAttempts++;
+  });
+
+  socket.on("connection-success", () => {
+    connectionStats.successfulConnections++;
+  });
+
+  // track user-caused connection failures only
+  socket.on("connection-user-failed", () => {
+    if (connectionStats.totalAttempts > 0) {
+      connectionStats.totalAttempts--;
+    }
+  });
+
   // listen for an "offer" event from a client
   socket.on("offer", (payload) => {
     console.log(`Received offer from ${socket.id} to ${payload.target}`);
+
+    const targetSocket = io.sockets.sockets.get(payload.target);
+    if (!targetSocket) {
+      socket.emit("peer-not-found", { target: payload.target });
+      return;
+    }
+
     // relay it to payload.target
     io.to(payload.target).emit("offer", {
       sdp: payload.sdp,

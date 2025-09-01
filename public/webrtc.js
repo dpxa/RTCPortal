@@ -136,7 +136,7 @@ const uiManager = {
     fileTransferSection.style.display = "none";
   },
   // waiting for connection
-  // always called before new conenction is established on initiators end
+  // always called before new connection is established on initiators end
   updateToWaiting() {
     activeConnectionContainer.style.display = "flex";
     activeConnectionLabel.textContent = "Waiting for peer...";
@@ -208,6 +208,9 @@ function abortPendingConnection() {
   uiManager.clearAlert();
   clearTimeout(newConnTimer);
 
+  if (pendingPeerConnection) {
+    socket.emit("connection-user-failed");
+  }
   if (pendingPeerConnection) {
     pendingPeerConnection.onicecandidate = null;
     pendingPeerConnection.ondatachannel = null;
@@ -292,6 +295,8 @@ connectBtn.addEventListener("click", async () => {
     uiManager.showIdError("Already connected.");
     return;
   }
+
+  socket.emit("connection-attempt");
 
   // this user will have brief waiting screen
   uiManager.clearAlert();
@@ -391,6 +396,19 @@ socket.on("candidate", (data) => {
   }
 });
 
+socket.on("peer-not-found", (data) => {
+  if (!peerConnection) {
+    uiManager.updateToIdle();
+  }
+  if (pendingPeerConnection) {
+    abortPendingConnection();
+  } else {
+    resetCurrentConnection();
+  }
+
+  uiManager.showIdError("Peer ID not found!");
+});
+
 function configureConnection(conn, targetId, isInitiator) {
   // event handler as ICE candiates become avaliable
   conn.onicecandidate = (evt) => {
@@ -408,6 +426,10 @@ function configureConnection(conn, targetId, isInitiator) {
   };
   conn.onconnectionstatechange = () => {
     if (conn.connectionState === "connected") {
+      if (isInitiator) {
+        socket.emit("connection-success");
+      }
+
       if (connectionStartTime) {
         totalConnectionDuration = performance.now() - connectionStartTime;
 
@@ -422,6 +444,8 @@ function configureConnection(conn, targetId, isInitiator) {
       // end pending connection timeout and change UI
       clearTimeout(newConnTimer);
       uiManager.updateToConnected(activePeerId);
+
+      fetchConnectionStats();
     } else if (["disconnected", "failed"].includes(conn.connectionState)) {
       resetCurrentConnection();
     }
@@ -467,6 +491,8 @@ endBtn.addEventListener("click", () => {
 window.addEventListener("beforeunload", () => {
   if (activePeerId) {
     resetCurrentConnection();
+  }
+  if (pendingPeerConnection) {
     abortPendingConnection();
   }
 });
