@@ -8,7 +8,7 @@ const socketIoSrc = environmentIsProd
 const socketScript = document.createElement("script");
 socketScript.src = socketIoSrc;
 socketScript.onload = function () {
-  ["webrtc.js", "fileTransfer.js"].forEach((fileName) => {
+  ["fileTransfer.js", "webrtc.js"].forEach((fileName) => {
     const tempScript = document.createElement("script");
     tempScript.src = fileName;
     document.body.appendChild(tempScript);

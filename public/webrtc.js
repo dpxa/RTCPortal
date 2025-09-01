@@ -32,6 +32,11 @@ let pendingDataChannel = null;
 let activePeerId = null;
 let selfId = null;
 
+let connectionStartTime = null;
+let answerReceivedTime = null;
+let signalingDuration = null;
+let totalConnectionDuration = null;
+
 const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -202,6 +207,7 @@ partnerIdField.addEventListener("input", () => {
 function abortPendingConnection() {
   uiManager.clearAlert();
   clearTimeout(newConnTimer);
+
   if (pendingPeerConnection) {
     pendingPeerConnection.onicecandidate = null;
     pendingPeerConnection.ondatachannel = null;
@@ -222,6 +228,7 @@ function resetCurrentConnection(resetUI = true) {
   uiManager.clearAlert();
   clearTimeout(newConnTimer);
   clearTimeout(fileMsgTimer);
+
   if (dataChannel && dataChannel.readyState === "open") {
     dataChannel.send(JSON.stringify({ type: "disconnect" }));
   }
@@ -243,6 +250,27 @@ function resetCurrentConnection(resetUI = true) {
     // ensure file can't be sent before active peer id updated
     uploadField.value = "";
     fileTransferBtn.disabled = true;
+  }
+}
+
+function resetConnectionTiming() {
+  connectionStartTime = null;
+  answerReceivedTime = null;
+  signalingDuration = null;
+  totalConnectionDuration = null;
+}
+
+function logConnectionStats() {
+  if (signalingDuration && totalConnectionDuration) {
+    signalingDuration = Math.round(signalingDuration * 100) / 100;
+    const webRTCNegotiation =
+      Math.round((totalConnectionDuration - signalingDuration) * 100) / 100;
+    totalConnectionDuration = Math.round(totalConnectionDuration * 100) / 100;
+
+    console.log(`Connection Timing Stats (Peer: ${activePeerId}):
+    - Signaling Duration: ${signalingDuration}ms
+    - WebRTC Negotiation: ${webRTCNegotiation}ms
+    - Total Connection Duration: ${totalConnectionDuration}ms`);
   }
 }
 
@@ -269,6 +297,9 @@ connectBtn.addEventListener("click", async () => {
   uiManager.clearAlert();
   abortPendingConnection();
   uiManager.updateToWaiting();
+
+  connectionStartTime = performance.now();
+
   newConnTimer = setTimeout(() => {
     uiManager.showIdError("Connection timed out.");
     abortPendingConnection();
@@ -288,6 +319,7 @@ connectBtn.addEventListener("click", async () => {
     });
   } catch (err) {
     console.error("Error creating offer:", err);
+    resetConnectionTiming();
   }
 });
 
@@ -297,6 +329,9 @@ socket.on("offer", async (data) => {
   if (peerConnection) {
     resetCurrentConnection(false);
   }
+
+  // Reset timing for new connection
+  connectionStartTime = performance.now();
 
   peerConnection = new RTCPeerConnection(rtcConfig);
   configureConnection(peerConnection, data.caller, false);
@@ -316,10 +351,17 @@ socket.on("offer", async (data) => {
     });
   } catch (err) {
     console.error("Error handling offer:", err);
+    resetConnectionTiming();
   }
 });
 
 socket.on("answer", async (data) => {
+  answerReceivedTime = performance.now();
+
+  if (connectionStartTime) {
+    signalingDuration = answerReceivedTime - connectionStartTime;
+  }
+
   if (activePeerId) {
     resetCurrentConnection();
   }
@@ -335,6 +377,7 @@ socket.on("answer", async (data) => {
     pendingDataChannel = null;
   } catch (err) {
     console.error("Error applying remote description:", err);
+    resetConnectionTiming();
   }
 });
 
@@ -365,6 +408,17 @@ function configureConnection(conn, targetId, isInitiator) {
   };
   conn.onconnectionstatechange = () => {
     if (conn.connectionState === "connected") {
+      if (connectionStartTime) {
+        totalConnectionDuration = performance.now() - connectionStartTime;
+
+        if (answerReceivedTime) {
+          signalingDuration = answerReceivedTime - connectionStartTime;
+        }
+
+        logConnectionStats();
+        resetConnectionTiming();
+      }
+
       // end pending connection timeout and change UI
       clearTimeout(newConnTimer);
       uiManager.updateToConnected(activePeerId);
