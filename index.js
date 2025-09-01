@@ -102,9 +102,23 @@ io.on("connection", (socket) => {
     connectionStats.successfulConnections++;
   });
 
+  // track user-caused connection failures only
+  socket.on("connection-user-failed", () => {
+    if (connectionStats.totalAttempts > 0) {
+      connectionStats.totalAttempts--;
+    }
+  });
+
   // listen for an "offer" event from a client
   socket.on("offer", (payload) => {
     console.log(`Received offer from ${socket.id} to ${payload.target}`);
+
+    const targetSocket = io.sockets.sockets.get(payload.target);
+    if (!targetSocket) {
+      socket.emit("peer-not-found", { target: payload.target });
+      return;
+    }
+
     // relay it to payload.target
     io.to(payload.target).emit("offer", {
       sdp: payload.sdp,
