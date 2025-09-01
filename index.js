@@ -60,9 +60,47 @@ app.get("/api/turn-credentials", async (req, res) => {
   }
 });
 
+// Connection statistics storage
+let connectionStats = {
+  totalAttempts: 0,
+  successfulConnections: 0,
+  startTime: Date.now(),
+};
+
+// return connection success rate statistics
+app.get("/api/connection-stats", (req, res) => {
+  const successRate =
+    connectionStats.totalAttempts > 0
+      ? (
+          (connectionStats.successfulConnections /
+            connectionStats.totalAttempts) *
+          100
+        ).toFixed(1)
+      : "0.0";
+
+  const uptimeHours = (
+    (Date.now() - connectionStats.startTime) /
+    (1000 * 60 * 60)
+  ).toFixed(1);
+
+  res.status(200).json({
+    successRate: parseFloat(successRate),
+    uptimeHours: parseFloat(uptimeHours),
+  });
+});
+
 // when a client connects to Socket.IO server
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
+
+  // track connection attempts and successes
+  socket.on("connection-attempt", () => {
+    connectionStats.totalAttempts++;
+  });
+
+  socket.on("connection-success", () => {
+    connectionStats.successfulConnections++;
+  });
 
   // listen for an "offer" event from a client
   socket.on("offer", (payload) => {
