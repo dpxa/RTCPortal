@@ -37,31 +37,12 @@ let answerReceivedTime = null;
 let signalingDuration = null;
 let totalConnectionDuration = null;
 
-const rtcConfig = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-    { urls: "stun:stun.sipgate.net:3478" },
-    { urls: "stun:stun.ekiga.net:3478" },
-    { urls: "stun:stun.ideasip.com:3478" },
-  ],
-
-  iceCandidatePoolSize: 10,
-  iceTransportPolicy: "all",
-  bundlePolicy: "max-bundle",
-  rtcpMuxPolicy: "require",
-};
+let rtcConfig = { ...RTC_CONFIG };
 
 // get TURN servers
 async function initializeTurnCredentials() {
   try {
-    const baseApiUrl = environmentIsProd
-      ? "https://rtcportal.onrender.com"
-      : "";
-    const apiUrl = `${baseApiUrl}/api/turn-credentials`;
+    const apiUrl = `${BASE_API_URL}/api/turn-credentials`;
     const response = await fetch(apiUrl);
 
     if (!response.ok) {
@@ -82,12 +63,12 @@ async function initializeTurnCredentials() {
       rtcConfig.iceServers = rtcConfig.iceServers.concat(turnServers);
     } else {
       console.warn(
-        "Fetched TURN credentials list was empty or invalid. Using default STUN servers only."
+        "Using default STUN servers only."
       );
     }
   } catch (error) {
     console.error(
-      "Error fetching TURN credentials, using default STUN servers only.",
+      "Using default STUN servers only.",
       error
     );
   }
@@ -105,7 +86,7 @@ const uiManager = {
     statusIdMessage.style.border = "";
     statusIdMessage.style.color = "black";
     statusIdMessage.style.padding = "2px 4px 2px 0";
-    idMsgTimer = setTimeout(() => this.clearAlert(), 4000);
+    idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   },
   showIdError(msg) {
     clearTimeout(idMsgTimer);
@@ -114,7 +95,7 @@ const uiManager = {
     statusIdMessage.style.border = "1.5px solid red";
     statusIdMessage.style.color = "red";
     statusIdMessage.style.padding = "1px 2px";
-    idMsgTimer = setTimeout(() => uiManager.clearAlert(), 4000);
+    idMsgTimer = setTimeout(() => uiManager.clearAlert(), ALERT_TIMEOUT);
   },
   clearAlert() {
     clearTimeout(idMsgTimer);
@@ -173,7 +154,7 @@ const uiManager = {
       activeConnectionStatus.style.textDecoration = "";
       activeConnectionStatus.style.textDecorationColor = "";
       activeConnectionStatus.style.textDecorationThickness = "";
-    }, 4000);
+    }, ID_UNDERLINE_TIMEOUT);
   },
 };
 
@@ -308,7 +289,7 @@ connectBtn.addEventListener("click", async () => {
   newConnTimer = setTimeout(() => {
     uiManager.showIdError("Connection timed out.");
     abortPendingConnection();
-  }, 30000);
+  }, CONNECTION_TIMEOUT);
 
   pendingPeerConnection = new RTCPeerConnection(rtcConfig);
   configureConnection(pendingPeerConnection, peerId, true);

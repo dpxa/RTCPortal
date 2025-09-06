@@ -54,7 +54,7 @@ const fileTransferUI = {
     fileStatusMessage.style.border = "1.5px solid red";
     fileStatusMessage.style.color = "red";
     fileStatusMessage.style.padding = "1px 2px";
-    fileMsgTimer = setTimeout(() => this.clearAlert(), 4000);
+    fileMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   },
 
   clearAlert() {
@@ -146,7 +146,6 @@ const fileTransferUI = {
 let receivedFileDetails = null;
 let collectedChunks = [];
 let receivedBytes = 0;
-const SLICE_SIZE = 16384;
 
 uploadField.addEventListener("input", () => {
   fileTransferBtn.disabled =

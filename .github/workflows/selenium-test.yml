@@ -32,7 +32,7 @@ jobs:
         run: npm install
 
       - name: Wait for deployment
-        run: sleep 180
+        run: sleep 300
 
       - name: Run Selenium Connection Test
         working-directory: ./test

@@ -3,10 +3,7 @@ const uptimeDisplay = document.getElementById("uptime-display");
 
 async function fetchConnectionStats() {
   try {
-    const baseApiUrl = environmentIsProd
-      ? "https://rtcportal.onrender.com"
-      : "";
-    const apiUrl = `${baseApiUrl}/api/connection-stats`;
+    const apiUrl = `${BASE_API_URL}/api/connection-stats`;
     const response = await fetch(apiUrl);
 
     if (!response.ok) {
@@ -42,4 +39,4 @@ function showStatsError() {
 
 // Fetch stats on page load and then every 30 seconds
 fetchConnectionStats();
-setInterval(fetchConnectionStats, 30000);
+setInterval(fetchConnectionStats, STATS_FETCH_INTERVAL);
