@@ -2,25 +2,36 @@ const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
 const helmet = require("helmet");
-const cors = require("cors");
+
+// Import custom modules
+const apiRoutes = require("./routes/api");
+const connectionStats = require("./utils/connectionStats");
+const { handleSocketConnection } = require("./socket/handlers");
+const { createCorsOptions } = require("./middleware/cors");
+
+// Load configuration
+const environment = process.env.NODE_ENV || "development";
+const config = require(`./config/${environment}`);
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = socketIO(server, {
+  transports: config.socketIO.transports,
+});
 
-// Configure CORS
-const corsOptions = {
-  origin: "https://dpxa.github.io",
-  optionsSuccessStatus: 200,
-};
-
-app.use(cors(corsOptions));
+// Configure middleware
+app.use(require("cors")(createCorsOptions(environment)));
 app.use(helmet());
 
-if (process.env.NODE_ENV !== "production") {
+// Make connection stats available to routes
+app.set("connectionStats", connectionStats);
+
+// Serve static files in development
+if (environment !== "production") {
   app.use(express.static("public"));
 }
 
+// Basic health check endpoint
 app.get("/test", (req, res) => {
   console.log("Ping");
   res.status(200).send(`
@@ -29,127 +40,16 @@ app.get("/test", (req, res) => {
   `);
 });
 
-// return TURN servers from Open Relay
-app.get("/api/turn-credentials", async (req, res) => {
-  const fetch = (await import("node-fetch")).default;
-  const apiKey = process.env.METERED_API_KEY;
+// API routes
+app.use("/api", apiRoutes);
 
-  if (!apiKey) {
-    return res
-      .status(500)
-      .json({ error: "API key not configured on the server." });
-  }
+// Initialize Socket.IO handlers
+handleSocketConnection(io, connectionStats);
 
-  const meteredApiUrl = `https://rtcportal.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`;
-
-  try {
-    const response = await fetch(meteredApiUrl);
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({
-        error: "Failed to fetch TURN credentials from Metered API.",
-        details: errorText,
-      });
-    }
-    const iceServers = await response.json();
-    res.status(200).json(iceServers);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Server error while fetching TURN credentials." });
-  }
-});
-
-// Connection statistics storage
-let connectionStats = {
-  totalAttempts: 0,
-  successfulConnections: 0,
-  startTime: Date.now(),
-};
-
-// return connection success rate statistics
-app.get("/api/connection-stats", (req, res) => {
-  const successRate =
-    connectionStats.totalAttempts > 0
-      ? (
-          (connectionStats.successfulConnections /
-            connectionStats.totalAttempts) *
-          100
-        ).toFixed(1)
-      : "0.0";
-
-  const uptimeHours = (
-    (Date.now() - connectionStats.startTime) /
-    (1000 * 60 * 60)
-  ).toFixed(1);
-
-  res.status(200).json({
-    successRate: parseFloat(successRate),
-    uptimeHours: parseFloat(uptimeHours),
-  });
-});
-
-// when a client connects to Socket.IO server
-io.on("connection", (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
-
-  // track connection attempts and successes
-  socket.on("connection-attempt", () => {
-    connectionStats.totalAttempts++;
-  });
-
-  socket.on("connection-success", () => {
-    connectionStats.successfulConnections++;
-  });
-
-  // track user-caused connection failures only
-  socket.on("connection-user-failed", () => {
-    if (connectionStats.totalAttempts > 0) {
-      connectionStats.totalAttempts--;
-    }
-  });
-
-  // listen for an "offer" event from a client
-  socket.on("offer", (payload) => {
-    console.log(`Received offer from ${socket.id} to ${payload.target}`);
-
-    const targetSocket = io.sockets.sockets.get(payload.target);
-    if (!targetSocket) {
-      socket.emit("peer-not-found", { target: payload.target });
-      return;
-    }
-
-    // relay it to payload.target
-    io.to(payload.target).emit("offer", {
-      sdp: payload.sdp,
-      caller: socket.id,
-    });
-  });
-
-  // listen for an "answer" event from a client
-  socket.on("answer", (payload) => {
-    console.log(`Received answer from ${socket.id} to ${payload.target}`);
-    // relay it to payload.target
-    io.to(payload.target).emit("answer", {
-      sdp: payload.sdp,
-      callee: socket.id,
-    });
-  });
-
-  // listen for ICE "candidate" events
-  socket.on("candidate", (payload) => {
-    console.log(`Received candidate from ${socket.id} to ${payload.target}`);
-    // relay it to payload.target to add to their RTCPeerConnection
-    io.to(payload.target).emit("candidate", {
-      candidate: payload.candidate,
-      from: socket.id,
-    });
-  });
-});
-
-const PORT = process.env.PORT || 3000;
+// Start server
+const PORT = config.server.port;
 server.listen(PORT, () => {
-  if (process.env.NODE_ENV !== "production") {
+  if (environment !== "production") {
     console.log(`Server running on http://localhost:${PORT}`);
   }
 });
