@@ -10,20 +10,25 @@ const socketIoSrc = environmentIsProd
 const socketScript = document.createElement("script");
 socketScript.src = socketIoSrc;
 socketScript.onload = function () {
-  const scripts = [
-    "js/config/constants.js",
-    "js/ui/uiManager.js",
-    "js/services/turnService.js",
-    "js/services/statsService.js",
-    "js/core/fileTransferManager.js",
-    "js/core/webrtcManager.js"
-  ];
-  
-  scripts.forEach((fileName) => {
-    const tempScript = document.createElement("script");
-    tempScript.src = fileName;
-    document.body.appendChild(tempScript);
-  });
+  // Load constants.js first and wait for it to finish loading
+  const constantsScript = document.createElement("script");
+  constantsScript.src = "js/config/constants.js";
+  constantsScript.onload = function () {
+    // Now load the rest of the scripts
+    const scripts = [
+      "js/ui/uiManager.js",
+      "js/services/turnService.js",
+      "js/services/statsService.js",
+      "js/core/fileTransferManager.js",
+      "js/core/webrtcManager.js"
+    ];
+    scripts.forEach((fileName) => {
+      const tempScript = document.createElement("script");
+      tempScript.src = fileName;
+      document.body.appendChild(tempScript);
+    });
+  };
+  document.body.appendChild(constantsScript);
 };
 
 document.head.appendChild(socketScript);
