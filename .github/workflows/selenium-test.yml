@@ -1,0 +1,40 @@
+name: Selenium Connection Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  selenium-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "test/package.json"
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@latest
+
+      - name: Install ChromeDriver
+        uses: nanasess/setup-chromedriver@master
+
+      - name: Install Test Dependencies
+        working-directory: ./test
+        run: npm install
+
+      - name: Wait for deployment
+        run: sleep 180
+
+      - name: Run Selenium Connection Test
+        working-directory: ./test
+        run: npm run test:connection
+        timeout-minutes: 5

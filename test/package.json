@@ -1,0 +1,15 @@
+{
+  "name": "rtcportal-selenium-tests",
+  "version": "1.0.0",
+  "description": "Selenium tests for RTCPortal",
+  "main": "selenium/connection-test.js",
+  "scripts": {
+    "test:connection": "node selenium/connection-test.js"
+  },
+  "dependencies": {
+    "selenium-webdriver": "^4.15.0"
+  },
+  "keywords": ["selenium", "webrtc", "test"],
+  "author": "dpxa",
+  "license": "MIT"
+}
