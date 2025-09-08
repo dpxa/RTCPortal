@@ -1,3 +1,4 @@
+// Manages server and peer connections
 class WebRTCManager {
   constructor() {
     this.socket = environmentIsProd
@@ -21,18 +22,37 @@ class WebRTCManager {
     this.signalingDuration = null;
     this.totalConnectionDuration = null;
 
+    this.initializeElements();
+    this.initializeEventListeners();
     this.initializeSocketEvents();
-    this.initializeDOMEvents();
+  }
+
+  initializeElements() {
+    this.myIdDisplay = document.getElementById("my-id-display");
+    this.copyIdBtn = document.getElementById("copy-id-btn");
+    this.partnerIdField = document.getElementById("partner-id-field");
+    this.connectBtn = document.getElementById("connect-btn");
+    this.endBtn = document.getElementById("end-btn");
+  }
+
+  initializeEventListeners() {
+    this.copyIdBtn.addEventListener("click", () => this.copyId());
+    this.partnerIdField.addEventListener("input", () =>
+      this.updateConnectButton()
+    );
+    this.connectBtn.addEventListener("click", () => this.initiateConnection());
+    this.endBtn.addEventListener("click", () => this.handleEndConnection());
+
+    window.addEventListener("beforeunload", () => this.cleanup());
   }
 
   initializeSocketEvents() {
     this.socket.on("connect", () => {
       this.selfId = this.socket.id;
-      const myIdDisplay = document.getElementById("my-id-display");
-      myIdDisplay.classList.remove("inactive");
-      myIdDisplay.classList.add("active");
-      myIdDisplay.textContent = this.selfId;
-      document.getElementById("copy-id-btn").style.display = "inline-block";
+      this.myIdDisplay.classList.remove("inactive");
+      this.myIdDisplay.classList.add("active");
+      this.myIdDisplay.textContent = this.selfId;
+      this.copyIdBtn.style.display = "inline-block";
     });
 
     this.socket.on("offer", async (data) => {
@@ -52,20 +72,6 @@ class WebRTCManager {
     });
   }
 
-  initializeDOMEvents() {
-    const copyIdBtn = document.getElementById("copy-id-btn");
-    const partnerIdField = document.getElementById("partner-id-field");
-    const connectBtn = document.getElementById("connect-btn");
-    const endBtn = document.getElementById("end-btn");
-
-    copyIdBtn.addEventListener("click", () => this.copyId());
-    partnerIdField.addEventListener("input", () => this.updateConnectButton());
-    connectBtn.addEventListener("click", () => this.initiateConnection());
-    endBtn.addEventListener("click", () => this.handleEndConnection());
-
-    window.addEventListener("beforeunload", () => this.cleanup());
-  }
-
   copyId() {
     if (this.selfId) {
       navigator.clipboard
@@ -78,20 +84,14 @@ class WebRTCManager {
   }
 
   updateConnectButton() {
-    const partnerIdField = document.getElementById("partner-id-field");
-    const connectBtn = document.getElementById("connect-btn");
-    connectBtn.disabled = partnerIdField.value.trim() === "";
+    this.connectBtn.disabled = this.partnerIdField.value.trim() === "";
   }
 
   async initiateConnection() {
-    const partnerIdField = document.getElementById("partner-id-field");
-    const connectBtn = document.getElementById("connect-btn");
+    const peerId = this.partnerIdField.value.trim();
+    this.partnerIdField.value = "";
+    this.connectBtn.disabled = true;
 
-    const peerId = partnerIdField.value.trim();
-    partnerIdField.value = "";
-    connectBtn.disabled = true;
-
-    // basic handling
     if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
       uiManager.showIdError("Invalid peer ID!");
       return;
@@ -341,10 +341,8 @@ class WebRTCManager {
     if (resetUI) {
       uiManager.updateToIdle();
     } else {
-      const uploadField = document.getElementById("upload-field");
-      const fileTransferBtn = document.getElementById("file-transfer-btn");
-      uploadField.value = "";
-      fileTransferBtn.disabled = true;
+      fileTransferManager.uploadField.value = "";
+      fileTransferManager.fileTransferBtn.disabled = true;
     }
   }
 

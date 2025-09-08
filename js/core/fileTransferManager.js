@@ -1,3 +1,4 @@
+// Manages file transfers
 class FileTransferManager {
   constructor() {
     this.receivedFileDetails = null;
@@ -7,7 +8,6 @@ class FileTransferManager {
 
     this.initializeElements();
     this.initializeEventListeners();
-    this.initializeTemplates();
   }
 
   initializeElements() {
@@ -22,38 +22,6 @@ class FileTransferManager {
     this.eraseHistoryContainer = document.querySelector(
       ".erase-history-container"
     );
-
-    this.transferStatusDivSent = null;
-    this.progressContainerSent = null;
-    this.progressBarSent = null;
-    this.progressPercentSent = null;
-
-    this.transferStatusDivReceived = null;
-    this.progressContainerReceived = null;
-    this.progressBarReceived = null;
-    this.progressPercentReceived = null;
-  }
-
-  initializeTemplates() {
-    this.sentTemplateHTML = `
-      <div id="sent-container">
-        <div id="transfer-status-sent"></div>
-        <div class="progress-container" id="sent-progress-container">
-          <div class="progress-bar" style="width: 0%; background: #27ae60;"></div>
-          <span class="progress-percentage" style="display:none;">0%</span>
-        </div>
-      </div>
-    `;
-
-    this.receivedTemplateHTML = `
-      <div id="received-container">
-        <div id="transfer-status-received"></div>
-        <div class="progress-container" id="received-progress-container">
-          <div class="progress-bar" style="width: 0%; background: #4a90e2;"></div>
-          <span class="progress-percentage" style="display:none;">0%</span>
-        </div>
-      </div>
-    `;
   }
 
   initializeEventListeners() {
@@ -67,33 +35,12 @@ class FileTransferManager {
     this.fileTransferBtn.addEventListener("click", () => this.sendFile());
   }
 
-  showAlert(message) {
-    clearTimeout(this.fileMsgTimer);
-    this.uploadField.value = "";
-    this.fileTransferBtn.disabled = true;
-    this.fileStatusMessage.textContent = message;
-    this.fileStatusMessage.style.display = "inline-block";
-    this.fileStatusMessage.style.border = "1.5px solid red";
-    this.fileStatusMessage.style.color = "red";
-    this.fileStatusMessage.style.padding = "1px 2px";
-    this.fileMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
-  }
-
-  clearAlert() {
-    clearTimeout(this.fileMsgTimer);
-    this.fileStatusMessage.textContent = "";
-    this.fileStatusMessage.style.display = "none";
-    this.fileStatusMessage.style.border = "";
-    this.fileStatusMessage.style.color = "";
-    this.fileStatusMessage.style.padding = "";
-  }
-
   sendFile() {
     if (
       !webrtcManager.dataChannel ||
       webrtcManager.dataChannel.readyState !== "open"
     ) {
-      this.showAlert("Data channel not open! Ending connection...");
+      uiManager.showFileAlert("Data channel not open! Ending connection...");
       setTimeout(() => {
         webrtcManager.resetCurrentConnection();
       }, 4000);
@@ -102,10 +49,10 @@ class FileTransferManager {
 
     const selectedFile = this.uploadField.files[0];
     if (selectedFile.size === 0) {
-      this.showAlert("Cannot send. File is Empty.");
+      uiManager.showFileAlert("Cannot send. File is Empty.");
       return;
     }
-    this.clearAlert();
+    uiManager.clearFileAlert();
 
     webrtcManager.dataChannel.send(
       JSON.stringify({
@@ -119,8 +66,8 @@ class FileTransferManager {
 
   async sendFileSlices(fileObj) {
     this.fileTransferBtn.disabled = true;
-    this.ensureSentContainer();
-    this.transferStatusDivSent.textContent = "Sending file...";
+    uiManager.ensureSentContainer();
+    uiManager.transferStatusDivSent.textContent = "Sending file...";
 
     let offset = 0;
     const reader = new FileReader();
@@ -134,18 +81,19 @@ class FileTransferManager {
       webrtcManager.dataChannel.send(chunk);
 
       offset += chunk.byteLength;
-      const pct = Math.floor((offset / fileObj.size) * 100);
-      this.transferStatusDivSent.textContent = "Sending file...";
-      this.updateSentProgressBarValue(pct);
+      uiManager.transferStatusDivSent.textContent = "Sending file...";
+      uiManager.updateSentProgressBarValue(
+        Math.floor((offset / fileObj.size) * 100)
+      );
 
       if (offset < fileObj.size) {
         readChunk(offset);
       } else {
-        this.transferStatusDivSent.textContent = "File sent!";
+        uiManager.transferStatusDivSent.textContent = "File sent!";
         webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
         this.recordSentFile(fileObj);
         setTimeout(() => {
-          this.resetSentTransferUI();
+          uiManager.resetSentTransferUI();
           this.fileTransferBtn.disabled = false;
         }, 500);
       }
@@ -153,7 +101,7 @@ class FileTransferManager {
 
     reader.onerror = (error) => {
       console.error("File read error:", error);
-      this.resetSentTransferUI();
+      uiManager.resetSentTransferUI();
       this.fileTransferBtn.disabled = false;
     };
 
@@ -174,8 +122,8 @@ class FileTransferManager {
         this.collectedChunks = [];
         this.receivedBytes = 0;
 
-        this.ensureReceivedContainer();
-        this.transferStatusDivReceived.textContent = "Receiving file...";
+        uiManager.ensureReceivedContainer();
+        uiManager.transferStatusDivReceived.textContent = "Receiving file...";
       } else if (info.type === "done") {
         this.finalizeIncomingFile();
       }
@@ -188,26 +136,24 @@ class FileTransferManager {
     if (!this.receivedFileDetails) return;
     this.collectedChunks.push(arrayBuffer);
     this.receivedBytes += arrayBuffer.byteLength;
-    const pct = Math.floor(
-      (this.receivedBytes / this.receivedFileDetails.fileSize) * 100
+    uiManager.transferStatusDivReceived.textContent = "Receiving file...";
+    uiManager.updateReceivedProgressBarValue(
+      Math.floor((this.receivedBytes / this.receivedFileDetails.fileSize) * 100)
     );
-    this.transferStatusDivReceived.textContent = "Receiving file...";
-    this.updateReceivedProgressBarValue(pct);
   }
 
   finalizeIncomingFile() {
-    const finalBlob = new Blob(this.collectedChunks);
-    const downloadURL = URL.createObjectURL(finalBlob);
     const link = document.createElement("a");
-    link.href = downloadURL;
+    link.href = URL.createObjectURL(new Blob(this.collectedChunks));
     link.download = this.receivedFileDetails.fileName;
     link.textContent = this.receivedFileDetails.fileName;
 
     const metaSpan = document.createElement("span");
-    const now = new Date();
     metaSpan.textContent = ` (size: ${this.displayFileSize(
       this.receivedFileDetails.fileSize
-    )}, from: ${webrtcManager.activePeerId}, at: ${now.toLocaleTimeString()})`;
+    )}, from: ${
+      webrtcManager.activePeerId
+    }, at: ${new Date().toLocaleTimeString()})`;
 
     const wrapperDiv = document.createElement("div");
     wrapperDiv.appendChild(link);
@@ -224,93 +170,12 @@ class FileTransferManager {
     }
     this.toggleClearHistoryOption();
 
-    this.transferStatusDivReceived.textContent = "File received!";
-    setTimeout(() => this.resetReceivedTransferUI(), 500);
+    uiManager.transferStatusDivReceived.textContent = "File received!";
+    setTimeout(() => uiManager.resetReceivedTransferUI(), 500);
 
     this.receivedFileDetails = null;
     this.collectedChunks = [];
     this.receivedBytes = 0;
-  }
-
-  ensureSentContainer() {
-    let container = document.getElementById("sent-container");
-    if (!container) {
-      const temp = document.createElement("div");
-      temp.innerHTML = this.sentTemplateHTML;
-      container = temp.firstElementChild;
-      this.uploadField.parentNode.appendChild(container);
-    }
-    this.transferStatusDivSent = container.querySelector(
-      "#transfer-status-sent"
-    );
-    this.progressContainerSent = container.querySelector(
-      "#sent-progress-container"
-    );
-    this.progressBarSent =
-      this.progressContainerSent.querySelector(".progress-bar");
-    this.progressPercentSent = this.progressContainerSent.querySelector(
-      ".progress-percentage"
-    );
-
-    this.progressContainerSent.style.display = "block";
-    this.progressPercentSent.style.display = "inline-block";
-  }
-
-  updateSentProgressBarValue(value) {
-    this.progressBarSent.style.width = `${value}%`;
-    this.progressPercentSent.textContent = `${value}%`;
-  }
-
-  resetSentTransferUI() {
-    const container = document.getElementById("sent-container");
-    if (container) {
-      container.remove();
-    }
-
-    this.transferStatusDivSent = null;
-    this.progressContainerSent = null;
-    this.progressBarSent = null;
-    this.progressPercentSent = null;
-  }
-
-  ensureReceivedContainer() {
-    let container = document.getElementById("received-container");
-    if (!container) {
-      const temp = document.createElement("div");
-      temp.innerHTML = this.receivedTemplateHTML;
-      container = temp.firstElementChild;
-      this.uploadField.parentNode.appendChild(container);
-    }
-    this.transferStatusDivReceived = container.querySelector(
-      "#transfer-status-received"
-    );
-    this.progressContainerReceived = container.querySelector(
-      "#received-progress-container"
-    );
-    this.progressBarReceived =
-      this.progressContainerReceived.querySelector(".progress-bar");
-    this.progressPercentReceived = this.progressContainerReceived.querySelector(
-      ".progress-percentage"
-    );
-
-    this.progressContainerReceived.style.display = "block";
-    this.progressPercentReceived.style.display = "inline-block";
-  }
-
-  updateReceivedProgressBarValue(value) {
-    this.progressBarReceived.style.width = `${value}%`;
-    this.progressPercentReceived.textContent = `${value}%`;
-  }
-
-  resetReceivedTransferUI() {
-    const container = document.getElementById("received-container");
-    if (container) {
-      container.remove();
-    }
-    this.transferStatusDivReceived = null;
-    this.progressContainerReceived = null;
-    this.progressBarReceived = null;
-    this.progressPercentReceived = null;
   }
 
   displayFileSize(numBytes) {
@@ -321,17 +186,17 @@ class FileTransferManager {
   }
 
   recordSentFile(fileObj) {
-    const fileURL = URL.createObjectURL(fileObj);
     const link = document.createElement("a");
-    link.href = fileURL;
+    link.href = URL.createObjectURL(fileObj);
     link.download = fileObj.name;
     link.textContent = fileObj.name;
 
     const metaSpan = document.createElement("span");
-    const now = new Date();
     metaSpan.textContent = `  (size: ${this.displayFileSize(
       fileObj.size
-    )}, to: ${webrtcManager.activePeerId}, at: ${now.toLocaleTimeString()})`;
+    )}, to: ${
+      webrtcManager.activePeerId
+    }, at: ${new Date().toLocaleTimeString()})`;
 
     const wrapperDiv = document.createElement("div");
     wrapperDiv.appendChild(link);

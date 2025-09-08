@@ -1,4 +1,4 @@
-// Service to fetch and manage TURN server credentials for WebRTC connections
+// Fetches TURN server credentials from server
 class TurnService {
   constructor() {
     this.rtcConfig = { ...RTC_CONFIG };
