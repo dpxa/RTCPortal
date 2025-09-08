@@ -1,59 +1,70 @@
+// Provides routes for fetching TURN credentials from provider and getting connection stats
 const express = require("express");
+const {
+  CORS_ORIGINS,
+  METERED_API_BASE_URL,
+  HTTP_STATUS,
+} = require("../config/constants");
 const router = express.Router();
 
-// TURN credentials endpoint
 router.get("/turn-credentials", async (req, res) => {
+  const referer = req.get("Referer");
+  const origin = req.get("Origin");
+
+  const isFromGitHubPages =
+    referer?.startsWith(CORS_ORIGINS.GITHUB_PAGES) ||
+    origin?.startsWith(CORS_ORIGINS.GITHUB_PAGES);
+
+  if (!isFromGitHubPages) {
+    return res
+      .status(HTTP_STATUS.FORBIDDEN)
+      .json({ error: "Forbidden - Access restricted" });
+  }
+
   const fetch = (await import("node-fetch")).default;
   const apiKey = process.env.METERED_API_KEY;
 
   if (!apiKey) {
     return res
-      .status(500)
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
       .json({ error: "API key not configured on the server." });
   }
 
-  const meteredApiUrl = `https://rtcportal.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`;
+  const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${apiKey}`;
 
   try {
     const response = await fetch(meteredApiUrl);
+
     if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({
-        error: "Failed to fetch TURN credentials from Metered API.",
-        details: errorText,
-      });
+      let errorMsg = `Failed to fetch TURN credentials: ${response.status} ${response.statusText}.`;
+      try {
+        const errorData = await response.json();
+        errorMsg += ` ${errorData.details || errorData.error || ""}`;
+      } catch {}
+      return res.status(response.status).json({ error: errorMsg });
     }
-    const iceServers = await response.json();
-    res.status(200).json(iceServers);
+
+    const turnServers = await response.json();
+
+    if (Array.isArray(turnServers) && turnServers.length > 0) {
+      return res.status(HTTP_STATUS.OK).json(turnServers);
+    } else {
+      return res.status(HTTP_STATUS.OK).json([]);
+    }
   } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Server error while fetching TURN credentials." });
+    return res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({
+        error: `Server error while fetching TURN credentials. ${
+          error.message || error
+        }`,
+      });
   }
 });
 
-// Connection statistics endpoint
 router.get("/connection-stats", (req, res) => {
   const connectionStats = req.app.get("connectionStats");
-
-  const successRate =
-    connectionStats.totalAttempts > 0
-      ? (
-          (connectionStats.successfulConnections /
-            connectionStats.totalAttempts) *
-          100
-        ).toFixed(1)
-      : "0.0";
-
-  const uptimeHours = (
-    (Date.now() - connectionStats.startTime) /
-    (1000 * 60 * 60)
-  ).toFixed(1);
-
-  res.status(200).json({
-    successRate: parseFloat(successRate),
-    uptimeHours: parseFloat(uptimeHours),
-  });
+  res.status(HTTP_STATUS.OK).json(connectionStats.getStats());
 });
 
 module.exports = router;

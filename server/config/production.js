@@ -1,11 +1,12 @@
+// Settings for production server
+const {
+  DEFAULT_PORT,
+  CORS_ORIGINS,
+  SOCKET_TRANSPORTS,
+} = require("./constants");
+
 module.exports = {
-  server: {
-    port: process.env.PORT || 3000,
-    cors: {
-      origin: "https://dpxa.github.io",
-    },
-  },
-  socketIO: {
-    transports: ["websocket", "polling"],
-  },
+  port: DEFAULT_PORT,
+  cors: CORS_ORIGINS.GITHUB_PAGES,
+  transports: SOCKET_TRANSPORTS
 };

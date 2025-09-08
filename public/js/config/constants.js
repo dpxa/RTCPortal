@@ -1,6 +1,6 @@
 const PROD_API_URL = "https://rtcportal.onrender.com";
 
-const environmentIsProd = !["localhost", "127.0.0.1", "::1"].includes(
+const environmentIsProd = !["localhost", "127.0.0.1"].includes(
   window.location.hostname
 );
 
