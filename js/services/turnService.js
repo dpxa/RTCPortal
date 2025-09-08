@@ -1,3 +1,4 @@
+// Service to fetch and manage TURN server credentials for WebRTC connections
 class TurnService {
   constructor() {
     this.rtcConfig = { ...RTC_CONFIG };
@@ -6,29 +7,26 @@ class TurnService {
 
   async initializeTurnCredentials() {
     try {
-      const apiUrl = `${BASE_API_URL}/api/turn-credentials`;
-      const response = await fetch(apiUrl);
+      const response = await fetch(`${BASE_API_URL}/api/turn-credentials`);
 
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: "Failed to parse error response." }));
-        throw new Error(
-          `Failed to fetch TURN credentials: ${response.status} ${
-            response.statusText
-          }. ${errorData.details || errorData.error}`
-        );
+        let errorMsg = `Failed to fetch TURN credentials: ${response.status} ${response.statusText}.`;
+        try {
+          const errorData = await response.json();
+          errorMsg += ` ${errorData.details || errorData.error || ''}`;
+        } catch {}
+        throw new Error(errorMsg);
       }
 
       const turnServers = await response.json();
 
-      if (turnServers && Array.isArray(turnServers) && turnServers.length > 0) {
+      if (Array.isArray(turnServers) && turnServers.length > 0) {
         this.rtcConfig.iceServers = this.rtcConfig.iceServers.concat(turnServers);
       } else {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      console.error("Using default STUN servers only.", error);
+      console.error("Using default STUN servers only.", error.message || error);
     }
   }
 
