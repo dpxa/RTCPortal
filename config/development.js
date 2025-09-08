@@ -1,11 +1,18 @@
+// Settings for development server
+const {
+  DEFAULT_PORT,
+  CORS_ORIGINS,
+  SOCKET_TRANSPORTS,
+} = require("./constants");
+
 module.exports = {
   server: {
-    port: 3000,
+    port: DEFAULT_PORT,
     cors: {
-      origin: "http://localhost:3000",
+      origin: CORS_ORIGINS.LOCALHOST,
     },
   },
   socketIO: {
-    transports: ["websocket", "polling"],
+    transports: SOCKET_TRANSPORTS,
   },
 };

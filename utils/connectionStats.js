@@ -1,3 +1,4 @@
+// Manages connection stats
 class ConnectionStats {
   constructor() {
     this.totalAttempts = 0;
@@ -33,8 +34,6 @@ class ConnectionStats {
     return {
       successRate: parseFloat(successRate),
       uptimeHours: parseFloat(uptimeHours),
-      totalAttempts: this.totalAttempts,
-      successfulConnections: this.successfulConnections,
     };
   }
 }
