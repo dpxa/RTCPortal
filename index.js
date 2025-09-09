@@ -15,10 +15,18 @@ const config = require(`./config/${environment}`);
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
-  transports: config.socketIO.transports,
+  transports: config.transports,
 });
 
-app.use(require("cors")({origin: config.server.cors, optionsSuccessStatus: HTTP_STATUS.OK}));
+if (environment === "production") {
+  app.use(
+    require("cors")({
+      origin: config.cors,
+      optionsSuccessStatus: HTTP_STATUS.OK,
+    })
+  );
+}
+
 app.use(helmet());
 
 app.set("connectionStats", connectionStats);
@@ -39,7 +47,7 @@ app.use("/api", apiRoutes);
 
 handleSocketConnection(io, connectionStats);
 
-const PORT = config.server.port;
+const PORT = config.port;
 server.listen(PORT, () => {
   if (environment !== "production") {
     console.log(`Server running on http://localhost:${PORT}`);

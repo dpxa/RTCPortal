@@ -6,13 +6,6 @@ const {
 } = require("./constants");
 
 module.exports = {
-  server: {
-    port: DEFAULT_PORT,
-    cors: {
-      origin: CORS_ORIGINS.LOCALHOST,
-    },
-  },
-  socketIO: {
-    transports: SOCKET_TRANSPORTS,
-  },
+  port: DEFAULT_PORT,
+  transports: SOCKET_TRANSPORTS,
 };

@@ -6,13 +6,7 @@ const {
 } = require("./constants");
 
 module.exports = {
-  server: {
-    port: DEFAULT_PORT,
-    cors: {
-      origin: CORS_ORIGINS.GITHUB_PAGES,
-    },
-  },
-  socketIO: {
-    transports: SOCKET_TRANSPORTS,
-  },
+  port: DEFAULT_PORT,
+  cors: CORS_ORIGINS.GITHUB_PAGES,
+  transports: SOCKET_TRANSPORTS
 };
