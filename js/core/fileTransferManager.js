@@ -223,6 +223,12 @@ class FileTransferManager {
       eraseHistoryBtn.className = "erase-history-btn";
       eraseHistoryBtn.textContent = "Clear History";
       eraseHistoryBtn.addEventListener("click", () => {
+        Array.from(this.outgoingFilesContainer.querySelectorAll('a')).forEach(link => {
+          URL.revokeObjectURL(link.href);
+        });
+        Array.from(this.incomingFilesContainer.querySelectorAll('a')).forEach(link => {
+          URL.revokeObjectURL(link.href);
+        });
         this.outgoingFilesContainer.innerHTML = "";
         this.incomingFilesContainer.innerHTML = "";
         this.transferHistoryDiv.style.display = "none";
