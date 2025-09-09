@@ -26,6 +26,12 @@ class FileTransferManager {
 
   initializeEventListeners() {
     this.uploadField.addEventListener("input", () => {
+      const selectedFile = this.uploadField.files[0];
+      if (selectedFile.size === 0) {
+        uiManager.showFileAlert("Cannot send. File is Empty.");
+        return;
+      }
+
       this.fileTransferBtn.disabled =
         this.uploadField.value.trim() === "" ||
         !webrtcManager.dataChannel ||
@@ -46,14 +52,9 @@ class FileTransferManager {
       }, 4000);
       return;
     }
-
-    const selectedFile = this.uploadField.files[0];
-    if (selectedFile.size === 0) {
-      uiManager.showFileAlert("Cannot send. File is Empty.");
-      return;
-    }
     uiManager.clearFileAlert();
 
+    const selectedFile = this.uploadField.files[0];
     webrtcManager.dataChannel.send(
       JSON.stringify({
         type: "metadata",
