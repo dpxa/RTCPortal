@@ -87,6 +87,7 @@ class WebRTCManager {
     this.connectBtn.disabled = this.partnerIdField.value.trim() === "";
   }
 
+  // pressed connect button
   async initiateConnection() {
     const peerId = this.partnerIdField.value.trim();
     this.partnerIdField.value = "";
@@ -189,6 +190,7 @@ class WebRTCManager {
     }
   }
 
+  // remote peers candidate received
   handleCandidate(data) {
     const targetConnection = this.pendingPeerConnection || this.peerConnection;
     if (targetConnection) {
@@ -211,6 +213,7 @@ class WebRTCManager {
   }
 
   configureConnection(conn, targetId, isInitiator) {
+    // send local candidate to peer
     conn.onicecandidate = (evt) => {
       if (evt.candidate) {
         this.socket.emit("candidate", {
@@ -250,9 +253,7 @@ class WebRTCManager {
         clearTimeout(this.newConnTimer);
         uiManager.updateToConnected(this.activePeerId);
 
-        if (statsService) {
-          statsService.fetchConnectionStats();
-        }
+        statsService.fetchConnectionStats();
       } else if (["disconnected", "failed"].includes(conn.connectionState)) {
         this.resetCurrentConnection();
       }
