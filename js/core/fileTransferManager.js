@@ -5,6 +5,7 @@ class FileTransferManager {
     this.collectedChunks = [];
     this.receivedBytes = 0;
     this.fileMsgTimer = null;
+    this.isTransferActive = false;
 
     this.initializeElements();
     this.initializeEventListeners();
@@ -67,6 +68,7 @@ class FileTransferManager {
 
   async sendFileSlices(fileObj) {
     this.fileTransferBtn.disabled = true;
+    this.isTransferActive = true;
     uiManager.ensureSentContainer();
     uiManager.transferStatusDivSent.textContent = "Sending file...";
 
@@ -74,10 +76,27 @@ class FileTransferManager {
     const reader = new FileReader();
 
     reader.onload = async (evt) => {
+      if (
+        !this.isTransferActive ||
+        !webrtcManager.dataChannel ||
+        webrtcManager.dataChannel.readyState !== "open"
+      ) {
+        this.cleanupSentTransfer();
+        return;
+      }
+
       const chunk = evt.target.result;
 
       while (webrtcManager.dataChannel.bufferedAmount > 65535) {
         await new Promise((resolve) => setTimeout(resolve, 100));
+        if (
+          !this.isTransferActive ||
+          !webrtcManager.dataChannel ||
+          webrtcManager.dataChannel.readyState !== "open"
+        ) {
+          this.cleanupSentTransfer();
+          return;
+        }
       }
       webrtcManager.dataChannel.send(chunk);
 
@@ -90,6 +109,7 @@ class FileTransferManager {
       if (offset < fileObj.size) {
         readChunk(offset);
       } else {
+        this.isTransferActive = false;
         uiManager.transferStatusDivSent.textContent = "File sent!";
         webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
         this.recordSentFile(fileObj);
@@ -102,8 +122,7 @@ class FileTransferManager {
 
     reader.onerror = (error) => {
       console.error("File read error:", error);
-      uiManager.resetSentTransferUI();
-      this.fileTransferBtn.disabled = false;
+      this.cleanupSentTransfer();
     };
 
     function readChunk(position) {
@@ -122,11 +141,13 @@ class FileTransferManager {
         };
         this.collectedChunks = [];
         this.receivedBytes = 0;
+        this.isTransferActive = true;
 
         uiManager.ensureReceivedContainer();
         uiManager.transferStatusDivReceived.textContent = "Receiving file...";
       } else if (info.type === "done") {
         this.finalizeIncomingFile();
+        this.isTransferActive = false;
       }
     } catch (err) {
       console.log("Received text message:", input);
@@ -223,12 +244,16 @@ class FileTransferManager {
       eraseHistoryBtn.className = "erase-history-btn";
       eraseHistoryBtn.textContent = "Clear History";
       eraseHistoryBtn.addEventListener("click", () => {
-        Array.from(this.outgoingFilesContainer.querySelectorAll('a')).forEach(link => {
-          URL.revokeObjectURL(link.href);
-        });
-        Array.from(this.incomingFilesContainer.querySelectorAll('a')).forEach(link => {
-          URL.revokeObjectURL(link.href);
-        });
+        Array.from(this.outgoingFilesContainer.querySelectorAll("a")).forEach(
+          (link) => {
+            URL.revokeObjectURL(link.href);
+          }
+        );
+        Array.from(this.incomingFilesContainer.querySelectorAll("a")).forEach(
+          (link) => {
+            URL.revokeObjectURL(link.href);
+          }
+        );
         this.outgoingFilesContainer.innerHTML = "";
         this.incomingFilesContainer.innerHTML = "";
         this.transferHistoryDiv.style.display = "none";
@@ -240,6 +265,28 @@ class FileTransferManager {
     }
     this.transferHistoryDiv.style.display = "block";
     eraseHistoryBtn.style.display = "inline-block";
+  }
+
+  cleanupSentTransfer() {
+    this.isTransferActive = false;
+    uiManager.resetSentTransferUI();
+    this.uploadField.value = "";
+    this.fileTransferBtn.disabled = true;
+  }
+
+  cleanupReceivedTransfer() {
+    this.isTransferActive = false;
+    this.receivedFileDetails = null;
+    this.collectedChunks = [];
+    this.receivedBytes = 0;
+    uiManager.resetReceivedTransferUI();
+  }
+
+  cleanupAllTransfers() {
+    this.cleanupSentTransfer();
+    this.cleanupReceivedTransfer();
+    uiManager.clearFileAlert();
+    clearTimeout(this.fileMsgTimer);
   }
 }
 

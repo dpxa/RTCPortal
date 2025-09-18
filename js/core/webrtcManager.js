@@ -87,7 +87,6 @@ class WebRTCManager {
     this.connectBtn.disabled = this.partnerIdField.value.trim() === "";
   }
 
-  // pressed connect button
   async initiateConnection() {
     const peerId = this.partnerIdField.value.trim();
     this.partnerIdField.value = "";
@@ -190,7 +189,6 @@ class WebRTCManager {
     }
   }
 
-  // remote peers candidate received
   handleCandidate(data) {
     const targetConnection = this.pendingPeerConnection || this.peerConnection;
     if (targetConnection) {
@@ -213,7 +211,6 @@ class WebRTCManager {
   }
 
   configureConnection(conn, targetId, isInitiator) {
-    // send local candidate to peer
     conn.onicecandidate = (evt) => {
       if (evt.candidate) {
         this.socket.emit("candidate", {
@@ -298,6 +295,10 @@ class WebRTCManager {
     uiManager.clearAlert();
     clearTimeout(this.newConnTimer);
 
+    if (fileTransferManager) {
+      fileTransferManager.cleanupAllTransfers();
+    }
+
     if (this.pendingPeerConnection) {
       this.socket.emit("connection-user-failed");
     }
@@ -320,8 +321,9 @@ class WebRTCManager {
   resetCurrentConnection(resetUI = true) {
     uiManager.clearAlert();
     clearTimeout(this.newConnTimer);
+
     if (fileTransferManager) {
-      clearTimeout(fileTransferManager.fileMsgTimer);
+      fileTransferManager.cleanupAllTransfers();
     }
 
     if (this.dataChannel && this.dataChannel.readyState === "open") {
