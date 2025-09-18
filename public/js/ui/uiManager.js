@@ -204,9 +204,15 @@ class UIManager {
     this.activeConnectionStatus.textContent = "";
     this.endBtn.style.display = "none";
     this.fileTransferSection.style.display = "none";
+
+    this.resetSentTransferUI();
+    this.resetReceivedTransferUI();
   }
 
   updateToWaiting() {
+    this.resetSentTransferUI();
+    this.resetReceivedTransferUI();
+
     this.activeConnectionContainer.style.display = "flex";
     this.activeConnectionLabel.textContent = "Waiting for peer...";
     this.activeConnectionStatus.textContent = "";
@@ -218,6 +224,9 @@ class UIManager {
   }
 
   updateToConnectedAfterAbort(peerId) {
+    this.resetSentTransferUI();
+    this.resetReceivedTransferUI();
+
     this.activeConnectionContainer.style.display = "flex";
     this.activeConnectionLabel.textContent = "Connected to:";
     this.activeConnectionStatus.textContent = peerId;
@@ -230,6 +239,10 @@ class UIManager {
     clearTimeout(this.newIdAlertTimer);
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
+
+    this.resetSentTransferUI();
+    this.resetReceivedTransferUI();
+
     this.activeConnectionContainer.style.display = "flex";
     this.activeConnectionLabel.textContent = "Connected to:";
     this.activeConnectionStatus.textContent = peerId;
