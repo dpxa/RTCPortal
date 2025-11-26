@@ -10,18 +10,18 @@ class TurnService {
       const response = await fetch(`${BASE_API_URL}/api/turn-credentials`);
 
       if (!response.ok) {
-        let errorMsg = `Failed to fetch TURN credentials: ${response.status} ${response.statusText}.`;
-        try {
-          const errorData = await response.json();
-          errorMsg += ` ${errorData.details || errorData.error || ''}`;
-        } catch {}
-        throw new Error(errorMsg);
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error ||
+            `Failed to fetch TURN credentials: ${response.status}`
+        );
       }
 
       const turnServers = await response.json();
 
       if (Array.isArray(turnServers) && turnServers.length > 0) {
-        this.rtcConfig.iceServers = this.rtcConfig.iceServers.concat(turnServers);
+        this.rtcConfig.iceServers =
+          this.rtcConfig.iceServers.concat(turnServers);
       } else {
         console.warn("Using default STUN servers only.");
       }
