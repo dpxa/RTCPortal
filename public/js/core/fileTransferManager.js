@@ -5,7 +5,8 @@ class FileTransferManager {
     this.collectedChunks = [];
     this.receivedBytes = 0;
     this.fileMsgTimer = null;
-    this.isTransferActive = false;
+    this.isSending = false;
+    this.isReceiving = false;
 
     this.initializeElements();
     this.initializeEventListeners();
@@ -68,7 +69,7 @@ class FileTransferManager {
 
   async sendFileSlices(fileObj) {
     this.fileTransferBtn.disabled = true;
-    this.isTransferActive = true;
+    this.isSending = true;
     uiManager.ensureSentContainer();
     uiManager.transferStatusDivSent.textContent = "Sending file...";
 
@@ -77,7 +78,7 @@ class FileTransferManager {
 
     reader.onload = async (evt) => {
       if (
-        !this.isTransferActive ||
+        !this.isSending ||
         !webrtcManager.dataChannel ||
         webrtcManager.dataChannel.readyState !== "open"
       ) {
@@ -90,7 +91,7 @@ class FileTransferManager {
       while (webrtcManager.dataChannel.bufferedAmount > 65535) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         if (
-          !this.isTransferActive ||
+          !this.isSending ||
           !webrtcManager.dataChannel ||
           webrtcManager.dataChannel.readyState !== "open"
         ) {
@@ -109,7 +110,7 @@ class FileTransferManager {
       if (offset < fileObj.size) {
         readChunk(offset);
       } else {
-        this.isTransferActive = false;
+        this.isSending = false;
         uiManager.transferStatusDivSent.textContent = "File sent!";
         webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
         this.recordSentFile(fileObj);
@@ -141,13 +142,13 @@ class FileTransferManager {
         };
         this.collectedChunks = [];
         this.receivedBytes = 0;
-        this.isTransferActive = true;
+        this.isReceiving = true;
 
         uiManager.ensureReceivedContainer();
         uiManager.transferStatusDivReceived.textContent = "Receiving file...";
       } else if (info.type === "done") {
         this.finalizeIncomingFile();
-        this.isTransferActive = false;
+        this.isReceiving = false;
       }
     } catch (err) {
       console.log("Received text message:", input);
@@ -268,14 +269,14 @@ class FileTransferManager {
   }
 
   cleanupSentTransfer() {
-    this.isTransferActive = false;
+    this.isSending = false;
     uiManager.resetSentTransferUI();
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
   }
 
   cleanupReceivedTransfer() {
-    this.isTransferActive = false;
+    this.isReceiving = false;
     this.receivedFileDetails = null;
     this.collectedChunks = [];
     this.receivedBytes = 0;
