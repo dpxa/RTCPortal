@@ -26,14 +26,11 @@ class ConnectionStats {
         ? ((this.successfulConnections / this.totalAttempts) * 100).toFixed(1)
         : "0.0";
 
-    const uptimeHours = (
-      (Date.now() - this.startTime) /
-      (1000 * 60 * 60)
-    ).toFixed(1);
+    const uptimeMs = Date.now() - this.startTime;
 
     return {
       successRate: parseFloat(successRate),
-      uptimeHours: parseFloat(uptimeHours),
+      uptimeMs: uptimeMs,
     };
   }
 }

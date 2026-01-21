@@ -22,6 +22,8 @@ class WebRTCManager {
     this.signalingDuration = null;
     this.totalConnectionDuration = null;
 
+    this.candidateQueue = [];
+
     this.initializeElements();
     this.initializeEventListeners();
     this.initializeSocketEvents();
@@ -38,7 +40,7 @@ class WebRTCManager {
   initializeEventListeners() {
     this.copyIdBtn.addEventListener("click", () => this.copyId());
     this.partnerIdField.addEventListener("input", () =>
-      this.updateConnectButton()
+      this.updateConnectButton(),
     );
     this.connectBtn.addEventListener("click", () => this.initiateConnection());
     this.endBtn.addEventListener("click", () => this.handleEndConnection());
@@ -106,6 +108,7 @@ class WebRTCManager {
     }
 
     this.socket.emit("connection-attempt");
+    this.candidateQueue = [];
     uiManager.clearAlert();
     this.abortPendingConnection();
     uiManager.updateToWaiting();
@@ -118,7 +121,7 @@ class WebRTCManager {
     }, CONNECTION_TIMEOUT);
 
     this.pendingPeerConnection = new RTCPeerConnection(
-      turnService.getRtcConfig()
+      turnService.getRtcConfig(),
     );
     this.configureConnection(this.pendingPeerConnection, peerId, true);
 
@@ -145,11 +148,16 @@ class WebRTCManager {
 
     this.connectionStartTime = performance.now();
 
+    this.candidateQueue = [];
     this.peerConnection = new RTCPeerConnection(turnService.getRtcConfig());
     this.configureConnection(this.peerConnection, data.caller, false);
 
     try {
       await this.peerConnection.setRemoteDescription(data.sdp);
+      while (this.candidateQueue.length) {
+        const c = this.candidateQueue.shift();
+        this.peerConnection.addIceCandidate(c).catch((e) => console.error(e));
+      }
       const ans = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(ans);
       this.activePeerId = data.caller;
@@ -177,6 +185,12 @@ class WebRTCManager {
     }
     try {
       await this.pendingPeerConnection.setRemoteDescription(data.sdp);
+      while (this.candidateQueue.length) {
+        const c = this.candidateQueue.shift();
+        this.pendingPeerConnection
+          .addIceCandidate(c)
+          .catch((e) => console.error(e));
+      }
       this.activePeerId = data.callee;
 
       this.peerConnection = this.pendingPeerConnection;
@@ -192,9 +206,13 @@ class WebRTCManager {
   handleCandidate(data) {
     const targetConnection = this.pendingPeerConnection || this.peerConnection;
     if (targetConnection) {
-      targetConnection
-        .addIceCandidate(data.candidate)
-        .catch((e) => console.error(e));
+      if (targetConnection.remoteDescription) {
+        targetConnection
+          .addIceCandidate(data.candidate)
+          .catch((e) => console.error(e));
+      } else {
+        this.candidateQueue.push(data.candidate);
+      }
     }
   }
 
@@ -248,7 +266,7 @@ class WebRTCManager {
         }
 
         clearTimeout(this.newConnTimer);
-        uiManager.updateToConnected(this.activePeerId);
+        uiManager.updateToConnected(targetId);
 
         statsService.fetchConnectionStats();
       } else if (["disconnected", "failed"].includes(conn.connectionState)) {
@@ -361,7 +379,7 @@ class WebRTCManager {
       this.signalingDuration = Math.round(this.signalingDuration * 100) / 100;
       const webRTCNegotiation =
         Math.round(
-          (this.totalConnectionDuration - this.signalingDuration) * 100
+          (this.totalConnectionDuration - this.signalingDuration) * 100,
         ) / 100;
       this.totalConnectionDuration =
         Math.round(this.totalConnectionDuration * 100) / 100;
