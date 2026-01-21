@@ -31,7 +31,7 @@ class StatsService {
 
   updateStatsDisplay(stats) {
     this.successRateDisplay.textContent = `${stats.successRate}%`;
-    this.uptimeDisplay.textContent = `${stats.uptimeHours} hours`;
+    this.uptimeDisplay.textContent = this.formatUptime(stats.uptimeMs);
 
     if (stats.successRate >= 80) {
       this.successRateDisplay.style.color = "#27ae60";
@@ -45,6 +45,18 @@ class StatsService {
   showStatsError() {
     this.successRateDisplay.textContent = "Error";
     this.uptimeDisplay.textContent = "Error";
+  }
+
+  formatUptime(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days} day${days !== 1 ? "s" : ""}`;
+    if (hours > 0) return `${hours} hour${hours !== 1 ? "s" : ""}`;
+    if (minutes > 0) return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+    return `${seconds} second${seconds !== 1 ? "s" : ""}`;
   }
 }
 
