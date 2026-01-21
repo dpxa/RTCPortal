@@ -1,7 +1,6 @@
 // Settings for development server
 const {
   DEFAULT_PORT,
-  CORS_ORIGINS,
   SOCKET_TRANSPORTS,
 } = require("./constants");
 
