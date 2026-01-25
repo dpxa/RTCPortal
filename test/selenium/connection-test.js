@@ -1,5 +1,6 @@
 const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
+const { DEFAULT_PORT } = require("../../server/config/constants");
 
 async function runConnectionTest() {
   const options = new chrome.Options();
@@ -27,7 +28,7 @@ async function runConnectionTest() {
       .build();
     await driver2.manage().setTimeouts({ pageLoad: 30000 });
 
-    const url = "https://dpxa.github.io/RTCPortal/";
+    const url = process.env.TEST_URL || `http://localhost:${DEFAULT_PORT}`;
     const expectedTitle = "RTCPortal - P2P File Sharing";
 
     console.log("Setting up Peer 1 (Initiator)");

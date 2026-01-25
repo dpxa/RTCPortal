@@ -1,4 +1,3 @@
-// Handles Socket.IO events
 const handleSocketConnection = (io, connectionStats) => {
   io.on("connection", (socket) => {
     console.log(`Socket connected: ${socket.id}`);
@@ -19,7 +18,7 @@ const handleSocketConnection = (io, connectionStats) => {
       console.log(`Received offer from ${socket.id} to ${payload.target}`);
 
       if (payload.target === socket.id) {
-        return; // Prevent self-signaling
+        return;
       }
 
       const targetSocket = io.sockets.sockets.get(payload.target);

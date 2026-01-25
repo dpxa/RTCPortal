@@ -1,4 +1,3 @@
-// Manages UI updates
 class UIManager {
   constructor() {
     this.idMsgTimer = null;
@@ -30,7 +29,6 @@ class UIManager {
       ".erase-history-container",
     );
 
-    // Chat Elements
     this.chatSection = document.getElementById("chat-section");
     this.chatBox = document.getElementById("chat-box");
     this.chatInput = document.getElementById("chat-input");
@@ -91,7 +89,6 @@ class UIManager {
       delete this.nicknames[peerId];
     }
 
-    // Update active connection label if currently connected to this peer
     const currentPeerId =
       this.activeConnectionStatus.getAttribute("data-peer-id");
     if (currentPeerId === peerId) {
@@ -103,7 +100,6 @@ class UIManager {
     const nickname = this.getNickname(peerId);
     this.activeConnectionStatus.textContent = nickname;
 
-    // Handle ID Span
     let idSpan = document.getElementById("peer-id-display-span");
     if (nickname !== peerId) {
       if (!idSpan) {
@@ -112,18 +108,13 @@ class UIManager {
         idSpan.style.fontSize = "0.75rem";
         idSpan.style.fontStyle = "italic";
         idSpan.style.color = "#999";
-        // removed marginLeft as flex gap handles spacing roughly
       }
       idSpan.textContent = peerId;
 
-      // Ensure it is inserted after status but before edit btn
       const editBtn = document.getElementById("edit-nickname-btn");
       if (editBtn && editBtn.parentNode === this.activeConnectionContainer) {
         this.activeConnectionContainer.insertBefore(idSpan, editBtn);
-        // Update color if dark theme toggled externally (simple check)
-        // Ideally theme manager handles this, but for now:
         if (document.body.classList.contains("dark-mode")) {
-          // idSpan.style.color matches #999 which is fine for dark
         }
       } else {
         this.activeConnectionContainer.appendChild(idSpan);
@@ -204,10 +195,9 @@ class UIManager {
 
   showFileWarning(message) {
     clearTimeout(this.fileMsgTimer);
-    // Do not clear input or disable button
     this.fileStatusMessage.textContent = message;
     this.fileStatusMessage.style.display = "inline-block";
-    this.fileStatusMessage.style.border = "1.5px solid red"; // User requested red
+    this.fileStatusMessage.style.border = "1.5px solid red";
     this.fileStatusMessage.style.color = "red";
     this.fileStatusMessage.style.padding = "1px 2px";
     this.fileMsgTimer = setTimeout(
@@ -253,10 +243,6 @@ class UIManager {
 
     if (this.pauseTransferBtn) {
       this.pauseTransferBtn.addEventListener("click", () => {
-        // We need to call fileTransferManager.togglePause()
-        // but UI shouldn't know about logic directly?
-        // Ideally we use an event or callback.
-        // For simplicity in this codebase structure:
         window.fileTransferManager.togglePause();
       });
     }
@@ -297,8 +283,6 @@ class UIManager {
     if (this.progressPercentSent) {
       this.progressPercentSent.textContent = "0%";
     }
-    // Do not clear stats here, as it might be called just before starting a new file
-    // and we want "Calculating..." to show up if set immediately after.
   }
 
   resetSentTransferUI() {
@@ -324,7 +308,6 @@ class UIManager {
     if (this.progressPercentReceived) {
       this.progressPercentReceived.textContent = "0%";
     }
-    // Do not clear stats here.
   }
 
   ensureReceivedContainer() {
@@ -395,7 +378,6 @@ class UIManager {
         this.toggleChatBtn.textContent = "Close Chat";
         this.toggleChatBtn.classList.remove("has-unread");
       }
-      // Scroll to bottom when opening
       this.chatBox.scrollTop = this.chatBox.scrollHeight;
     } else {
       this.chatSection.style.display = "none";
@@ -406,7 +388,6 @@ class UIManager {
   archiveChat(peerDisplayName, peerId) {
     if (!this.chatBox || !this.chatHistoryList) return;
 
-    // Check if there are messages (ignore placeholder)
     const messages = this.chatBox.querySelectorAll(".chat-message");
     if (messages.length === 0) return;
 
@@ -414,7 +395,6 @@ class UIManager {
     historyBlock.style.borderBottom = "1px dashed #ccc";
     historyBlock.style.paddingBottom = "10px";
     historyBlock.style.marginBottom = "5px";
-    // Maintain flex column behavior for bubbles
     historyBlock.style.display = "flex";
     historyBlock.style.flexDirection = "column";
 
@@ -443,20 +423,17 @@ class UIManager {
       historyBlock.appendChild(clone);
     });
 
-    this.chatHistoryList.prepend(historyBlock); // Newest sessions at top
+    this.chatHistoryList.prepend(historyBlock);
 
-    // Make visible
     if (this.transferHistoryDiv)
       this.transferHistoryDiv.style.display = "block";
     if (this.chatHistorySection)
       this.chatHistorySection.style.display = "block";
 
-    // Scroll to top to see the newest archived session
     this.chatHistoryList.scrollTop = 0;
 
     this.ensureClearHistoryButton();
 
-    // Clear the active chat box ensuring next session starts clean (although we do this in updateToConnected too)
     this.chatBox.innerHTML =
       '<div class="chat-placeholder">No messages yet...</div>';
   }
@@ -469,7 +446,6 @@ class UIManager {
       eraseHistoryBtn.className = "erase-history-btn";
       eraseHistoryBtn.textContent = "Clear History";
       eraseHistoryBtn.addEventListener("click", () => {
-        // Clear Files
         const outContainer = document.getElementById("outgoing-files");
         const inContainer = document.getElementById("incoming-files");
 
@@ -486,13 +462,11 @@ class UIManager {
           inContainer.innerHTML = "";
         }
 
-        // Clear Chat
         const chatHistoryList = document.getElementById("chat-history-list");
         if (chatHistoryList) chatHistoryList.innerHTML = "";
         const chatSection = document.getElementById("chat-history-section");
         if (chatSection) chatSection.style.display = "none";
 
-        // Hide Sections
         const transferHistory = document.getElementById("transfer-history");
         if (transferHistory) transferHistory.style.display = "none";
 
@@ -508,7 +482,6 @@ class UIManager {
       if (container) container.appendChild(eraseHistoryBtn);
     }
 
-    // Ensure visibility
     if (eraseHistoryBtn) eraseHistoryBtn.style.display = "inline-block";
     const transferHistory = document.getElementById("transfer-history");
     if (transferHistory) transferHistory.style.display = "block";
@@ -559,7 +532,6 @@ class UIManager {
     this.activeConnectionStatus.style.textDecorationThickness = "";
     this.endBtn.textContent = "Cancel";
     this.endBtn.style.display = "inline-block";
-    // Do not hide chat during waiting state to prevent flashing
   }
 
   updateToConnectedAfterAbort(peerId) {
@@ -575,16 +547,13 @@ class UIManager {
     this.endBtn.textContent = "Disconnect";
     this.endBtn.style.display = "inline-block";
 
-    // Edit Nickname Button
     let editBtn = document.getElementById("edit-nickname-btn");
-    // ... creation logic handled below ...
 
     if (!editBtn) {
       editBtn = document.createElement("button");
       editBtn.id = "edit-nickname-btn";
       editBtn.textContent = "✎";
       editBtn.title = "Edit Nickname";
-      // Removed marginLeft to rely on flex gap for even spacing
       editBtn.style.padding = "2px 6px";
       editBtn.style.cursor = "pointer";
       editBtn.style.fontSize = "0.9rem";
@@ -592,7 +561,7 @@ class UIManager {
       editBtn.style.border = "1px solid #4a90e2";
       editBtn.style.borderRadius = "4px";
       editBtn.style.boxShadow = "none";
-      editBtn.style.color = "#4a90e2"; // Primary blue matches app theme
+      editBtn.style.color = "#4a90e2";
       editBtn.style.fontWeight = "bold";
 
       editBtn.addEventListener("click", () => {
@@ -610,12 +579,10 @@ class UIManager {
     }
     editBtn.style.display = "inline-block";
 
-    // Re-run display update to ensure ID span is ordered correctly before edit btn if it was just created
     this.updatePeerIdentityDisplay(peerId);
 
     this.fileTransferSection.style.display = "block";
 
-    // Do not clear chat history or force hide chat
     if (this.toggleChatBtn) {
       this.toggleChatBtn.style.display = "inline-block";
       const isChatVisible =
@@ -630,16 +597,9 @@ class UIManager {
   updateToConnected(peerId) {
     clearTimeout(this.newIdAlertTimer);
 
-    // Instead of forcing removal of UI, update state more gently
-    // If we are already connected, we might want to keep the frame
-
-    // Only disable upload field but do not clear it if we want to reset status but keep selection?
-    // User requested: "clear the file area and disable the send button but do not clear those elements and reshow them again"
-    // So we clear VALUE but don't remove the DOM elements wrapper
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
 
-    // Reset progress UI but check if they are already hidden to avoid flash
     if (
       this.progressContainerSent &&
       this.progressContainerSent.style.display !== "none"
@@ -653,7 +613,6 @@ class UIManager {
       this.resetReceivedTransferUI();
     }
 
-    // Ensure main containers are visible if they were hidden
     if (this.activeConnectionContainer.style.display !== "flex") {
       this.activeConnectionContainer.style.display = "flex";
     }
@@ -663,7 +622,6 @@ class UIManager {
     this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
     this.activeConnectionStatus.textContent = this.getNickname(peerId);
 
-    // Apply styles
     this.activeConnectionStatus.style.textDecoration = "underline";
     this.activeConnectionStatus.style.textDecorationColor = "#27ae60";
     this.activeConnectionStatus.style.textDecorationThickness = "3px";
@@ -673,12 +631,9 @@ class UIManager {
       this.endBtn.style.display = "inline-block";
     }
 
-    // Edit Nickname Button
     let editBtn = document.getElementById("edit-nickname-btn");
     if (!editBtn) {
-      // Create only if it doesn't exist
       editBtn = document.createElement("button");
-      // ... (rest of button init) ...
       editBtn.id = "edit-nickname-btn";
       editBtn.textContent = "✎";
       editBtn.title = "Edit Nickname";
@@ -709,14 +664,12 @@ class UIManager {
       editBtn.style.display = "inline-block";
     }
 
-    // Re-run display update
     this.updatePeerIdentityDisplay(peerId);
 
     if (this.fileTransferSection.style.display !== "block") {
       this.fileTransferSection.style.display = "block";
     }
 
-    // Do not clear chat history or force hide chat
     if (this.toggleChatBtn) {
       if (this.toggleChatBtn.style.display !== "inline-block") {
         this.toggleChatBtn.style.display = "inline-block";
@@ -739,7 +692,6 @@ class UIManager {
   appendChatMessage(text, isSelf) {
     if (!this.chatBox) return;
 
-    // Check visibility for notification
     if (
       !isSelf &&
       this.chatSection &&
@@ -750,7 +702,6 @@ class UIManager {
       }
     }
 
-    // Remove placeholder if present
     const placeholder = this.chatBox.querySelector(".chat-placeholder");
     if (placeholder) {
       placeholder.remove();
@@ -760,10 +711,8 @@ class UIManager {
     msgDiv.classList.add("chat-message");
     msgDiv.classList.add(isSelf ? "self" : "peer");
 
-    // Safety check for text to prevent HTML injection (textContent handles this)
     msgDiv.textContent = text;
 
-    // Optional: Add timestamp
     const timeSpan = document.createElement("span");
     timeSpan.style.fontSize = "0.7em";
     timeSpan.style.opacity = "0.7";

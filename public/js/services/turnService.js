@@ -1,4 +1,3 @@
-// Fetches TURN server credentials from server
 class TurnService {
   constructor() {
     this.rtcConfig = { ...RTC_CONFIG };
@@ -26,8 +25,6 @@ class TurnService {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      // If the error is a 403 Forbidden (common in dev/local environments without TURN),
-      // suppress the error log to avoid noise.
       if (
         error.message &&
         (error.message.includes("403") || error.message.includes("Forbidden"))

@@ -1,4 +1,3 @@
-// Manages file transfers
 class FileTransferManager {
   constructor() {
     this.receivedFileDetails = null;
@@ -7,12 +6,12 @@ class FileTransferManager {
     this.fileMsgTimer = null;
     this.isSending = false;
     this.isReceiving = false;
-    this.isStopped = false; // Flag to stop transfers
+    this.isStopped = false;
     this.isPaused = false;
     this.receivedCleanupTimer = null;
 
-    this.selectedFiles = []; // Store multiple files
-    this.receivedBatch = []; // For ZIP functionality
+    this.selectedFiles = [];
+    this.receivedBatch = [];
 
     this.initializeElements();
     this.initializeEventListeners();
@@ -39,7 +38,6 @@ class FileTransferManager {
   }
 
   initializeEventListeners() {
-    // Browse Buttons
     if (this.browseFilesBtn) {
       this.browseFilesBtn.addEventListener("click", () =>
         this.uploadField.click(),
@@ -51,7 +49,6 @@ class FileTransferManager {
       );
     }
 
-    // Input Changes
     this.uploadField.addEventListener("change", () =>
       this.handleFileSelection(this.uploadField.files),
     );
@@ -61,7 +58,6 @@ class FileTransferManager {
       );
     }
 
-    // Drag & Drop
     if (this.dropZone) {
       ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
         this.dropZone.addEventListener(eventName, this.preventDefaults, false);
@@ -102,7 +98,7 @@ class FileTransferManager {
 
   handleFileSelection(files) {
     if (files.length > 0) {
-      const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+      const MAX_SIZE = 2 * 1024 * 1024 * 1024;
       const validFiles = [];
       const skippedFiles = [];
 
@@ -133,7 +129,6 @@ class FileTransferManager {
       } else if (this.selectedFiles.length > 1) {
         this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles.length} files (${this.displayFileSize(totalSize)})`;
       } else {
-        // If all skipped
         this.fileNameDisplay.textContent = "";
       }
 
@@ -168,19 +163,14 @@ class FileTransferManager {
     uiManager.clearFileAlert();
     this.fileTransferBtn.disabled = true;
 
-    // Iterate and send each file sequentially
     for (let i = 0; i < this.selectedFiles.length; i++) {
-      // STOP CHECK: If stopped, do not proceed to next file
       if (this.isStopped) break;
 
       const fileToSend = this.selectedFiles[i];
 
-      // Update UI to show which file is sending
       uiManager.ensureSentContainer();
 
-      // Reset bar to 0% first
       uiManager.resetSentProgressOnly();
-      // Initialize stats to "Calculating..." immediately
       uiManager.updateSentStats("-", "-");
 
       const startMsg =
@@ -189,7 +179,6 @@ class FileTransferManager {
           : `Sending file: ${fileToSend.name}`;
       uiManager.transferStatusDivSent.textContent = startMsg;
 
-      // Send metadata
       webrtcManager.dataChannel.send(
         JSON.stringify({
           type: "metadata",
@@ -200,7 +189,6 @@ class FileTransferManager {
         }),
       );
 
-      // Wait for file to send before moving to next
       try {
         await this.sendFileSlicesPromise(
           fileToSend,
@@ -212,27 +200,19 @@ class FileTransferManager {
         break;
       }
 
-      // STOP CHECK: Check again after file 'finished' (or stopped mid-way)
       if (this.isStopped) break;
-
-      // Removed extra delay loop here to reduce "dead space".
-      // rely on the 500ms delay inside sendFileSlicesPromise for pacing.
     }
 
     const wasStopped = this.isStopped;
 
-    // Ensure button is re-enabled even if stopped
     this.fileTransferBtn.disabled = false;
 
-    // Reset stop flag for next time
     this.isStopped = false;
     this.isPaused = false;
 
-    // Only clear if successful and not stopped
     if (this.selectedFiles.length > 0 && !wasStopped && this.isSending) {
       uiManager.updateSentProgressBarValue(100);
 
-      // Hide UI immediately after the last file's individual 500ms wait
       uiManager.resetSentTransferUI();
     }
   }
@@ -253,11 +233,9 @@ class FileTransferManager {
   }
 
   stopTransfer() {
-    // Abort ongoing transfer
     this.isStopped = true;
     this.isPaused = false;
 
-    // Control message to receiver
     if (
       webrtcManager.dataChannel &&
       webrtcManager.dataChannel.readyState === "open"
@@ -270,22 +248,19 @@ class FileTransferManager {
     this.isSending = false;
     this.fileTransferBtn.disabled = false;
 
-    // Update UI
     uiManager.updateSentStats("-", "-");
 
-    // Clear immediatley to match receiver's behavior on stop
     uiManager.resetSentTransferUI();
   }
 
   updateFileSelectionUI() {
-    // Helper to clear the text if array is empty
     if (this.selectedFiles.length === 0 && this.fileNameDisplay) {
       this.fileNameDisplay.textContent = "";
     }
   }
 
   async sendFileSlicesPromise(fileObj, currentIdx, totalCount) {
-    if (this.isStopped) return Promise.resolve(); // Skip if stopped
+    if (this.isStopped) return Promise.resolve();
 
     this.isSending = true;
     let startTime = Date.now();
@@ -296,15 +271,13 @@ class FileTransferManager {
       const reader = new FileReader();
 
       reader.onload = async (evt) => {
-        // Check for Stop Flag
         if (this.isStopped) {
           this.cleanupSentTransfer();
           resolve();
           return;
         }
 
-        // Check for Pause (but not for very small files < 1MB to avoid glitches)
-        const MIN_PAUSE_SIZE = 1024 * 1024; // 1MB
+        const MIN_PAUSE_SIZE = 1024 * 1024;
         while (this.isPaused && fileObj.size > MIN_PAUSE_SIZE) {
           if (this.isStopped) {
             this.cleanupSentTransfer();
@@ -349,19 +322,16 @@ class FileTransferManager {
 
         offset += chunk.byteLength;
 
-        // Throttle UI Updates (e.g., every 100ms)
         const now = Date.now();
         if (now - lastUIUpdate > 100 || offset === fileObj.size) {
-          // Ensure UI is visible!
           uiManager.ensureSentContainer();
           uiManager.updateSentProgressBarValue(
             Math.floor((offset / fileObj.size) * 100),
           );
 
-          // Speed/ETA Calculation
-          const elapsed = (now - startTime) / 1000; // seconds
+          const elapsed = (now - startTime) / 1000;
           if (elapsed > 0.5) {
-            const speed = offset / elapsed; // bytes per second
+            const speed = offset / elapsed;
             const remainingBytes = fileObj.size - offset;
             const eta = remainingBytes / speed;
             uiManager.updateSentStats(
@@ -375,7 +345,6 @@ class FileTransferManager {
         if (offset < fileObj.size) {
           readChunk(offset);
         } else {
-          // File done - matching format with receiver
           const doneMsg =
             totalCount > 1
               ? `Sent file ${currentIdx}/${totalCount}: ${fileObj.name}`
@@ -386,10 +355,8 @@ class FileTransferManager {
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
           this.recordSentFile(fileObj);
 
-          // Wait 500ms at filled state ONLY if more files are coming or to match receiver
           await new Promise((r) => setTimeout(r, 500));
 
-          // Reset Progress Bar
           uiManager.updateSentProgressBarValue(0);
           uiManager.updateSentStats("-", "-");
 
@@ -420,7 +387,6 @@ class FileTransferManager {
     return `${m}m ${s}s`;
   }
 
-  // Legacy method kept for safety, but sendFileSlicesPromise is used now
   async sendFileSlices(fileObj) {
     return this.sendFileSlicesPromise(fileObj, 1, 1);
   }
@@ -429,13 +395,11 @@ class FileTransferManager {
     try {
       const info = JSON.parse(input);
       if (info.type === "metadata") {
-        // Clear any pending cleanup from previous files to prevent UI flickering
         if (this.receivedCleanupTimer) {
           clearTimeout(this.receivedCleanupTimer);
           this.receivedCleanupTimer = null;
         }
 
-        // Detect new batch starting: index is 1. If we have leftover files from a previous (cancelled) batch, clear them.
         if (info.batchIndex === 1 && this.receivedBatch.length > 0) {
           this.receivedBatch = [];
         }
@@ -452,8 +416,8 @@ class FileTransferManager {
         this.isReceiving = true;
 
         uiManager.ensureReceivedContainer();
-        uiManager.resetReceivedProgressOnly(); 
-        uiManager.updateReceivedStats("...", "-"); // Explicitly set "Calculating..." at start
+        uiManager.resetReceivedProgressOnly();
+        uiManager.updateReceivedStats("...", "-");
 
         const batchMsg =
           info.batchTotal > 1
@@ -464,11 +428,10 @@ class FileTransferManager {
         this.finalizeIncomingFile();
         this.isReceiving = false;
       } else if (info.type === "cancel-transfer") {
-        // If we have received > 1 files in this interrupted batch, create a partial zip for them.
         if (this.receivedBatch.length > 1) {
           this.createBatchZipButton([...this.receivedBatch]);
         }
-        this.receivedBatch = []; // Clear current batch so it doesn't mix with next one
+        this.receivedBatch = [];
 
         this.cleanupReceivedTransfer();
         uiManager.showFileWarning("Sender cancelled transfer.");
@@ -483,7 +446,6 @@ class FileTransferManager {
     this.collectedChunks.push(arrayBuffer);
     this.receivedBytes += arrayBuffer.byteLength;
 
-    // Ensure UI exists before updating
     if (
       !uiManager.transferStatusDivReceived ||
       !uiManager.transferStatusDivReceived.isConnected
@@ -502,7 +464,6 @@ class FileTransferManager {
       ),
     );
 
-    // Stats
     const now = Date.now();
     const elapsed = (now - this.receivedFileDetails.startTime) / 1000;
     if (elapsed > 0.5) {
@@ -523,7 +484,6 @@ class FileTransferManager {
       blob: fileBlob,
     });
 
-    // Create download link for individual file
     const link = document.createElement("a");
     link.href = URL.createObjectURL(fileBlob);
     link.download = this.receivedFileDetails.fileName;
@@ -543,7 +503,6 @@ class FileTransferManager {
       this.receivedFileDetails.fileSize,
     )}, from: ${peerDisplay}, at: ${new Date().toLocaleTimeString()}`;
 
-    // Minimalist styling
     metaSpan.style.fontSize = "0.75rem";
     metaSpan.style.fontStyle = "italic";
     metaSpan.style.color = "#888";
@@ -564,7 +523,6 @@ class FileTransferManager {
       this.incomingFilesContainer.appendChild(wrapperDiv);
     }
 
-    // Check if batch is complete
     if (
       this.receivedFileDetails.batchIndex ===
       this.receivedFileDetails.batchTotal
@@ -585,9 +543,15 @@ class FileTransferManager {
 
     uiManager.updateReceivedStats("-", "-");
 
+    const delay =
+      this.receivedFileDetails &&
+      this.receivedFileDetails.batchIndex < this.receivedFileDetails.batchTotal
+        ? 2000
+        : 500;
+
     this.receivedCleanupTimer = setTimeout(
       () => uiManager.resetReceivedTransferUI(),
-      500,
+      delay,
     );
 
     this.receivedFileDetails = null;
@@ -602,15 +566,8 @@ class FileTransferManager {
     const btn = document.createElement("button");
     btn.className = "zip-download-btn";
 
-    // Calculate total files visible in container to give context
-    // Note: container includes previous files and previous Zip buttons/wrappers.
-    // We know `files` is the batch we just received.
-    // If there are more files in the DOM than just this batch, say "Last N Files".
-    // Each file is in a div wrapper.
     const totalItems =
       this.incomingFilesContainer.querySelectorAll("div").length;
-    // We just added `files.length` items.
-    // If totalItems > files.length, then there is history.
 
     const count = files.length;
     if (totalItems > count) {
@@ -618,9 +575,6 @@ class FileTransferManager {
     } else {
       btn.innerHTML = `📦 Download ${count} Files (ZIP)`;
     }
-
-    // Styles moved to CSS class 'zip-download-btn' in style.css
-    // to support light/dark mode switching properly.
 
     btn.addEventListener("click", () => this.downloadSpecificBatch(files));
 
@@ -681,7 +635,6 @@ class FileTransferManager {
       fileObj.size,
     )}, to: ${peerDisplay}, at: ${new Date().toLocaleTimeString()}`;
 
-    // Minimalist styling similar to chat timestamps
     metaSpan.style.fontSize = "0.75rem";
     metaSpan.style.fontStyle = "italic";
     metaSpan.style.color = "#888";
@@ -769,7 +722,6 @@ class FileTransferManager {
   }
 
   clearHistory() {
-    // Clears both lists and the internal memory references
     if (this.outgoingFilesContainer) this.outgoingFilesContainer.innerHTML = "";
     if (this.incomingFilesContainer) this.incomingFilesContainer.innerHTML = "";
     if (this.transferHistoryDiv) this.transferHistoryDiv.style.display = "none";

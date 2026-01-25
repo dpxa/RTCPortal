@@ -1,4 +1,3 @@
-// Manages server and peer connections
 class WebRTCManager {
   constructor() {
     this.socket = environmentIsProd
@@ -135,9 +134,8 @@ class WebRTCManager {
     if (peerId && peerId !== this.selfId) {
       this.partnerIdField.value = peerId;
       this.updateConnectButton();
-      this.initiateConnection(); // Auto-connect
+      this.initiateConnection();
 
-      // Clean URL to avoid re-connecting on refresh
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }
@@ -170,7 +168,6 @@ class WebRTCManager {
     this.abortPendingConnection();
     uiManager.updateToWaiting();
 
-    // Explicitly clear file selection when starting a new connection
     if (fileTransferManager) {
       fileTransferManager.clearFileSelection();
     }
@@ -206,15 +203,12 @@ class WebRTCManager {
   }
 
   async handleOffer(data) {
-    // If we are already connected or in process, reset.
-    // Important: Clear file area on new connection attempt from peer.
     if (fileTransferManager) {
       fileTransferManager.clearFileSelection();
     }
 
     uiManager.clearAlert();
     this.abortPendingConnection();
-    // If active connection existed, we reset it (which also calls clearFileSelection inside resetCurrentConnection)
     if (this.peerConnection) {
       this.resetCurrentConnection();
     }
@@ -392,7 +386,6 @@ class WebRTCManager {
       this.dataChannel.send(JSON.stringify(msg));
       uiManager.appendChatMessage(text, true);
     } else {
-      // Fallback or alert if not connected
       console.warn("Cannot send chat: Data channel not open.");
     }
   }

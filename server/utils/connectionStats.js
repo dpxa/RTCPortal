@@ -1,4 +1,3 @@
-// Manages connection stats
 class ConnectionStats {
   constructor() {
     this.totalAttempts = 0;
