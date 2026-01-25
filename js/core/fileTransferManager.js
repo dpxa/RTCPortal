@@ -416,7 +416,7 @@ class FileTransferManager {
         this.isReceiving = true;
 
         uiManager.ensureReceivedContainer();
-        uiManager.resetReceivedProgressOnly(); 
+        uiManager.resetReceivedProgressOnly();
         uiManager.updateReceivedStats("...", "-");
 
         const batchMsg =
