@@ -1,4 +1,3 @@
-// Settings for production server
 const {
   DEFAULT_PORT,
   CORS_ORIGINS,

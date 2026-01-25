@@ -1,6 +1,6 @@
 {
   "name": "rtcportal",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Peer-to-peer file transfer using WebRTC and Socket.IO signaling.",
   "main": "index.js",
   "type": "commonjs",
@@ -23,5 +23,8 @@
     "helmet": "^8.0.0",
     "node-fetch": "^3.3.2",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "selenium-webdriver": "^4.40.0"
   }
 }

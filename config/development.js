@@ -1,4 +1,3 @@
-// Settings for development server
 const {
   DEFAULT_PORT,
   SOCKET_TRANSPORTS,

@@ -1,4 +1,3 @@
-// Server entry point
 const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
@@ -27,7 +26,19 @@ if (environment === "production") {
   );
 }
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "script-src": ["'self'", "https://cdnjs.cloudflare.com"],
+        "style-src": ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
+        "font-src": ["'self'", "https://fonts.gstatic.com"],
+        "img-src": ["'self'", "data:", "blob:"],
+      },
+    },
+  })
+);
 
 app.set("connectionStats", connectionStats);
 

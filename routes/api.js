@@ -1,4 +1,3 @@
-// Provides routes for fetching TURN credentials from provider and getting connection stats
 const express = require("express");
 const {
   CORS_ORIGINS,
