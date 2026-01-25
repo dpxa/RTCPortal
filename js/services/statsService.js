@@ -1,4 +1,3 @@
-// Fetches connection statistics
 class StatsService {
   constructor() {
     this.successRateDisplay = document.getElementById("success-rate-display");

@@ -1,4 +1,3 @@
-// Fetches TURN server credentials from server
 class TurnService {
   constructor() {
     this.rtcConfig = { ...RTC_CONFIG };
@@ -13,7 +12,7 @@ class TurnService {
         const errorData = await response.json();
         throw new Error(
           errorData.error ||
-            `Failed to fetch TURN credentials: ${response.status}`
+            `Failed to fetch TURN credentials: ${response.status}`,
         );
       }
 
@@ -26,7 +25,19 @@ class TurnService {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      console.error("Using default STUN servers only.", error.message || error);
+      if (
+        error.message &&
+        (error.message.includes("403") || error.message.includes("Forbidden"))
+      ) {
+        console.warn(
+          "Using default STUN servers only (TURN credentials access restricted/forbidden).",
+        );
+      } else {
+        console.error(
+          "Using default STUN servers only.",
+          error.message || error,
+        );
+      }
     }
   }
 

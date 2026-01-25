@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -33,12 +33,19 @@
       href="images/favicon-16x16.png"
     />
     <link rel="manifest" href="images/site.webmanifest" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   </head>
   <body>
     <div class="wrapper">
-      <a href="https://github.com/dpxa" target="_blank" class="repo-link"
-        >GitHub</a
-      >
+      <div class="header-controls">
+        <button id="theme-toggle" class="theme-toggle" title="Toggle Dark Mode">
+          🌙
+        </button>
+        <a href="https://github.com/dpxa" target="_blank" class="repo-link"
+          >GitHub</a
+        >
+      </div>
       <h1>RTCPortal</h1>
       <main>
         <div class="container">
@@ -55,14 +62,51 @@
                 >
                   Waiting for ID
                 </span>
-                <button
-                  id="copy-id-btn"
-                  class="copy-button"
-                  style="display: none"
-                >
-                  Copy My ID
-                </button>
+                <div style="display: flex; gap: 5px">
+                  <button
+                    id="copy-id-btn"
+                    class="copy-button"
+                    style="display: none"
+                  >
+                    Copy ID
+                  </button>
+                  <button
+                    id="copy-link-btn"
+                    class="copy-button"
+                    style="display: none"
+                  >
+                    Copy Link
+                  </button>
+                  <button
+                    id="show-qr-btn"
+                    class="copy-button"
+                    style="display: none"
+                    title="Show QR Code"
+                  >
+                    QR Code
+                  </button>
+                </div>
                 <span id="status-id-message" class="message"></span>
+              </div>
+              <div
+                id="qr-code-wrapper"
+                style="
+                  display: none;
+                  text-align: center;
+                  margin-bottom: 4px;
+                  margin-top: 0;
+                "
+              >
+                <div
+                  id="qr-code-container"
+                  style="
+                    display: inline-block;
+                    padding: 5px;
+                    background: white;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                  "
+                ></div>
               </div>
               <input
                 type="text"
@@ -82,7 +126,6 @@
             <section id="file-transfer-section" style="display: none">
               <h2>Send File</h2>
               <div class="label-container">
-                <label for="upload-field">Choose File:</label>
                 <span
                   id="file-status-message"
                   class="message"
@@ -90,16 +133,51 @@
                   aria-live="assertive"
                 ></span>
               </div>
-              <input
-                type="file"
-                id="upload-field"
-                class="custom-file-input"
-                required
-              />
+              <div id="drop-zone" class="drop-zone">
+                <p class="drop-zone-text">Drag & Drop files and folders here</p>
+                <div class="upload-actions">
+                  <button id="browse-files-btn">Select Files</button>
+                  <button id="browse-folder-btn">Select Folder</button>
+                </div>
+                <input
+                  type="file"
+                  id="upload-field"
+                  style="display: none"
+                  multiple
+                />
+                <input
+                  type="file"
+                  id="folder-upload-field"
+                  style="display: none"
+                  webkitdirectory
+                  directory
+                  multiple
+                />
+                <div id="file-name-display"></div>
+              </div>
               <button id="file-transfer-btn" disabled>Send File</button>
+              <button id="toggle-chat-btn" style="display: none">
+                Open Chat
+              </button>
             </section>
 
             <!-- Dynamically create progress bar -->
+
+            <section id="chat-section" style="display: none">
+              <h2>Chat</h2>
+              <div id="chat-box" class="chat-box">
+                <div class="chat-placeholder">No messages yet...</div>
+              </div>
+              <div class="chat-input-container">
+                <input
+                  type="text"
+                  id="chat-input"
+                  placeholder="Type a message..."
+                  autocomplete="off"
+                />
+                <button id="send-chat-btn">Send</button>
+              </div>
+            </section>
           </div>
 
           <div class="column" id="transfer-history" style="display: none">
@@ -107,19 +185,28 @@
               <div class="file-history-header">
                 <div class="erase-history-container"></div>
                 <div class="file-history-title">
-                  <h2>File History</h2>
+                  <h2>History</h2>
                 </div>
                 <div class="spacer"></div>
               </div>
+
+              <section id="incoming-section" style="display: none">
+                <h3>Received Files</h3>
+                <div id="incoming-files"></div>
+              </section>
 
               <section id="outgoing-section" style="display: none">
                 <h3>Sent Files</h3>
                 <div id="outgoing-files"></div>
               </section>
 
-              <section id="incoming-section" style="display: none">
-                <h3>Received Files</h3>
-                <div id="incoming-files"></div>
+              <section id="chat-history-section" style="display: none">
+                <h3>Chat History</h3>
+                <div
+                  id="chat-history-list"
+                  class="chat-box"
+                  style="height: auto; max-height: 300px; overflow-y: auto"
+                ></div>
               </section>
             </section>
           </div>
@@ -173,11 +260,12 @@
     <script src="js/services/turnService.js"></script>
     <script src="js/services/statsService.js"></script>
     <script src="js/core/fileTransferManager.js"></script>
+    <!-- webrtcManager is loaded by loadSocketIO.js -->
 
     <script src="js/loadSocketIO.js"></script>
 
     <footer>
-      <p>&copy; 2025 RTCPortal</p>
+      <p>&copy; 2026 RTCPortal</p>
     </footer>
   </body>
 </html>

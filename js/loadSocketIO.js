@@ -1,5 +1,4 @@
-// Loads WebRTC manager after Socket.IO is ready
-const socketIoSrc = `${BASE_API_URL}/socket.io/socket.io.js`
+const socketIoSrc = `${BASE_API_URL}/socket.io/socket.io.js`;
 
 const socketScript = document.createElement("script");
 socketScript.src = socketIoSrc;
