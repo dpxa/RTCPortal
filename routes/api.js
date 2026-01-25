@@ -51,13 +51,11 @@ router.get("/turn-credentials", async (req, res) => {
       return res.status(HTTP_STATUS.OK).json([]);
     }
   } catch (error) {
-    return res
-      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
-      .json({
-        error: `Server error while fetching TURN credentials. ${
-          error.message || error
-        }`,
-      });
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: `Server error while fetching TURN credentials. ${
+        error.message || error
+      }`,
+    });
   }
 });
 

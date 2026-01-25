@@ -7,5 +7,5 @@ const {
 module.exports = {
   port: DEFAULT_PORT,
   cors: CORS_ORIGINS.GITHUB_PAGES,
-  transports: SOCKET_TRANSPORTS
+  transports: SOCKET_TRANSPORTS,
 };
