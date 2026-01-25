@@ -7,13 +7,13 @@ class UIManager {
 
     this.statusIdMessage = document.getElementById("status-id-message");
     this.activeConnectionContainer = document.getElementById(
-      "active-connection-container"
+      "active-connection-container",
     );
     this.activeConnectionLabel = document.getElementById(
-      "active-connection-label"
+      "active-connection-label",
     );
     this.activeConnectionStatus = document.getElementById(
-      "active-connection-status"
+      "active-connection-status",
     );
     this.endBtn = document.getElementById("end-btn");
     this.fileTransferSection = document.getElementById("file-transfer-section");
@@ -27,8 +27,31 @@ class UIManager {
     this.outgoingFilesContainer = document.getElementById("outgoing-files");
     this.incomingFilesContainer = document.getElementById("incoming-files");
     this.eraseHistoryContainer = document.querySelector(
-      ".erase-history-container"
+      ".erase-history-container",
     );
+
+    // Chat Elements
+    this.chatSection = document.getElementById("chat-section");
+    this.chatBox = document.getElementById("chat-box");
+    this.chatInput = document.getElementById("chat-input");
+    this.chatSendBtn = document.getElementById("send-chat-btn");
+    this.toggleChatBtn = document.getElementById("toggle-chat-btn");
+    this.chatHistorySection = document.getElementById("chat-history-section");
+    this.chatHistoryList = document.getElementById("chat-history-list");
+    this.nicknames = {};
+
+    if (this.toggleChatBtn) {
+      this.toggleChatBtn.addEventListener("click", () => this.toggleChat());
+    }
+
+    if (this.chatSendBtn) {
+      this.chatSendBtn.addEventListener("click", () => this.handleSendChat());
+    }
+    if (this.chatInput) {
+      this.chatInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") this.handleSendChat();
+      });
+    }
 
     this.transferStatusDivSent = null;
     this.progressContainerSent = null;
@@ -41,6 +64,73 @@ class UIManager {
     this.progressPercentReceived = null;
 
     this.initializeTemplates();
+    this.initializeTheme();
+  }
+
+  initializeTheme() {
+    this.themeToggleBtn = document.getElementById("theme-toggle");
+    if (this.themeToggleBtn) {
+      this.themeToggleBtn.addEventListener("click", () => {
+        document.body.classList.toggle("dark-mode");
+        const isDark = document.body.classList.contains("dark-mode");
+        this.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+      });
+    }
+  }
+
+  getNickname(peerId) {
+    if (!peerId) return "";
+    return this.nicknames[peerId] || peerId;
+  }
+
+  setNickname(peerId, name) {
+    if (!peerId) return;
+    if (name && name.trim() !== "") {
+      this.nicknames[peerId] = name.trim();
+    } else {
+      delete this.nicknames[peerId];
+    }
+
+    // Update active connection label if currently connected to this peer
+    const currentPeerId =
+      this.activeConnectionStatus.getAttribute("data-peer-id");
+    if (currentPeerId === peerId) {
+      this.updatePeerIdentityDisplay(peerId);
+    }
+  }
+
+  updatePeerIdentityDisplay(peerId) {
+    const nickname = this.getNickname(peerId);
+    this.activeConnectionStatus.textContent = nickname;
+
+    // Handle ID Span
+    let idSpan = document.getElementById("peer-id-display-span");
+    if (nickname !== peerId) {
+      if (!idSpan) {
+        idSpan = document.createElement("span");
+        idSpan.id = "peer-id-display-span";
+        idSpan.style.fontSize = "0.75rem";
+        idSpan.style.fontStyle = "italic";
+        idSpan.style.color = "#999";
+        // removed marginLeft as flex gap handles spacing roughly
+      }
+      idSpan.textContent = peerId;
+
+      // Ensure it is inserted after status but before edit btn
+      const editBtn = document.getElementById("edit-nickname-btn");
+      if (editBtn && editBtn.parentNode === this.activeConnectionContainer) {
+        this.activeConnectionContainer.insertBefore(idSpan, editBtn);
+        // Update color if dark theme toggled externally (simple check)
+        // Ideally theme manager handles this, but for now:
+        if (document.body.classList.contains("dark-mode")) {
+          // idSpan.style.color matches #999 which is fine for dark
+        }
+      } else {
+        this.activeConnectionContainer.appendChild(idSpan);
+      }
+    } else {
+      if (idSpan) idSpan.remove();
+    }
   }
 
   initializeTemplates() {
@@ -50,6 +140,11 @@ class UIManager {
         <div class="progress-container" id="sent-progress-container">
           <div class="progress-bar" style="width: 0%; background: #27ae60;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
+        </div>
+        <div id="sent-stats" style="font-size: 0.85rem; color: #27ae60; margin-top: 4px; font-family: monospace;"></div>
+        <div id="sent-buttons-container" style="margin-top: 8px; display: none;">
+            <button id="pause-transfer-btn" style="font-size: 0.8rem; padding: 4px 8px; background-color: #f39c12; border-color: #f39c12;">Pause</button>
+            <button id="stop-transfer-btn" style="font-size: 0.8rem; padding: 4px 8px; background-color: #e74c3c; border-color: #e74c3c; margin-left: 5px;">Stop</button>
         </div>
       </div>
     `;
@@ -61,6 +156,7 @@ class UIManager {
           <div class="progress-bar" style="width: 0%; background: #4a90e2;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
+         <div id="received-stats" style="font-size: 0.85rem; color: #4a90e2; margin-top: 4px; font-family: monospace;"></div>
       </div>
     `;
   }
@@ -106,6 +202,20 @@ class UIManager {
     this.fileMsgTimer = setTimeout(() => this.clearFileAlert(), ALERT_TIMEOUT);
   }
 
+  showFileWarning(message) {
+    clearTimeout(this.fileMsgTimer);
+    // Do not clear input or disable button
+    this.fileStatusMessage.textContent = message;
+    this.fileStatusMessage.style.display = "inline-block";
+    this.fileStatusMessage.style.border = "1.5px solid red"; // User requested red
+    this.fileStatusMessage.style.color = "red";
+    this.fileStatusMessage.style.padding = "1px 2px";
+    this.fileMsgTimer = setTimeout(
+      () => this.clearFileAlert(),
+      ALERT_TIMEOUT + 2000,
+    );
+  }
+
   clearFileAlert() {
     clearTimeout(this.fileMsgTimer);
     this.fileStatusMessage.textContent = "";
@@ -121,27 +231,74 @@ class UIManager {
       const temp = document.createElement("div");
       temp.innerHTML = this.sentTemplateHTML;
       container = temp.firstElementChild;
-      this.uploadField.parentNode.appendChild(container);
+      this.fileTransferSection.appendChild(container);
     }
     this.transferStatusDivSent = container.querySelector(
-      "#transfer-status-sent"
+      "#transfer-status-sent",
     );
     this.progressContainerSent = container.querySelector(
-      "#sent-progress-container"
+      "#sent-progress-container",
     );
     this.progressBarSent =
       this.progressContainerSent.querySelector(".progress-bar");
     this.progressPercentSent = this.progressContainerSent.querySelector(
-      ".progress-percentage"
+      ".progress-percentage",
     );
+    this.sentStatsDiv = container.querySelector("#sent-stats");
+    this.sentButtonsContainer = container.querySelector(
+      "#sent-buttons-container",
+    );
+    this.pauseTransferBtn = container.querySelector("#pause-transfer-btn");
+    this.stopTransferBtn = container.querySelector("#stop-transfer-btn");
+
+    if (this.pauseTransferBtn) {
+      this.pauseTransferBtn.addEventListener("click", () => {
+        // We need to call fileTransferManager.togglePause()
+        // but UI shouldn't know about logic directly?
+        // Ideally we use an event or callback.
+        // For simplicity in this codebase structure:
+        window.fileTransferManager.togglePause();
+      });
+    }
+
+    if (this.stopTransferBtn) {
+      this.stopTransferBtn.addEventListener("click", () => {
+        window.fileTransferManager.stopTransfer();
+      });
+    }
 
     this.progressContainerSent.style.display = "block";
+    this.sentButtonsContainer.style.display = "block";
     this.progressPercentSent.style.display = "inline-block";
   }
 
   updateSentProgressBarValue(value) {
-    this.progressBarSent.style.width = `${value}%`;
-    this.progressPercentSent.textContent = `${value}%`;
+    if (this.progressBarSent) {
+      this.progressBarSent.style.width = `${value}%`;
+    }
+    if (this.progressPercentSent) {
+      this.progressPercentSent.textContent = `${value}%`;
+    }
+  }
+
+  updateSentStats(speed, eta) {
+    if (!this.sentStatsDiv) return;
+    const isCalculating =
+      !speed || speed === "-" || speed === "..." || !eta || eta === "-";
+    this.sentStatsDiv.textContent = isCalculating
+      ? "Calculating..."
+      : `${speed} - ETA: ${eta}`;
+  }
+
+  resetSentProgressOnly() {
+    if (this.progressBarSent) {
+      this.progressBarSent.style.width = "0%";
+    }
+    if (this.progressPercentSent) {
+      this.progressPercentSent.textContent = "0%";
+    }
+    // Do not clear stats here, as it might be called just before starting a new file
+    // and we want "Calculating..." to show up if set immediately after.
   }
 
   resetSentTransferUI() {
@@ -154,6 +311,20 @@ class UIManager {
     this.progressContainerSent = null;
     this.progressBarSent = null;
     this.progressPercentSent = null;
+    this.sentStatsDiv = null;
+    this.sentButtonsContainer = null;
+    this.pauseTransferBtn = null;
+    this.stopTransferBtn = null;
+  }
+
+  resetReceivedProgressOnly() {
+    if (this.progressBarReceived) {
+      this.progressBarReceived.style.width = "0%";
+    }
+    if (this.progressPercentReceived) {
+      this.progressPercentReceived.textContent = "0%";
+    }
+    // Do not clear stats here.
   }
 
   ensureReceivedContainer() {
@@ -162,19 +333,20 @@ class UIManager {
       const temp = document.createElement("div");
       temp.innerHTML = this.receivedTemplateHTML;
       container = temp.firstElementChild;
-      this.uploadField.parentNode.appendChild(container);
+      this.fileTransferSection.appendChild(container);
     }
     this.transferStatusDivReceived = container.querySelector(
-      "#transfer-status-received"
+      "#transfer-status-received",
     );
     this.progressContainerReceived = container.querySelector(
-      "#received-progress-container"
+      "#received-progress-container",
     );
     this.progressBarReceived =
       this.progressContainerReceived.querySelector(".progress-bar");
     this.progressPercentReceived = this.progressContainerReceived.querySelector(
-      ".progress-percentage"
+      ".progress-percentage",
     );
+    this.receivedStatsDiv = container.querySelector("#received-stats");
 
     this.progressContainerReceived.style.display = "block";
     this.progressPercentReceived.style.display = "inline-block";
@@ -183,6 +355,15 @@ class UIManager {
   updateReceivedProgressBarValue(value) {
     this.progressBarReceived.style.width = `${value}%`;
     this.progressPercentReceived.textContent = `${value}%`;
+  }
+
+  updateReceivedStats(speed, eta) {
+    if (!this.receivedStatsDiv) return;
+    const isCalculating =
+      !speed || speed === "-" || speed === "..." || !eta || eta === "-";
+    this.receivedStatsDiv.textContent = isCalculating
+      ? "Calculating..."
+      : `${speed} - ETA: ${eta}`;
   }
 
   resetReceivedTransferUI() {
@@ -194,9 +375,157 @@ class UIManager {
     this.progressContainerReceived = null;
     this.progressBarReceived = null;
     this.progressPercentReceived = null;
+    this.receivedStatsDiv = null;
+  }
+
+  handleSendChat() {
+    const text = this.chatInput.value.trim();
+    if (text && window.webrtcManager) {
+      window.webrtcManager.sendChat(text);
+      this.chatInput.value = "";
+    }
+  }
+
+  toggleChat() {
+    if (!this.chatSection) return;
+
+    if (this.chatSection.style.display === "none") {
+      this.chatSection.style.display = "block";
+      if (this.toggleChatBtn) {
+        this.toggleChatBtn.textContent = "Close Chat";
+        this.toggleChatBtn.classList.remove("has-unread");
+      }
+      // Scroll to bottom when opening
+      this.chatBox.scrollTop = this.chatBox.scrollHeight;
+    } else {
+      this.chatSection.style.display = "none";
+      if (this.toggleChatBtn) this.toggleChatBtn.textContent = "Open Chat";
+    }
+  }
+
+  archiveChat(peerDisplayName, peerId) {
+    if (!this.chatBox || !this.chatHistoryList) return;
+
+    // Check if there are messages (ignore placeholder)
+    const messages = this.chatBox.querySelectorAll(".chat-message");
+    if (messages.length === 0) return;
+
+    const historyBlock = document.createElement("div");
+    historyBlock.style.borderBottom = "1px dashed #ccc";
+    historyBlock.style.paddingBottom = "10px";
+    historyBlock.style.marginBottom = "5px";
+    // Maintain flex column behavior for bubbles
+    historyBlock.style.display = "flex";
+    historyBlock.style.flexDirection = "column";
+
+    const timestamp = document.createElement("div");
+
+    let peerLabel = "";
+    if (peerDisplayName) {
+      if (peerId && peerId !== peerDisplayName) {
+        peerLabel = ` with ${peerDisplayName} (${peerId})`;
+      } else {
+        peerLabel = ` with ${peerDisplayName}`;
+      }
+    } else if (peerId) {
+      peerLabel = ` with ${peerId}`;
+    }
+
+    timestamp.textContent = `Session ended at ${new Date().toLocaleTimeString()}${peerLabel}`;
+    timestamp.style.fontSize = "0.75rem";
+    timestamp.style.fontStyle = "italic";
+    timestamp.style.color = "#999";
+    timestamp.style.marginBottom = "8px";
+    historyBlock.appendChild(timestamp);
+
+    messages.forEach((msg) => {
+      const clone = msg.cloneNode(true);
+      historyBlock.appendChild(clone);
+    });
+
+    this.chatHistoryList.prepend(historyBlock); // Newest sessions at top
+
+    // Make visible
+    if (this.transferHistoryDiv)
+      this.transferHistoryDiv.style.display = "block";
+    if (this.chatHistorySection)
+      this.chatHistorySection.style.display = "block";
+
+    // Scroll to top to see the newest archived session
+    this.chatHistoryList.scrollTop = 0;
+
+    this.ensureClearHistoryButton();
+
+    // Clear the active chat box ensuring next session starts clean (although we do this in updateToConnected too)
+    this.chatBox.innerHTML =
+      '<div class="chat-placeholder">No messages yet...</div>';
+  }
+
+  ensureClearHistoryButton() {
+    let eraseHistoryBtn = document.getElementById("erase-history-btn");
+    if (!eraseHistoryBtn) {
+      eraseHistoryBtn = document.createElement("button");
+      eraseHistoryBtn.id = "erase-history-btn";
+      eraseHistoryBtn.className = "erase-history-btn";
+      eraseHistoryBtn.textContent = "Clear History";
+      eraseHistoryBtn.addEventListener("click", () => {
+        // Clear Files
+        const outContainer = document.getElementById("outgoing-files");
+        const inContainer = document.getElementById("incoming-files");
+
+        if (outContainer) {
+          Array.from(outContainer.querySelectorAll("a")).forEach((link) =>
+            URL.revokeObjectURL(link.href),
+          );
+          outContainer.innerHTML = "";
+        }
+        if (inContainer) {
+          Array.from(inContainer.querySelectorAll("a")).forEach((link) =>
+            URL.revokeObjectURL(link.href),
+          );
+          inContainer.innerHTML = "";
+        }
+
+        // Clear Chat
+        const chatHistoryList = document.getElementById("chat-history-list");
+        if (chatHistoryList) chatHistoryList.innerHTML = "";
+        const chatSection = document.getElementById("chat-history-section");
+        if (chatSection) chatSection.style.display = "none";
+
+        // Hide Sections
+        const transferHistory = document.getElementById("transfer-history");
+        if (transferHistory) transferHistory.style.display = "none";
+
+        const outSection = document.getElementById("outgoing-section");
+        if (outSection) outSection.style.display = "none";
+        const inSection = document.getElementById("incoming-section");
+        if (inSection) inSection.style.display = "none";
+
+        eraseHistoryBtn.remove();
+      });
+
+      const container = document.querySelector(".erase-history-container");
+      if (container) container.appendChild(eraseHistoryBtn);
+    }
+
+    // Ensure visibility
+    if (eraseHistoryBtn) eraseHistoryBtn.style.display = "inline-block";
+    const transferHistory = document.getElementById("transfer-history");
+    if (transferHistory) transferHistory.style.display = "block";
   }
 
   updateToIdle() {
+    const peerName = this.activeConnectionStatus
+      ? this.activeConnectionStatus.textContent
+      : null;
+    const peerId = this.activeConnectionStatus
+      ? this.activeConnectionStatus.getAttribute("data-peer-id")
+      : null;
+    this.archiveChat(peerName, peerId);
+
+    const editBtn = document.getElementById("edit-nickname-btn");
+    if (editBtn) editBtn.style.display = "none";
+
     this.clearFileAlert();
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
@@ -204,6 +533,11 @@ class UIManager {
     this.activeConnectionStatus.textContent = "";
     this.endBtn.style.display = "none";
     this.fileTransferSection.style.display = "none";
+    if (this.chatSection) this.chatSection.style.display = "none";
+    if (this.toggleChatBtn) {
+      this.toggleChatBtn.style.display = "none";
+      this.toggleChatBtn.classList.remove("has-unread");
+    }
 
     this.resetSentTransferUI();
     this.resetReceivedTransferUI();
@@ -216,11 +550,16 @@ class UIManager {
     this.activeConnectionContainer.style.display = "flex";
     this.activeConnectionLabel.textContent = "Waiting for peer...";
     this.activeConnectionStatus.textContent = "";
+
+    const editBtn = document.getElementById("edit-nickname-btn");
+    if (editBtn) editBtn.style.display = "none";
+
     this.activeConnectionStatus.style.textDecoration = "";
     this.activeConnectionStatus.style.textDecorationColor = "";
     this.activeConnectionStatus.style.textDecorationThickness = "";
     this.endBtn.textContent = "Cancel";
     this.endBtn.style.display = "inline-block";
+    // Do not hide chat during waiting state to prevent flashing
   }
 
   updateToConnectedAfterAbort(peerId) {
@@ -229,29 +568,166 @@ class UIManager {
 
     this.activeConnectionContainer.style.display = "flex";
     this.activeConnectionLabel.textContent = "Connected to:";
-    this.activeConnectionStatus.textContent = peerId;
+
+    this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
+    this.updatePeerIdentityDisplay(peerId);
+
     this.endBtn.textContent = "Disconnect";
     this.endBtn.style.display = "inline-block";
+
+    // Edit Nickname Button
+    let editBtn = document.getElementById("edit-nickname-btn");
+    // ... creation logic handled below ...
+
+    if (!editBtn) {
+      editBtn = document.createElement("button");
+      editBtn.id = "edit-nickname-btn";
+      editBtn.textContent = "✎";
+      editBtn.title = "Edit Nickname";
+      // Removed marginLeft to rely on flex gap for even spacing
+      editBtn.style.padding = "2px 6px";
+      editBtn.style.cursor = "pointer";
+      editBtn.style.fontSize = "0.9rem";
+      editBtn.style.background = "transparent";
+      editBtn.style.border = "1px solid #4a90e2";
+      editBtn.style.borderRadius = "4px";
+      editBtn.style.boxShadow = "none";
+      editBtn.style.color = "#4a90e2"; // Primary blue matches app theme
+      editBtn.style.fontWeight = "bold";
+
+      editBtn.addEventListener("click", () => {
+        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
+        const currentName = this.getNickname(pid);
+        const newName = prompt(
+          "Enter nickname for this peer:",
+          currentName === pid ? "" : currentName,
+        );
+        if (newName !== null) {
+          this.setNickname(pid, newName);
+        }
+      });
+      this.activeConnectionContainer.appendChild(editBtn);
+    }
+    editBtn.style.display = "inline-block";
+
+    // Re-run display update to ensure ID span is ordered correctly before edit btn if it was just created
+    this.updatePeerIdentityDisplay(peerId);
+
     this.fileTransferSection.style.display = "block";
+
+    // Do not clear chat history or force hide chat
+    if (this.toggleChatBtn) {
+      this.toggleChatBtn.style.display = "inline-block";
+      const isChatVisible =
+        this.chatSection && this.chatSection.style.display !== "none";
+      this.toggleChatBtn.textContent = isChatVisible
+        ? "Close Chat"
+        : "Open Chat";
+      this.toggleChatBtn.classList.remove("has-unread");
+    }
   }
 
   updateToConnected(peerId) {
     clearTimeout(this.newIdAlertTimer);
+
+    // Instead of forcing removal of UI, update state more gently
+    // If we are already connected, we might want to keep the frame
+
+    // Only disable upload field but do not clear it if we want to reset status but keep selection?
+    // User requested: "clear the file area and disable the send button but do not clear those elements and reshow them again"
+    // So we clear VALUE but don't remove the DOM elements wrapper
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
 
-    this.resetSentTransferUI();
-    this.resetReceivedTransferUI();
+    // Reset progress UI but check if they are already hidden to avoid flash
+    if (
+      this.progressContainerSent &&
+      this.progressContainerSent.style.display !== "none"
+    ) {
+      this.resetSentTransferUI();
+    }
+    if (
+      this.progressContainerReceived &&
+      this.progressContainerReceived.style.display !== "none"
+    ) {
+      this.resetReceivedTransferUI();
+    }
 
-    this.activeConnectionContainer.style.display = "flex";
+    // Ensure main containers are visible if they were hidden
+    if (this.activeConnectionContainer.style.display !== "flex") {
+      this.activeConnectionContainer.style.display = "flex";
+    }
+
     this.activeConnectionLabel.textContent = "Connected to:";
-    this.activeConnectionStatus.textContent = peerId;
+
+    this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
+    this.activeConnectionStatus.textContent = this.getNickname(peerId);
+
+    // Apply styles
     this.activeConnectionStatus.style.textDecoration = "underline";
     this.activeConnectionStatus.style.textDecorationColor = "#27ae60";
     this.activeConnectionStatus.style.textDecorationThickness = "3px";
+
     this.endBtn.textContent = "Disconnect";
-    this.endBtn.style.display = "inline-block";
-    this.fileTransferSection.style.display = "block";
+    if (this.endBtn.style.display !== "inline-block") {
+      this.endBtn.style.display = "inline-block";
+    }
+
+    // Edit Nickname Button
+    let editBtn = document.getElementById("edit-nickname-btn");
+    if (!editBtn) {
+      // Create only if it doesn't exist
+      editBtn = document.createElement("button");
+      // ... (rest of button init) ...
+      editBtn.id = "edit-nickname-btn";
+      editBtn.textContent = "✎";
+      editBtn.title = "Edit Nickname";
+      editBtn.style.padding = "2px 6px";
+      editBtn.style.cursor = "pointer";
+      editBtn.style.fontSize = "0.9rem";
+      editBtn.style.color = "#4a90e2";
+      editBtn.style.fontWeight = "bold";
+      editBtn.style.background = "transparent";
+      editBtn.style.border = "1px solid #4a90e2";
+      editBtn.style.borderRadius = "4px";
+      editBtn.style.boxShadow = "none";
+
+      editBtn.addEventListener("click", () => {
+        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
+        const currentName = this.getNickname(pid);
+        const newName = prompt(
+          "Enter nickname for this peer:",
+          currentName === pid ? "" : currentName,
+        );
+        if (newName !== null) {
+          this.setNickname(pid, newName);
+        }
+      });
+      this.activeConnectionContainer.appendChild(editBtn);
+    }
+    if (editBtn.style.display !== "inline-block") {
+      editBtn.style.display = "inline-block";
+    }
+
+    // Re-run display update
+    this.updatePeerIdentityDisplay(peerId);
+
+    if (this.fileTransferSection.style.display !== "block") {
+      this.fileTransferSection.style.display = "block";
+    }
+
+    // Do not clear chat history or force hide chat
+    if (this.toggleChatBtn) {
+      if (this.toggleChatBtn.style.display !== "inline-block") {
+        this.toggleChatBtn.style.display = "inline-block";
+      }
+      const isChatVisible =
+        this.chatSection && this.chatSection.style.display !== "none";
+      this.toggleChatBtn.textContent = isChatVisible
+        ? "Close Chat"
+        : "Open Chat";
+      this.toggleChatBtn.classList.remove("has-unread");
+    }
 
     this.newIdAlertTimer = setTimeout(() => {
       this.activeConnectionStatus.style.textDecoration = "";
@@ -259,6 +735,50 @@ class UIManager {
       this.activeConnectionStatus.style.textDecorationThickness = "";
     }, ID_UNDERLINE_TIMEOUT);
   }
+
+  appendChatMessage(text, isSelf) {
+    if (!this.chatBox) return;
+
+    // Check visibility for notification
+    if (
+      !isSelf &&
+      this.chatSection &&
+      this.chatSection.style.display === "none"
+    ) {
+      if (this.toggleChatBtn) {
+        this.toggleChatBtn.classList.add("has-unread");
+      }
+    }
+
+    // Remove placeholder if present
+    const placeholder = this.chatBox.querySelector(".chat-placeholder");
+    if (placeholder) {
+      placeholder.remove();
+    }
+
+    const msgDiv = document.createElement("div");
+    msgDiv.classList.add("chat-message");
+    msgDiv.classList.add(isSelf ? "self" : "peer");
+
+    // Safety check for text to prevent HTML injection (textContent handles this)
+    msgDiv.textContent = text;
+
+    // Optional: Add timestamp
+    const timeSpan = document.createElement("span");
+    timeSpan.style.fontSize = "0.7em";
+    timeSpan.style.opacity = "0.7";
+    timeSpan.style.marginLeft = "8px";
+    const now = new Date();
+    timeSpan.textContent = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    msgDiv.appendChild(timeSpan);
+
+    this.chatBox.appendChild(msgDiv);
+    this.chatBox.scrollTop = this.chatBox.scrollHeight;
+  }
 }
 
 const uiManager = new UIManager();
+window.uiManager = uiManager;

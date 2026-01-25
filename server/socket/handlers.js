@@ -18,6 +18,10 @@ const handleSocketConnection = (io, connectionStats) => {
     socket.on("offer", (payload) => {
       console.log(`Received offer from ${socket.id} to ${payload.target}`);
 
+      if (payload.target === socket.id) {
+        return; // Prevent self-signaling
+      }
+
       const targetSocket = io.sockets.sockets.get(payload.target);
       if (!targetSocket) {
         socket.emit("peer-not-found", { target: payload.target });

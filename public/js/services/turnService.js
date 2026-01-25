@@ -13,7 +13,7 @@ class TurnService {
         const errorData = await response.json();
         throw new Error(
           errorData.error ||
-            `Failed to fetch TURN credentials: ${response.status}`
+            `Failed to fetch TURN credentials: ${response.status}`,
         );
       }
 
@@ -26,7 +26,21 @@ class TurnService {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      console.error("Using default STUN servers only.", error.message || error);
+      // If the error is a 403 Forbidden (common in dev/local environments without TURN),
+      // suppress the error log to avoid noise.
+      if (
+        error.message &&
+        (error.message.includes("403") || error.message.includes("Forbidden"))
+      ) {
+        console.warn(
+          "Using default STUN servers only (TURN credentials access restricted/forbidden).",
+        );
+      } else {
+        console.error(
+          "Using default STUN servers only.",
+          error.message || error,
+        );
+      }
     }
   }
 

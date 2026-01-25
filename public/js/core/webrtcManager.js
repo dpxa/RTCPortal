@@ -32,6 +32,10 @@ class WebRTCManager {
   initializeElements() {
     this.myIdDisplay = document.getElementById("my-id-display");
     this.copyIdBtn = document.getElementById("copy-id-btn");
+    this.copyLinkBtn = document.getElementById("copy-link-btn");
+    this.showQrBtn = document.getElementById("show-qr-btn");
+    this.qrCodeWrapper = document.getElementById("qr-code-wrapper");
+    this.qrCodeContainer = document.getElementById("qr-code-container");
     this.partnerIdField = document.getElementById("partner-id-field");
     this.connectBtn = document.getElementById("connect-btn");
     this.endBtn = document.getElementById("end-btn");
@@ -39,6 +43,8 @@ class WebRTCManager {
 
   initializeEventListeners() {
     this.copyIdBtn.addEventListener("click", () => this.copyId());
+    this.copyLinkBtn.addEventListener("click", () => this.copyLink());
+    this.showQrBtn.addEventListener("click", () => this.toggleQrCode());
     this.partnerIdField.addEventListener("input", () =>
       this.updateConnectButton(),
     );
@@ -55,6 +61,10 @@ class WebRTCManager {
       this.myIdDisplay.classList.add("active");
       this.myIdDisplay.textContent = this.selfId;
       this.copyIdBtn.style.display = "inline-block";
+      this.copyLinkBtn.style.display = "inline-block";
+      this.showQrBtn.style.display = "inline-block";
+
+      this.handleUrlParameters();
     });
 
     this.socket.on("offer", async (data) => {
@@ -85,6 +95,53 @@ class WebRTCManager {
     }
   }
 
+  copyLink() {
+    if (this.selfId) {
+      const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+      navigator.clipboard
+        .writeText(url)
+        .then(() => uiManager.showCopied())
+        .catch((error) => console.error("Error copying Link:", error));
+    } else {
+      uiManager.showIdError("No ID to copy yet.");
+    }
+  }
+
+  toggleQrCode() {
+    if (this.qrCodeWrapper.style.display === "none") {
+      this.qrCodeWrapper.style.display = "block";
+      this.showQrBtn.textContent = "Hide QR";
+
+      this.qrCodeContainer.innerHTML = "";
+      const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+      new QRCode(this.qrCodeContainer, {
+        text: url,
+        width: 128,
+        height: 128,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H,
+      });
+    } else {
+      this.qrCodeWrapper.style.display = "none";
+      this.showQrBtn.textContent = "QR Code";
+    }
+  }
+
+  handleUrlParameters() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const peerId = urlParams.get("peer");
+
+    if (peerId && peerId !== this.selfId) {
+      this.partnerIdField.value = peerId;
+      this.updateConnectButton();
+      this.initiateConnection(); // Auto-connect
+
+      // Clean URL to avoid re-connecting on refresh
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
+
   updateConnectButton() {
     this.connectBtn.disabled = this.partnerIdField.value.trim() === "";
   }
@@ -112,6 +169,11 @@ class WebRTCManager {
     uiManager.clearAlert();
     this.abortPendingConnection();
     uiManager.updateToWaiting();
+
+    // Explicitly clear file selection when starting a new connection
+    if (fileTransferManager) {
+      fileTransferManager.clearFileSelection();
+    }
 
     this.connectionStartTime = performance.now();
 
@@ -144,8 +206,15 @@ class WebRTCManager {
   }
 
   async handleOffer(data) {
+    // If we are already connected or in process, reset.
+    // Important: Clear file area on new connection attempt from peer.
+    if (fileTransferManager) {
+      fileTransferManager.clearFileSelection();
+    }
+
     uiManager.clearAlert();
     this.abortPendingConnection();
+    // If active connection existed, we reset it (which also calls clearFileSelection inside resetCurrentConnection)
     if (this.peerConnection) {
       this.resetCurrentConnection();
     }
@@ -299,8 +368,14 @@ class WebRTCManager {
       if (typeof evt.data === "string") {
         try {
           const message = JSON.parse(evt.data);
+
           if (message.type === "disconnect") {
             this.resetCurrentConnection();
+            return;
+          }
+
+          if (message.type === "chat") {
+            uiManager.appendChatMessage(message.text, false);
             return;
           }
         } catch (e) {}
@@ -309,6 +384,17 @@ class WebRTCManager {
         fileTransferManager.processIncomingChunk(evt.data);
       }
     };
+  }
+
+  sendChat(text) {
+    if (this.dataChannel && this.dataChannel.readyState === "open") {
+      const msg = { type: "chat", text: text };
+      this.dataChannel.send(JSON.stringify(msg));
+      uiManager.appendChatMessage(text, true);
+    } else {
+      // Fallback or alert if not connected
+      console.warn("Cannot send chat: Data channel not open.");
+    }
   }
 
   handleEndConnection() {
@@ -355,6 +441,7 @@ class WebRTCManager {
 
     if (fileTransferManager) {
       fileTransferManager.cleanupAllTransfers();
+      fileTransferManager.clearFileSelection();
     }
 
     if (this.dataChannel && this.dataChannel.readyState === "open") {
@@ -410,3 +497,4 @@ class WebRTCManager {
 }
 
 const webrtcManager = new WebRTCManager();
+window.webrtcManager = webrtcManager;
