@@ -189,8 +189,7 @@ async function runConnectionTest() {
         "\nConnection established successfully between Peer 1 and Peer 2!"
       );
     } else {
-      console.log("\nConnection verification FAILED!");
-      process.exit(1);
+      throw new Error("Connection verification FAILED! IDs did not match.");
     }
 
     const githubLink1 = await driver1.findElement(By.className("repo-link"));
@@ -203,8 +202,9 @@ async function runConnectionTest() {
     console.log("\nAutomated two-peer connection test completed successfully.");
   } catch (error) {
     console.error("Test failed:", error);
-    console.error("Stack trace:", error.stack);
-    process.exit(1);
+    // console.error("Stack trace:", error.stack); 
+    // Don't exit here, let finally block handle cleanup
+    process.exitCode = 1;
   } finally {
     try {
       if (driver1) await driver1.quit();
