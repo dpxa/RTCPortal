@@ -1,12 +1,15 @@
 name: Selenium Connection Test
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      ["Deploy Frontend to GitHub Pages", "Deploy Backend to Deploy Branch"]
+    types:
+      - completed
 
 jobs:
   selenium-test:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
