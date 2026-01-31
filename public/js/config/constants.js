@@ -12,7 +12,7 @@ const RTC_CONFIG = {
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun.cloudflare.com:3478" },
   ],
-  iceCandidatePoolSize: 0,
+  iceCandidatePoolSize: 2,
   iceTransportPolicy: "all",
   bundlePolicy: "max-bundle",
   rtcpMuxPolicy: "require",

@@ -770,6 +770,60 @@ body.dark-mode .zip-download-btn {
   color: #58d88d; /* Softer text color */
 }
 
-body.dark-mode .zip-download-btn:hover {
-  background-color: #26382b;
+/* Responsive Design */
+@media (max-width: 600px) {
+  /* Fix Header Overlap: Keep controls absolute but push content down */
+  .header-controls {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    width: auto;
+    padding: 0;
+    margin: 0;
+    justify-content: flex-end;
+  }
+
+  .wrapper {
+    display: block;
+  }
+
+  h1 {
+    margin-top: 40px; /* Push title down to clear absolute header controls */
+  }
+
+  /* Fix Button Spacing - Stack buttons full width */
+  #connect-btn,
+  #end-btn,
+  #file-transfer-btn,
+  #toggle-chat-btn {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  /* Reset margin for the last button in the group */
+  #end-btn,
+  #toggle-chat-btn {
+    margin-bottom: 0;
+  }
+
+  /* Improve Label Spacing - Column layout for labels/IDs */
+  .label-container,
+  #active-connection-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  /* Ensure ID text wraps if needed */
+  #my-id-display,
+  #active-connection-status {
+    word-break: break-all;
+  }
+
+  /* Add space above the buttons inside label container */
+  .label-container > div {
+    margin-top: 4px;
+  }
 }
