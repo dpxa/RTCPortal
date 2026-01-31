@@ -318,7 +318,13 @@ class WebRTCManager {
     };
 
     conn.onconnectionstatechange = () => {
+      if (this.disconnectTimer) {
+        clearTimeout(this.disconnectTimer);
+        this.disconnectTimer = null;
+      }
+
       if (conn.connectionState === "connected") {
+        this.startHeartbeat();
         if (isInitiator) {
           this.socket.emit("connection-success");
         }
@@ -340,7 +346,20 @@ class WebRTCManager {
         uiManager.updateToConnected(targetId);
 
         statsService.fetchConnectionStats();
-      } else if (["disconnected", "failed"].includes(conn.connectionState)) {
+      } else if (conn.connectionState === "disconnected") {
+        console.warn("Connection disconnected, attempting to recover...");
+        this.disconnectTimer = setTimeout(() => {
+          if (conn.connectionState !== "connected") {
+            console.log("Recovery failed, closing connection.");
+            statsService.fetchConnectionStats();
+            if (conn === this.pendingPeerConnection) {
+              this.abortPendingConnection(false);
+            } else {
+              this.resetCurrentConnection();
+            }
+          }
+        }, 5000);
+      } else if (conn.connectionState === "failed") {
         statsService.fetchConnectionStats();
         if (conn === this.pendingPeerConnection) {
           this.abortPendingConnection(false);
@@ -365,6 +384,10 @@ class WebRTCManager {
 
           if (message.type === "disconnect") {
             this.resetCurrentConnection();
+            return;
+          }
+
+          if (message.type === "ping") {
             return;
           }
 
@@ -429,6 +452,8 @@ class WebRTCManager {
   }
 
   resetCurrentConnection() {
+    this.stopHeartbeat();
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
     uiManager.clearAlert();
     clearTimeout(this.newConnTimer);
 
@@ -479,7 +504,28 @@ class WebRTCManager {
     }
   }
 
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      if (this.dataChannel && this.dataChannel.readyState === "open") {
+        try {
+          this.dataChannel.send(JSON.stringify({ type: "ping" }));
+        } catch (e) {
+          console.warn("Heartbeat failed", e);
+        }
+      }
+    }, 5000);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
   cleanup() {
+    this.stopHeartbeat();
     if (this.activePeerId) {
       this.resetCurrentConnection();
     }
