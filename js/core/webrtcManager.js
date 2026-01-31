@@ -388,6 +388,13 @@ class WebRTCManager {
           }
 
           if (message.type === "ping") {
+            try {
+              this.dataChannel.send(JSON.stringify({ type: "pong" }));
+            } catch (e) {}
+            return;
+          }
+
+          if (message.type === "pong") {
             return;
           }
 
@@ -506,6 +513,7 @@ class WebRTCManager {
 
   startHeartbeat() {
     this.stopHeartbeat();
+    // Use a shorter interval to keep NAT mappings alive robustly
     this.heartbeatInterval = setInterval(() => {
       if (this.dataChannel && this.dataChannel.readyState === "open") {
         try {
@@ -514,7 +522,7 @@ class WebRTCManager {
           console.warn("Heartbeat failed", e);
         }
       }
-    }, 5000);
+    }, 2000); // 2 seconds
   }
 
   stopHeartbeat() {
