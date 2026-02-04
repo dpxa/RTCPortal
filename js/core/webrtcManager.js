@@ -63,7 +63,60 @@ class WebRTCManager {
       this.copyLinkBtn.style.display = "inline-block";
       this.showQrBtn.style.display = "inline-block";
 
+      uiManager.clearAlert();
+
       this.handleUrlParameters();
+    });
+
+    this.socket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error.message || error);
+      this.myIdDisplay.classList.add("inactive");
+      this.myIdDisplay.classList.remove("active");
+      this.myIdDisplay.textContent = "Connection Error";
+      this.copyIdBtn.style.display = "none";
+      this.copyLinkBtn.style.display = "none";
+      this.showQrBtn.style.display = "none";
+      uiManager.showIdError("Failed to connect to server. Retrying...");
+    });
+
+    this.socket.on("disconnect", (reason) => {
+      console.warn("Socket disconnected:", reason);
+      this.myIdDisplay.classList.add("inactive");
+      this.myIdDisplay.classList.remove("active");
+      this.myIdDisplay.textContent = "Disconnected";
+      this.copyIdBtn.style.display = "none";
+      this.copyLinkBtn.style.display = "none";
+      this.showQrBtn.style.display = "none";
+
+      if (reason === "io server disconnect") {
+        uiManager.showIdError("Disconnected by server. Reconnecting...");
+        this.socket.connect();
+      } else if (reason === "transport close" || reason === "transport error") {
+        uiManager.showIdError("Connection lost. Reconnecting...");
+      }
+
+      if (this.peerConnection) {
+        this.resetCurrentConnection();
+      }
+      if (this.pendingPeerConnection) {
+        this.abortPendingConnection(false);
+      }
+    });
+
+    this.socket.on("reconnect", (attemptNumber) => {
+      console.log("Socket reconnected after", attemptNumber, "attempts");
+      uiManager.clearAlert();
+    });
+
+    this.socket.on("reconnect_error", (error) => {
+      console.error("Socket reconnection error:", error.message || error);
+    });
+
+    this.socket.on("reconnect_failed", () => {
+      console.error("Socket reconnection failed");
+      uiManager.showIdError(
+        "Unable to reconnect to server. Please refresh the page.",
+      );
     });
 
     this.socket.on("offer", async (data) => {
@@ -221,10 +274,7 @@ class WebRTCManager {
 
     try {
       await this.peerConnection.setRemoteDescription(data.sdp);
-      while (this.candidateQueue.length) {
-        const c = this.candidateQueue.shift();
-        this.peerConnection.addIceCandidate(c).catch((e) => console.error(e));
-      }
+      this.drainCandidateQueue(this.peerConnection);
       const ans = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(ans);
       this.activePeerId = data.caller;
@@ -253,12 +303,7 @@ class WebRTCManager {
     }
     try {
       await this.pendingPeerConnection.setRemoteDescription(data.sdp);
-      while (this.candidateQueue.length) {
-        const c = this.candidateQueue.shift();
-        this.pendingPeerConnection
-          .addIceCandidate(c)
-          .catch((e) => console.error(e));
-      }
+      this.drainCandidateQueue(this.pendingPeerConnection);
       this.activePeerId = data.callee;
 
       this.peerConnection = this.pendingPeerConnection;
@@ -284,6 +329,22 @@ class WebRTCManager {
       } else {
         this.candidateQueue.push(data.candidate);
       }
+    }
+  }
+
+  drainCandidateQueue(connection) {
+    while (this.candidateQueue.length) {
+      const c = this.candidateQueue.shift();
+      connection.addIceCandidate(c).catch((e) => console.error(e));
+    }
+  }
+
+  handleConnectionFailure(conn) {
+    statsService.fetchConnectionStats();
+    if (conn === this.pendingPeerConnection) {
+      this.abortPendingConnection(false);
+    } else {
+      this.resetCurrentConnection();
     }
   }
 
@@ -351,21 +412,11 @@ class WebRTCManager {
         this.disconnectTimer = setTimeout(() => {
           if (conn.connectionState !== "connected") {
             console.log("Recovery failed, closing connection.");
-            statsService.fetchConnectionStats();
-            if (conn === this.pendingPeerConnection) {
-              this.abortPendingConnection(false);
-            } else {
-              this.resetCurrentConnection();
-            }
+            this.handleConnectionFailure(conn);
           }
         }, 5000);
       } else if (conn.connectionState === "failed") {
-        statsService.fetchConnectionStats();
-        if (conn === this.pendingPeerConnection) {
-          this.abortPendingConnection(false);
-        } else {
-          this.resetCurrentConnection();
-        }
+        this.handleConnectionFailure(conn);
       }
     };
 
@@ -381,33 +432,38 @@ class WebRTCManager {
       if (typeof evt.data === "string") {
         try {
           const message = JSON.parse(evt.data);
-
-          if (message.type === "disconnect") {
-            this.resetCurrentConnection();
-            return;
-          }
-
-          if (message.type === "ping") {
-            try {
-              this.dataChannel.send(JSON.stringify({ type: "pong" }));
-            } catch (e) {}
-            return;
-          }
-
-          if (message.type === "pong") {
-            return;
-          }
-
-          if (message.type === "chat") {
-            uiManager.appendChatMessage(message.text, false);
-            return;
-          }
+          if (this.handleControlMessage(message)) return;
         } catch (e) {}
         fileTransferManager.processControlInstruction(evt.data);
       } else {
         fileTransferManager.processIncomingChunk(evt.data);
       }
     };
+  }
+
+  handleControlMessage(message) {
+    if (message.type === "disconnect") {
+      this.resetCurrentConnection();
+      return true;
+    }
+
+    if (message.type === "ping") {
+      try {
+        this.dataChannel.send(JSON.stringify({ type: "pong" }));
+      } catch (e) {}
+      return true;
+    }
+
+    if (message.type === "pong") {
+      return true;
+    }
+
+    if (message.type === "chat") {
+      uiManager.appendChatMessage(message.text, false);
+      return true;
+    }
+
+    return false;
   }
 
   sendChat(text) {
@@ -513,7 +569,6 @@ class WebRTCManager {
 
   startHeartbeat() {
     this.stopHeartbeat();
-    // Use a shorter interval to keep NAT mappings alive robustly
     this.heartbeatInterval = setInterval(() => {
       if (this.dataChannel && this.dataChannel.readyState === "open") {
         try {

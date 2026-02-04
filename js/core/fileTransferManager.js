@@ -13,6 +13,8 @@ class FileTransferManager {
     this.selectedFiles = [];
     this.receivedBatch = [];
 
+    this.activeBlobUrls = new Set();
+
     this.initializeElements();
     this.initializeEventListeners();
   }
@@ -83,6 +85,10 @@ class FileTransferManager {
     }
 
     this.fileTransferBtn.addEventListener("click", () => this.sendFile());
+
+    window.addEventListener("beforeunload", () => {
+      this.revokeAllBlobUrls();
+    });
   }
 
   preventDefaults(e) {
@@ -145,19 +151,104 @@ class FileTransferManager {
     });
   }
 
+  updateTransferButtonState() {
+    this.fileTransferBtn.disabled =
+      this.selectedFiles.length === 0 ||
+      !webrtcManager.dataChannel ||
+      webrtcManager.dataChannel.readyState !== "open" ||
+      this.isSending;
+  }
+
+  formatBatchMessage(action, index, total, name) {
+    return total > 1
+      ? `${action} file ${index}/${total}: ${name}`
+      : `${action} file: ${name}`;
+  }
+
+  getPeerDisplay(peerId) {
+    const peerName = uiManager.getNickname
+      ? uiManager.getNickname(peerId)
+      : peerId;
+    return peerName === peerId ? peerName : `${peerName} (${peerId})`;
+  }
+
+  createMetaSpan(text) {
+    const metaSpan = document.createElement("span");
+    metaSpan.textContent = text;
+    metaSpan.style.fontSize = "0.75rem";
+    metaSpan.style.fontStyle = "italic";
+    try {
+      const mt = getComputedStyle(document.documentElement).getPropertyValue(
+        "--meta-text",
+      );
+      metaSpan.style.color = mt ? mt.trim() : "#888";
+    } catch (e) {
+      metaSpan.style.color = "#888";
+    }
+    metaSpan.style.marginLeft = "8px";
+    return metaSpan;
+  }
+
+  createHistoryEntry({ name, size, direction, blob }) {
+    const wrapperDiv = document.createElement("div");
+    wrapperDiv.style.padding = "4px 0";
+
+    const label = blob
+      ? document.createElement("a")
+      : document.createElement("span");
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      label.href = blobUrl;
+      label.download = name;
+      this.activeBlobUrls.add(blobUrl);
+    }
+    label.textContent = name;
+    label.style.fontWeight = "bold";
+
+    const peerDisplay = this.getPeerDisplay(webrtcManager.activePeerId);
+    const metaText = ` size: ${this.displayFileSize(size)}, ${direction}: ${peerDisplay}, at: ${new Date().toLocaleTimeString()}`;
+    const metaSpan = this.createMetaSpan(metaText);
+
+    wrapperDiv.appendChild(label);
+    wrapperDiv.appendChild(metaSpan);
+    return { wrapperDiv, label };
+  }
+
+  insertHistoryEntry(container, sectionDiv, wrapperDiv) {
+    if (container.firstChild) {
+      container.insertBefore(wrapperDiv, container.firstChild);
+    } else {
+      sectionDiv.style.display = "block";
+      container.appendChild(wrapperDiv);
+    }
+  }
+
+  filterValidFiles(files) {
+    const MAX_SIZE = 2 * 1024 * 1024 * 1024;
+    const validFiles = [];
+    const skippedFiles = [];
+
+    Array.from(files).forEach((file) => {
+      if (file.size === 0 || file.size > MAX_SIZE) {
+        skippedFiles.push(file.name);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    return { validFiles, skippedFiles };
+  }
+
+  revokeAllBlobUrls() {
+    this.activeBlobUrls.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    this.activeBlobUrls.clear();
+  }
+
   handleFileSelection(files) {
     if (files.length > 0) {
-      const MAX_SIZE = 2 * 1024 * 1024 * 1024;
-      const validFiles = [];
-      const skippedFiles = [];
-
-      Array.from(files).forEach((file) => {
-        if (file.size === 0 || file.size > MAX_SIZE) {
-          skippedFiles.push(file.name);
-        } else {
-          validFiles.push(file);
-        }
-      });
+      const { validFiles, skippedFiles } = this.filterValidFiles(files);
 
       if (skippedFiles.length > 0) {
         console.warn("Skipped files:", skippedFiles);
@@ -181,11 +272,7 @@ class FileTransferManager {
         this.fileNameDisplay.textContent = "";
       }
 
-      this.fileTransferBtn.disabled =
-        this.selectedFiles.length === 0 ||
-        !webrtcManager.dataChannel ||
-        webrtcManager.dataChannel.readyState !== "open" ||
-        this.isSending;
+      this.updateTransferButtonState();
     } else {
       this.selectedFiles = [];
       this.fileNameDisplay.textContent = "";
@@ -232,11 +319,12 @@ class FileTransferManager {
         uiManager.updateSentStats("-", "-");
       }
 
-      const startMsg =
-        this.selectedFiles.length > 1
-          ? `Sending file ${i + 1}/${this.selectedFiles.length}: ${fileToSend.name}`
-          : `Sending file: ${fileToSend.name}`;
-      uiManager.transferStatusDivSent.textContent = startMsg;
+      uiManager.transferStatusDivSent.textContent = this.formatBatchMessage(
+        "Sending",
+        i + 1,
+        this.selectedFiles.length,
+        fileToSend.name,
+      );
 
       webrtcManager.dataChannel.send(
         JSON.stringify({
@@ -421,12 +509,12 @@ class FileTransferManager {
         if (offset < fileObj.size) {
           readChunk(offset);
         } else {
-          const doneMsg =
-            totalCount > 1
-              ? `Sent file ${currentIdx}/${totalCount}: ${fileObj.name}`
-              : `Sent file: ${fileObj.name}`;
-
-          uiManager.transferStatusDivSent.textContent = doneMsg;
+          uiManager.transferStatusDivSent.textContent = this.formatBatchMessage(
+            "Sent",
+            currentIdx,
+            totalCount,
+            fileObj.name,
+          );
 
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
           this.recordSentFile(fileObj);
@@ -506,11 +594,13 @@ class FileTransferManager {
           uiManager.updateReceivedStats("...", "-");
         }
 
-        const batchMsg =
-          info.batchTotal > 1
-            ? `Receiving file ${info.batchIndex}/${info.batchTotal}: ${info.fileName}`
-            : `Receiving file: ${info.fileName}`;
-        uiManager.transferStatusDivReceived.textContent = batchMsg;
+        uiManager.transferStatusDivReceived.textContent =
+          this.formatBatchMessage(
+            "Receiving",
+            info.batchIndex,
+            info.batchTotal,
+            info.fileName,
+          );
       } else if (info.type === "done") {
         this.finalizeIncomingFile();
         this.isReceiving = false;
@@ -539,11 +629,12 @@ class FileTransferManager {
       !uiManager.transferStatusDivReceived.isConnected
     ) {
       uiManager.ensureReceivedContainer();
-      const batchMsg =
-        this.receivedFileDetails.batchTotal > 1
-          ? `Receiving file ${this.receivedFileDetails.batchIndex}/${this.receivedFileDetails.batchTotal}: ${this.receivedFileDetails.fileName}`
-          : `Receiving file: ${this.receivedFileDetails.fileName}`;
-      uiManager.transferStatusDivReceived.textContent = batchMsg;
+      uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
+        "Receiving",
+        this.receivedFileDetails.batchIndex,
+        this.receivedFileDetails.batchTotal,
+        this.receivedFileDetails.fileName,
+      );
     }
 
     const now = Date.now();
@@ -577,51 +668,18 @@ class FileTransferManager {
       blob: fileBlob,
     });
 
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(fileBlob);
-    link.download = this.receivedFileDetails.fileName;
-    link.textContent = this.receivedFileDetails.fileName;
-    link.style.fontWeight = "bold";
+    const { wrapperDiv } = this.createHistoryEntry({
+      name: this.receivedFileDetails.fileName,
+      size: this.receivedFileDetails.fileSize,
+      direction: "from",
+      blob: fileBlob,
+    });
 
-    const metaSpan = document.createElement("span");
-    const peerName = uiManager.getNickname
-      ? uiManager.getNickname(webrtcManager.activePeerId)
-      : webrtcManager.activePeerId;
-    const peerDisplay =
-      peerName === webrtcManager.activePeerId
-        ? peerName
-        : `${peerName} (${webrtcManager.activePeerId})`;
-
-    metaSpan.textContent = ` size: ${this.displayFileSize(
-      this.receivedFileDetails.fileSize,
-    )}, from: ${peerDisplay}, at: ${new Date().toLocaleTimeString()}`;
-
-    metaSpan.style.fontSize = "0.75rem";
-    metaSpan.style.fontStyle = "italic";
-    try {
-      const mt = getComputedStyle(document.documentElement).getPropertyValue(
-        "--meta-text",
-      );
-      metaSpan.style.color = mt ? mt.trim() : "#888";
-    } catch (e) {
-      metaSpan.style.color = "#888";
-    }
-    metaSpan.style.marginLeft = "8px";
-
-    const wrapperDiv = document.createElement("div");
-    wrapperDiv.style.padding = "4px 0";
-    wrapperDiv.appendChild(link);
-    wrapperDiv.appendChild(metaSpan);
-
-    if (this.incomingFilesContainer.firstChild) {
-      this.incomingFilesContainer.insertBefore(
-        wrapperDiv,
-        this.incomingFilesContainer.firstChild,
-      );
-    } else {
-      this.incomingSectionDiv.style.display = "block";
-      this.incomingFilesContainer.appendChild(wrapperDiv);
-    }
+    this.insertHistoryEntry(
+      this.incomingFilesContainer,
+      this.incomingSectionDiv,
+      wrapperDiv,
+    );
 
     if (
       this.receivedFileDetails.batchIndex ===
@@ -635,11 +693,12 @@ class FileTransferManager {
 
     this.toggleClearHistoryOption();
 
-    const doneMsg =
-      this.receivedFileDetails.batchTotal > 1
-        ? `Received file ${this.receivedFileDetails.batchIndex}/${this.receivedFileDetails.batchTotal}: ${this.receivedFileDetails.fileName}`
-        : `Received file: ${this.receivedFileDetails.fileName}`;
-    uiManager.transferStatusDivReceived.textContent = doneMsg;
+    uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
+      "Received",
+      this.receivedFileDetails.batchIndex,
+      this.receivedFileDetails.batchTotal,
+      this.receivedFileDetails.fileName,
+    );
 
     uiManager.updateReceivedStats("-", "-");
 
@@ -677,7 +736,9 @@ class FileTransferManager {
       btn.innerHTML = `📦 Download ${count} Files (ZIP)`;
     }
 
-    btn.addEventListener("click", () => this.downloadSpecificBatch(files));
+    btn.addEventListener("click", () => {
+      this.downloadSpecificBatch(files);
+    });
 
     btnContainer.appendChild(btn);
 
@@ -701,11 +762,14 @@ class FileTransferManager {
 
     try {
       const content = await zip.generateAsync({ type: "blob" });
+      const blobUrl = URL.createObjectURL(content);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(content);
+      link.href = blobUrl;
       link.download = `batch_${files.length}_files_${new Date().getTime()}.zip`;
       link.click();
-      URL.revokeObjectURL(link.href);
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 100);
     } catch (e) {
       console.error("Error generating zip:", e);
     }
@@ -719,49 +783,17 @@ class FileTransferManager {
   }
 
   recordSentFile(fileObj) {
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = fileObj.name;
-    nameSpan.style.fontWeight = "bold";
+    const { wrapperDiv } = this.createHistoryEntry({
+      name: fileObj.name,
+      size: fileObj.size,
+      direction: "to",
+    });
 
-    const metaSpan = document.createElement("span");
-    const peerName = uiManager.getNickname
-      ? uiManager.getNickname(webrtcManager.activePeerId)
-      : webrtcManager.activePeerId;
-    const peerDisplay =
-      peerName === webrtcManager.activePeerId
-        ? peerName
-        : `${peerName} (${webrtcManager.activePeerId})`;
-
-    metaSpan.textContent = ` size: ${this.displayFileSize(
-      fileObj.size,
-    )}, to: ${peerDisplay}, at: ${new Date().toLocaleTimeString()}`;
-
-    metaSpan.style.fontSize = "0.75rem";
-    metaSpan.style.fontStyle = "italic";
-    try {
-      const mt = getComputedStyle(document.documentElement).getPropertyValue(
-        "--meta-text",
-      );
-      metaSpan.style.color = mt ? mt.trim() : "#888";
-    } catch (e) {
-      metaSpan.style.color = "#888";
-    }
-    metaSpan.style.marginLeft = "8px";
-
-    const wrapperDiv = document.createElement("div");
-    wrapperDiv.style.padding = "4px 0";
-    wrapperDiv.appendChild(nameSpan);
-    wrapperDiv.appendChild(metaSpan);
-
-    if (this.outgoingFilesContainer.firstChild) {
-      this.outgoingFilesContainer.insertBefore(
-        wrapperDiv,
-        this.outgoingFilesContainer.firstChild,
-      );
-    } else {
-      this.outgoingSectionDiv.style.display = "block";
-      this.outgoingFilesContainer.appendChild(wrapperDiv);
-    }
+    this.insertHistoryEntry(
+      this.outgoingFilesContainer,
+      this.outgoingSectionDiv,
+      wrapperDiv,
+    );
     this.toggleClearHistoryOption();
   }
 
@@ -773,16 +805,8 @@ class FileTransferManager {
       eraseHistoryBtn.className = "erase-history-btn";
       eraseHistoryBtn.textContent = "Clear History";
       eraseHistoryBtn.addEventListener("click", () => {
-        Array.from(this.outgoingFilesContainer.querySelectorAll("a")).forEach(
-          (link) => {
-            URL.revokeObjectURL(link.href);
-          },
-        );
-        Array.from(this.incomingFilesContainer.querySelectorAll("a")).forEach(
-          (link) => {
-            URL.revokeObjectURL(link.href);
-          },
-        );
+        this.revokeAllBlobUrls();
+
         this.outgoingFilesContainer.innerHTML = "";
         this.incomingFilesContainer.innerHTML = "";
         this.transferHistoryDiv.style.display = "none";
@@ -831,6 +855,8 @@ class FileTransferManager {
   }
 
   clearHistory() {
+    this.revokeAllBlobUrls();
+
     if (this.outgoingFilesContainer) this.outgoingFilesContainer.innerHTML = "";
     if (this.incomingFilesContainer) this.incomingFilesContainer.innerHTML = "";
     if (this.transferHistoryDiv) this.transferHistoryDiv.style.display = "none";
