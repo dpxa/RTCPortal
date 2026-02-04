@@ -32,12 +32,24 @@ class StatsService {
     this.successRateDisplay.textContent = `${stats.successRate}%`;
     this.uptimeDisplay.textContent = this.formatUptime(stats.uptimeMs);
 
-    if (stats.successRate >= 80) {
-      this.successRateDisplay.style.color = "#27ae60";
-    } else if (stats.successRate >= 60) {
-      this.successRateDisplay.style.color = "#f39c12";
-    } else {
-      this.successRateDisplay.style.color = "#e74c3c";
+    try {
+      const root = getComputedStyle(document.documentElement);
+      const good = root.getPropertyValue("--accent") || "#27ae60";
+      const warn = root.getPropertyValue("--pause-color") || "#f39c12";
+      const bad = root.getPropertyValue("--danger") || "#e74c3c";
+      if (stats.successRate >= 80) {
+        this.successRateDisplay.style.color = good.trim();
+      } else if (stats.successRate >= 60) {
+        this.successRateDisplay.style.color = warn.trim();
+      } else {
+        this.successRateDisplay.style.color = bad.trim();
+      }
+    } catch (e) {
+      if (stats.successRate >= 80)
+        this.successRateDisplay.style.color = "#27ae60";
+      else if (stats.successRate >= 60)
+        this.successRateDisplay.style.color = "#f39c12";
+      else this.successRateDisplay.style.color = "#e74c3c";
     }
   }
 

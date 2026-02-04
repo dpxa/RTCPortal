@@ -6,6 +6,9 @@
   --danger: #e74c3c;
   --danger-dark: #c0392b;
   --accent: #27ae60;
+  --pause-color: #f39c12;
+  --muted-text: #999;
+  --meta-text: #888;
   --text-color: #102a43;
   --link-color: #1b3a5f;
   --muted-bg: #f7f7f7;
@@ -68,6 +71,9 @@ body.dark-mode {
   --link-color: #5dade2;
   --primary-color: #3498db;
   --primary-dark: #2980b9;
+  --pause-color: #e67e22;
+  --muted-text: #bbb;
+  --meta-text: #aaa;
 }
 
 body.dark-mode .drop-zone:hover,
@@ -477,7 +483,7 @@ footer {
 .progress-container {
   display: none;
   height: 20px;
-  background: #eee;
+  background: var(--muted-bg);
   border-radius: 10px;
   overflow: hidden;
   margin: 10px 0;
@@ -486,8 +492,16 @@ footer {
 
 .progress-bar {
   height: 100%;
-  background: var(--primary-color);
   transition: width var(--transition-fast) ease;
+}
+
+/* container-specific progress colors */
+#sent-progress-container .progress-bar {
+  background: var(--accent);
+}
+
+#received-progress-container .progress-bar {
+  background: var(--primary-color);
 }
 
 .progress-percentage {
@@ -596,7 +610,7 @@ footer {
 .chat-input-container {
   display: flex;
   gap: 8px;
-  background: #fff;
+  background: var(--card-bg);
   padding: 4px;
   border: 1px solid var(--input-border);
   border-radius: var(--radius-sm);
@@ -609,6 +623,21 @@ footer {
   background: transparent;
   padding: 8px 10px;
   outline: none;
+  color: var(--text-color);
+}
+
+.chat-input-container input::placeholder {
+  color: var(--muted-text);
+  opacity: 1;
+}
+
+body.dark-mode .chat-input-container {
+  background: var(--card-alt-bg);
+  border-color: var(--input-border);
+}
+
+body.dark-mode .chat-input-container input {
+  color: var(--text-color);
 }
 
 .chat-input-container button {
@@ -753,21 +782,70 @@ body.dark-mode .modal-content {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
 }
 
-/* Zip Button Styles */
 .zip-download-btn {
   width: 100%;
   padding: 8px;
-  background-color: #e8f5e9;
-  border: 1px dashed #27ae60;
-  color: #27ae60;
+  background-color: #e6f8ee;
+  border: 1px dashed var(--accent);
+  color: var(--accent);
   font-weight: bold;
   cursor: pointer;
 }
+.zip-download-btn:hover {
+  background-color: #cfefd3;
+  border-color: #2aa86b;
+  color: #155724;
+}
 
 body.dark-mode .zip-download-btn {
-  background-color: #1b261e; /* Much darker background */
-  border-color: #3e6e4e; /* Dimmer border */
-  color: #58d88d; /* Softer text color */
+  background-color: rgba(39, 174, 96, 0.08);
+  border-color: rgba(39, 174, 96, 0.25);
+  color: #9ff3be;
+}
+
+body.dark-mode .zip-download-btn:hover {
+  background-color: rgba(39, 174, 96, 0.16);
+  border-color: #27ae60;
+  color: #eafff0;
+}
+
+/* Sent/Received stats and control buttons (moved from inline styles) */
+#sent-stats {
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+#received-stats {
+  font-size: 0.85rem;
+  color: var(--primary-color);
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+#sent-buttons-container {
+  margin-top: 8px;
+  display: none;
+}
+
+#sent-buttons-container #pause-transfer-btn {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  background-color: var(--pause-color);
+  border: 1px solid var(--pause-color);
+  color: #fff;
+  border-radius: 4px;
+}
+
+#sent-buttons-container #stop-transfer-btn {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  background-color: var(--danger);
+  border: 1px solid var(--danger);
+  color: #fff;
+  border-radius: 4px;
+  margin-left: 5px;
 }
 
 /* Responsive Design */

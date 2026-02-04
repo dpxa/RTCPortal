@@ -67,11 +67,57 @@ class UIManager {
 
   initializeTheme() {
     this.themeToggleBtn = document.getElementById("theme-toggle");
+    const apply = (isDark, savePreference = false) => {
+      if (isDark) document.body.classList.add("dark-mode");
+      else document.body.classList.remove("dark-mode");
+      if (this.themeToggleBtn)
+        this.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+      if (savePreference) {
+        try {
+          localStorage.setItem("rtcTheme", isDark ? "dark" : "light");
+        } catch (e) {}
+      }
+    };
+
+    try {
+      const mq =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+
+      let persisted = null;
+      try {
+        persisted = localStorage.getItem("rtcTheme");
+      } catch (e) {}
+
+      if (persisted === "dark") apply(true);
+      else if (persisted === "light") apply(false);
+      else if (mq) {
+        apply(mq.matches);
+        if (mq.addEventListener) {
+          mq.addEventListener("change", (e) => {
+            try {
+              const p = localStorage.getItem("rtcTheme");
+              if (!p) apply(e.matches);
+            } catch (err) {
+              apply(e.matches);
+            }
+          });
+        } else if (mq.addListener) {
+          mq.addListener((e) => {
+            try {
+              const p = localStorage.getItem("rtcTheme");
+              if (!p) apply(e.matches);
+            } catch (err) {
+              apply(e.matches);
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
     if (this.themeToggleBtn) {
       this.themeToggleBtn.addEventListener("click", () => {
-        document.body.classList.toggle("dark-mode");
-        const isDark = document.body.classList.contains("dark-mode");
-        this.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+        const isDark = !document.body.classList.contains("dark-mode");
+        apply(isDark, true);
       });
     }
   }
@@ -107,7 +153,14 @@ class UIManager {
         idSpan.id = "peer-id-display-span";
         idSpan.style.fontSize = "0.75rem";
         idSpan.style.fontStyle = "italic";
-        idSpan.style.color = "#999";
+        try {
+          const mut = getComputedStyle(
+            document.documentElement,
+          ).getPropertyValue("--muted-text");
+          idSpan.style.color = mut ? mut.trim() : "#999";
+        } catch (e) {
+          idSpan.style.color = "#999";
+        }
       }
       idSpan.textContent = peerId;
 
@@ -129,13 +182,13 @@ class UIManager {
       <div id="sent-container">
         <div id="transfer-status-sent"></div>
         <div class="progress-container" id="sent-progress-container">
-          <div class="progress-bar" style="width: 0%; background: #27ae60;"></div>
+          <div class="progress-bar" style="width: 0%;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
-        <div id="sent-stats" style="font-size: 0.85rem; color: #27ae60; margin-top: 4px; font-family: monospace;"></div>
+        <div id="sent-stats"></div>
         <div id="sent-buttons-container" style="margin-top: 8px; display: none;">
-            <button id="pause-transfer-btn" style="font-size: 0.8rem; padding: 4px 8px; background-color: #f39c12; border-color: #f39c12;">Pause</button>
-            <button id="stop-transfer-btn" style="font-size: 0.8rem; padding: 4px 8px; background-color: #e74c3c; border-color: #e74c3c; margin-left: 5px;">Stop</button>
+            <button id="pause-transfer-btn">Pause</button>
+            <button id="stop-transfer-btn">Stop</button>
         </div>
       </div>
     `;
@@ -144,10 +197,10 @@ class UIManager {
       <div id="received-container">
         <div id="transfer-status-received"></div>
         <div class="progress-container" id="received-progress-container">
-          <div class="progress-bar" style="width: 0%; background: #4a90e2;"></div>
+          <div class="progress-bar" style="width: 0%;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
-         <div id="received-stats" style="font-size: 0.85rem; color: #4a90e2; margin-top: 4px; font-family: monospace;"></div>
+         <div id="received-stats"></div>
       </div>
     `;
   }
@@ -157,7 +210,9 @@ class UIManager {
     this.statusIdMessage.textContent = "Copied";
     this.statusIdMessage.style.display = "inline-block";
     this.statusIdMessage.style.border = "";
-    this.statusIdMessage.style.color = "black";
+    const isDark =
+      document.body && document.body.classList.contains("dark-mode");
+    this.statusIdMessage.style.color = isDark ? "#f1f1f1" : "black";
     this.statusIdMessage.style.padding = "2px 4px 2px 0";
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
@@ -414,7 +469,14 @@ class UIManager {
     timestamp.textContent = `Session ended at ${new Date().toLocaleTimeString()}${peerLabel}`;
     timestamp.style.fontSize = "0.75rem";
     timestamp.style.fontStyle = "italic";
-    timestamp.style.color = "#999";
+    try {
+      const mut = getComputedStyle(document.documentElement).getPropertyValue(
+        "--muted-text",
+      );
+      timestamp.style.color = mut ? mut.trim() : "#999";
+    } catch (e) {
+      timestamp.style.color = "#999";
+    }
     timestamp.style.marginBottom = "8px";
     historyBlock.appendChild(timestamp);
 
@@ -558,10 +620,18 @@ class UIManager {
       editBtn.style.cursor = "pointer";
       editBtn.style.fontSize = "0.9rem";
       editBtn.style.background = "transparent";
-      editBtn.style.border = "1px solid #4a90e2";
+      try {
+        const pc = getComputedStyle(document.documentElement).getPropertyValue(
+          "--primary-color",
+        );
+        editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
+        editBtn.style.color = pc ? pc.trim() : "#4a90e2";
+      } catch (e) {
+        editBtn.style.border = "1px solid #4a90e2";
+        editBtn.style.color = "#4a90e2";
+      }
       editBtn.style.borderRadius = "4px";
       editBtn.style.boxShadow = "none";
-      editBtn.style.color = "#4a90e2";
       editBtn.style.fontWeight = "bold";
 
       editBtn.addEventListener("click", () => {
@@ -623,7 +693,16 @@ class UIManager {
     this.activeConnectionStatus.textContent = this.getNickname(peerId);
 
     this.activeConnectionStatus.style.textDecoration = "underline";
-    this.activeConnectionStatus.style.textDecorationColor = "#27ae60";
+    try {
+      const ac = getComputedStyle(document.documentElement).getPropertyValue(
+        "--accent",
+      );
+      this.activeConnectionStatus.style.textDecorationColor = ac
+        ? ac.trim()
+        : "#27ae60";
+    } catch (e) {
+      this.activeConnectionStatus.style.textDecorationColor = "#27ae60";
+    }
     this.activeConnectionStatus.style.textDecorationThickness = "3px";
 
     this.endBtn.textContent = "Disconnect";
@@ -640,10 +719,18 @@ class UIManager {
       editBtn.style.padding = "2px 6px";
       editBtn.style.cursor = "pointer";
       editBtn.style.fontSize = "0.9rem";
-      editBtn.style.color = "#4a90e2";
+      try {
+        const pc = getComputedStyle(document.documentElement).getPropertyValue(
+          "--primary-color",
+        );
+        editBtn.style.color = pc ? pc.trim() : "#4a90e2";
+        editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
+      } catch (e) {
+        editBtn.style.color = "#4a90e2";
+        editBtn.style.border = "1px solid #4a90e2";
+      }
       editBtn.style.fontWeight = "bold";
       editBtn.style.background = "transparent";
-      editBtn.style.border = "1px solid #4a90e2";
       editBtn.style.borderRadius = "4px";
       editBtn.style.boxShadow = "none";
 

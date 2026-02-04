@@ -90,10 +90,59 @@ class FileTransferManager {
     e.stopPropagation();
   }
 
-  handleDrop(e) {
+  async handleDrop(e) {
     const dt = e.dataTransfer;
-    const files = dt.files;
-    this.handleFileSelection(files);
+    const items = dt.items;
+
+    if (items) {
+      const filesPromises = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.webkitGetAsEntry) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            filesPromises.push(this.traverseFileTree(entry));
+          }
+        } else if (item.kind === "file") {
+          filesPromises.push(Promise.resolve([item.getAsFile()]));
+        }
+      }
+      const fileArrays = await Promise.all(filesPromises);
+      const files = fileArrays.flat();
+      this.handleFileSelection(files);
+    } else {
+      this.handleFileSelection(dt.files);
+    }
+  }
+
+  traverseFileTree(item) {
+    return new Promise((resolve) => {
+      if (item.isFile) {
+        item.file((file) => {
+          resolve([file]);
+        });
+      } else if (item.isDirectory) {
+        const dirReader = item.createReader();
+        const entries = [];
+        const readEntries = () => {
+          dirReader.readEntries(async (result) => {
+            if (result.length === 0) {
+              const promises = entries.map((entry) =>
+                this.traverseFileTree(entry),
+              );
+              const results = await Promise.all(promises);
+              resolve(results.flat());
+            } else {
+              entries.push(...result);
+              readEntries();
+            }
+          });
+        };
+        readEntries();
+      } else {
+        resolve([]);
+      }
+    });
   }
 
   handleFileSelection(files) {
@@ -163,6 +212,13 @@ class FileTransferManager {
     uiManager.clearFileAlert();
     this.fileTransferBtn.disabled = true;
 
+    const totalBatchSize = this.selectedFiles.reduce(
+      (acc, f) => acc + f.size,
+      0,
+    );
+    let totalBytesSent = 0;
+    const batchStartTime = Date.now();
+
     for (let i = 0; i < this.selectedFiles.length; i++) {
       if (this.isStopped) break;
 
@@ -170,8 +226,10 @@ class FileTransferManager {
 
       uiManager.ensureSentContainer();
 
-      uiManager.resetSentProgressOnly();
-      uiManager.updateSentStats("-", "-");
+      if (i === 0) {
+        uiManager.resetSentProgressOnly();
+        uiManager.updateSentStats("-", "-");
+      }
 
       const startMsg =
         this.selectedFiles.length > 1
@@ -186,6 +244,7 @@ class FileTransferManager {
           fileSize: fileToSend.size,
           batchIndex: i + 1,
           batchTotal: this.selectedFiles.length,
+          totalBatchSize: totalBatchSize,
         }),
       );
 
@@ -194,6 +253,9 @@ class FileTransferManager {
           fileToSend,
           i + 1,
           this.selectedFiles.length,
+          totalBatchSize,
+          totalBytesSent,
+          batchStartTime,
         );
       } catch (err) {
         console.warn("Transfer aborted or failed:", err);
@@ -201,6 +263,8 @@ class FileTransferManager {
       }
 
       if (this.isStopped) break;
+
+      totalBytesSent += fileToSend.size;
     }
 
     const wasStopped = this.isStopped;
@@ -259,11 +323,17 @@ class FileTransferManager {
     }
   }
 
-  async sendFileSlicesPromise(fileObj, currentIdx, totalCount) {
+  async sendFileSlicesPromise(
+    fileObj,
+    currentIdx,
+    totalCount,
+    totalBatchSize,
+    totalBytesSentStart,
+    batchStartTime,
+  ) {
     if (this.isStopped) return Promise.resolve();
 
     this.isSending = true;
-    let startTime = Date.now();
     let lastUIUpdate = 0;
 
     return new Promise((resolve, reject) => {
@@ -325,14 +395,17 @@ class FileTransferManager {
         const now = Date.now();
         if (now - lastUIUpdate > 100 || offset === fileObj.size) {
           uiManager.ensureSentContainer();
+
+          const currentTotalSent = totalBytesSentStart + offset;
+          const totalSize = totalBatchSize || fileObj.size;
           uiManager.updateSentProgressBarValue(
-            Math.floor((offset / fileObj.size) * 100),
+            Math.floor((currentTotalSent / totalSize) * 100),
           );
 
-          const elapsed = (now - startTime) / 1000;
+          const elapsed = (now - batchStartTime) / 1000;
           if (elapsed > 0.5) {
-            const speed = offset / elapsed;
-            const remainingBytes = fileObj.size - offset;
+            const speed = currentTotalSent / elapsed;
+            const remainingBytes = totalSize - currentTotalSent;
             const eta = remainingBytes / speed;
             uiManager.updateSentStats(
               this.displayFileSize(speed) + "/s",
@@ -355,10 +428,10 @@ class FileTransferManager {
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
           this.recordSentFile(fileObj);
 
-          await new Promise((r) => setTimeout(r, 500));
-
-          uiManager.updateSentProgressBarValue(0);
-          uiManager.updateSentStats("-", "-");
+          if (currentIdx === totalCount) {
+            await new Promise((r) => setTimeout(r, 500));
+            uiManager.updateSentStats("-", "-");
+          }
 
           resolve();
         }
@@ -404,20 +477,31 @@ class FileTransferManager {
           this.receivedBatch = [];
         }
 
+        if (
+          info.batchIndex === 1 ||
+          typeof this.totalBatchBytesReceived === "undefined"
+        ) {
+          this.totalBatchBytesReceived = 0;
+          this.receivedBatchStartTime = Date.now();
+        }
+
         this.receivedFileDetails = {
           fileName: info.fileName,
           fileSize: info.fileSize,
           batchIndex: info.batchIndex || 1,
           batchTotal: info.batchTotal || 1,
-          startTime: Date.now(),
+          totalBatchSize: info.totalBatchSize || info.fileSize,
         };
         this.collectedChunks = [];
         this.receivedBytes = 0;
         this.isReceiving = true;
+        this.lastReceivedUIUpdate = 0;
 
         uiManager.ensureReceivedContainer();
-        uiManager.resetReceivedProgressOnly();
-        uiManager.updateReceivedStats("...", "-");
+        if (info.batchIndex === 1) {
+          uiManager.resetReceivedProgressOnly();
+          uiManager.updateReceivedStats("...", "-");
+        }
 
         const batchMsg =
           info.batchTotal > 1
@@ -445,6 +529,7 @@ class FileTransferManager {
     if (!this.receivedFileDetails) return;
     this.collectedChunks.push(arrayBuffer);
     this.receivedBytes += arrayBuffer.byteLength;
+    this.totalBatchBytesReceived += arrayBuffer.byteLength;
 
     if (
       !uiManager.transferStatusDivReceived ||
@@ -458,22 +543,27 @@ class FileTransferManager {
       uiManager.transferStatusDivReceived.textContent = batchMsg;
     }
 
-    uiManager.updateReceivedProgressBarValue(
-      Math.floor(
-        (this.receivedBytes / this.receivedFileDetails.fileSize) * 100,
-      ),
-    );
-
     const now = Date.now();
-    const elapsed = (now - this.receivedFileDetails.startTime) / 1000;
-    if (elapsed > 0.5) {
-      const speed = this.receivedBytes / elapsed;
-      const remaining = this.receivedFileDetails.fileSize - this.receivedBytes;
-      const eta = remaining / speed;
-      uiManager.updateReceivedStats(
-        this.displayFileSize(speed) + "/s",
-        this.formatTime(eta),
+    if (
+      now - this.lastReceivedUIUpdate > 100 ||
+      this.receivedBytes === this.receivedFileDetails.fileSize
+    ) {
+      const totalSize = this.receivedFileDetails.totalBatchSize;
+      uiManager.updateReceivedProgressBarValue(
+        Math.floor((this.totalBatchBytesReceived / totalSize) * 100),
       );
+
+      const elapsed = (now - this.receivedBatchStartTime) / 1000;
+      if (elapsed > 0.5) {
+        const speed = this.totalBatchBytesReceived / elapsed;
+        const remaining = totalSize - this.totalBatchBytesReceived;
+        const eta = remaining / speed;
+        uiManager.updateReceivedStats(
+          this.displayFileSize(speed) + "/s",
+          this.formatTime(eta),
+        );
+      }
+      this.lastReceivedUIUpdate = now;
     }
   }
 
@@ -505,7 +595,14 @@ class FileTransferManager {
 
     metaSpan.style.fontSize = "0.75rem";
     metaSpan.style.fontStyle = "italic";
-    metaSpan.style.color = "#888";
+    try {
+      const mt = getComputedStyle(document.documentElement).getPropertyValue(
+        "--meta-text",
+      );
+      metaSpan.style.color = mt ? mt.trim() : "#888";
+    } catch (e) {
+      metaSpan.style.color = "#888";
+    }
     metaSpan.style.marginLeft = "8px";
 
     const wrapperDiv = document.createElement("div");
@@ -543,16 +640,17 @@ class FileTransferManager {
 
     uiManager.updateReceivedStats("-", "-");
 
-    const delay =
+    if (
       this.receivedFileDetails &&
-      this.receivedFileDetails.batchIndex < this.receivedFileDetails.batchTotal
-        ? 2000
-        : 500;
-
-    this.receivedCleanupTimer = setTimeout(
-      () => uiManager.resetReceivedTransferUI(),
-      delay,
-    );
+      this.receivedFileDetails.batchIndex ===
+        this.receivedFileDetails.batchTotal
+    ) {
+      this.receivedCleanupTimer = setTimeout(
+        () => uiManager.resetReceivedTransferUI(),
+        500,
+      );
+      this.totalBatchBytesReceived = 0;
+    }
 
     this.receivedFileDetails = null;
     this.collectedChunks = [];
@@ -637,7 +735,14 @@ class FileTransferManager {
 
     metaSpan.style.fontSize = "0.75rem";
     metaSpan.style.fontStyle = "italic";
-    metaSpan.style.color = "#888";
+    try {
+      const mt = getComputedStyle(document.documentElement).getPropertyValue(
+        "--meta-text",
+      );
+      metaSpan.style.color = mt ? mt.trim() : "#888";
+    } catch (e) {
+      metaSpan.style.color = "#888";
+    }
     metaSpan.style.marginLeft = "8px";
 
     const wrapperDiv = document.createElement("div");
@@ -700,6 +805,7 @@ class FileTransferManager {
     this.receivedFileDetails = null;
     this.collectedChunks = [];
     this.receivedBytes = 0;
+    this.totalBatchBytesReceived = 0;
     uiManager.resetReceivedTransferUI();
   }
 
