@@ -6,27 +6,32 @@ const {
 } = require("../config/constants");
 const router = express.Router();
 
+const sendError = (res, status, error) => res.status(status).json({ error });
+const isFromGitHubPages = (referer, origin) =>
+  referer?.startsWith(CORS_ORIGINS.GITHUB_PAGES) ||
+  origin?.startsWith(CORS_ORIGINS.GITHUB_PAGES);
+
 router.get("/turn-credentials", async (req, res) => {
   const referer = req.get("Referer");
   const origin = req.get("Origin");
 
-  const isFromGitHubPages =
-    referer?.startsWith(CORS_ORIGINS.GITHUB_PAGES) ||
-    origin?.startsWith(CORS_ORIGINS.GITHUB_PAGES);
-
-  if (!isFromGitHubPages) {
-    return res
-      .status(HTTP_STATUS.FORBIDDEN)
-      .json({ error: "Forbidden - Access restricted" });
+  if (!isFromGitHubPages(referer, origin)) {
+    return sendError(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      "Forbidden - Access restricted",
+    );
   }
 
   const fetch = (await import("node-fetch")).default;
   const apiKey = process.env.METERED_API_KEY;
 
   if (!apiKey) {
-    return res
-      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
-      .json({ error: "API key not configured on the server." });
+    return sendError(
+      res,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      "API key not configured on the server.",
+    );
   }
 
   const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${apiKey}`;
@@ -40,7 +45,7 @@ router.get("/turn-credentials", async (req, res) => {
         const errorData = await response.json();
         errorMsg += ` ${errorData.details || errorData.error || ""}`;
       } catch {}
-      return res.status(response.status).json({ error: errorMsg });
+      return sendError(res, response.status, errorMsg);
     }
 
     const turnServers = await response.json();
@@ -51,11 +56,11 @@ router.get("/turn-credentials", async (req, res) => {
       return res.status(HTTP_STATUS.OK).json([]);
     }
   } catch (error) {
-    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      error: `Server error while fetching TURN credentials. ${
-        error.message || error
-      }`,
-    });
+    return sendError(
+      res,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      `Server error while fetching TURN credentials. ${error.message || error}`,
+    );
   }
 });
 

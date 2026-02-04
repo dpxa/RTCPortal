@@ -12,14 +12,20 @@
     "type": "git",
     "url": "git+https://github.com/dpxa/RTCPortal.git"
   },
-  "license": "ISC",
+  "author": "dpxa",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/dpxa/RTCPortal/issues"
   },
   "homepage": "https://github.com/dpxa/RTCPortal#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "node-fetch": "^3.3.2",
     "socket.io": "^4.8.1"

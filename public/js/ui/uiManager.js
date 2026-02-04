@@ -167,14 +167,56 @@ class UIManager {
       const editBtn = document.getElementById("edit-nickname-btn");
       if (editBtn && editBtn.parentNode === this.activeConnectionContainer) {
         this.activeConnectionContainer.insertBefore(idSpan, editBtn);
-        if (document.body.classList.contains("dark-mode")) {
-        }
       } else {
         this.activeConnectionContainer.appendChild(idSpan);
       }
     } else {
       if (idSpan) idSpan.remove();
     }
+  }
+
+  setEditButtonStyles(editBtn) {
+    editBtn.style.padding = "2px 6px";
+    editBtn.style.cursor = "pointer";
+    editBtn.style.fontSize = "0.9rem";
+    editBtn.style.background = "transparent";
+    try {
+      const pc = getComputedStyle(document.documentElement).getPropertyValue(
+        "--primary-color",
+      );
+      editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
+      editBtn.style.color = pc ? pc.trim() : "#4a90e2";
+    } catch (e) {
+      editBtn.style.border = "1px solid #4a90e2";
+      editBtn.style.color = "#4a90e2";
+    }
+    editBtn.style.borderRadius = "4px";
+    editBtn.style.boxShadow = "none";
+    editBtn.style.fontWeight = "bold";
+  }
+
+  ensureEditNicknameButton() {
+    let editBtn = document.getElementById("edit-nickname-btn");
+    if (!editBtn) {
+      editBtn = document.createElement("button");
+      editBtn.id = "edit-nickname-btn";
+      editBtn.textContent = "✎";
+      editBtn.title = "Edit Nickname";
+      this.setEditButtonStyles(editBtn);
+      editBtn.addEventListener("click", () => {
+        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
+        const currentName = this.getNickname(pid);
+        const newName = prompt(
+          "Enter nickname for this peer:",
+          currentName === pid ? "" : currentName,
+        );
+        if (newName !== null) {
+          this.setNickname(pid, newName);
+        }
+      });
+      this.activeConnectionContainer.appendChild(editBtn);
+    }
+    return editBtn;
   }
 
   initializeTemplates() {
@@ -207,54 +249,53 @@ class UIManager {
 
   showCopied() {
     clearTimeout(this.idMsgTimer);
-    this.statusIdMessage.textContent = "Copied";
-    this.statusIdMessage.style.display = "inline-block";
-    this.statusIdMessage.style.border = "";
     const isDark =
       document.body && document.body.classList.contains("dark-mode");
-    this.statusIdMessage.style.color = isDark ? "#f1f1f1" : "black";
-    this.statusIdMessage.style.padding = "2px 4px 2px 0";
+    this.setMessage(this.statusIdMessage, {
+      text: "Copied",
+      color: isDark ? "#f1f1f1" : "black",
+      padding: "2px 4px 2px 0",
+    });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
   showIdError(msg) {
     clearTimeout(this.idMsgTimer);
-    this.statusIdMessage.textContent = msg;
-    this.statusIdMessage.style.display = "inline-block";
-    this.statusIdMessage.style.border = "1.5px solid red";
-    this.statusIdMessage.style.color = "red";
-    this.statusIdMessage.style.padding = "1px 2px";
+    this.setMessage(this.statusIdMessage, {
+      text: msg,
+      border: "1.5px solid red",
+      color: "red",
+      padding: "1px 2px",
+    });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
   clearAlert() {
     clearTimeout(this.idMsgTimer);
-    this.statusIdMessage.textContent = "";
-    this.statusIdMessage.style.display = "none";
-    this.statusIdMessage.style.border = "";
-    this.statusIdMessage.style.color = "";
-    this.statusIdMessage.style.padding = "";
+    this.clearMessage(this.statusIdMessage);
   }
 
   showFileAlert(message) {
     clearTimeout(this.fileMsgTimer);
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
-    this.fileStatusMessage.textContent = message;
-    this.fileStatusMessage.style.display = "inline-block";
-    this.fileStatusMessage.style.border = "1.5px solid red";
-    this.fileStatusMessage.style.color = "red";
-    this.fileStatusMessage.style.padding = "1px 2px";
+    this.setMessage(this.fileStatusMessage, {
+      text: message,
+      border: "1.5px solid red",
+      color: "red",
+      padding: "1px 2px",
+    });
     this.fileMsgTimer = setTimeout(() => this.clearFileAlert(), ALERT_TIMEOUT);
   }
 
   showFileWarning(message) {
     clearTimeout(this.fileMsgTimer);
-    this.fileStatusMessage.textContent = message;
-    this.fileStatusMessage.style.display = "inline-block";
-    this.fileStatusMessage.style.border = "1.5px solid red";
-    this.fileStatusMessage.style.color = "red";
-    this.fileStatusMessage.style.padding = "1px 2px";
+    this.setMessage(this.fileStatusMessage, {
+      text: message,
+      border: "1.5px solid red",
+      color: "red",
+      padding: "1px 2px",
+    });
     this.fileMsgTimer = setTimeout(
       () => this.clearFileAlert(),
       ALERT_TIMEOUT + 2000,
@@ -263,11 +304,23 @@ class UIManager {
 
   clearFileAlert() {
     clearTimeout(this.fileMsgTimer);
-    this.fileStatusMessage.textContent = "";
-    this.fileStatusMessage.style.display = "none";
-    this.fileStatusMessage.style.border = "";
-    this.fileStatusMessage.style.color = "";
-    this.fileStatusMessage.style.padding = "";
+    this.clearMessage(this.fileStatusMessage);
+  }
+
+  setMessage(target, { text, border = "", color = "", padding = "" }) {
+    target.textContent = text;
+    target.style.display = "inline-block";
+    target.style.border = border;
+    target.style.color = color;
+    target.style.padding = padding;
+  }
+
+  clearMessage(target) {
+    target.textContent = "";
+    target.style.display = "none";
+    target.style.border = "";
+    target.style.color = "";
+    target.style.padding = "";
   }
 
   ensureSentContainer() {
@@ -608,45 +661,7 @@ class UIManager {
 
     this.endBtn.textContent = "Disconnect";
     this.endBtn.style.display = "inline-block";
-
-    let editBtn = document.getElementById("edit-nickname-btn");
-
-    if (!editBtn) {
-      editBtn = document.createElement("button");
-      editBtn.id = "edit-nickname-btn";
-      editBtn.textContent = "✎";
-      editBtn.title = "Edit Nickname";
-      editBtn.style.padding = "2px 6px";
-      editBtn.style.cursor = "pointer";
-      editBtn.style.fontSize = "0.9rem";
-      editBtn.style.background = "transparent";
-      try {
-        const pc = getComputedStyle(document.documentElement).getPropertyValue(
-          "--primary-color",
-        );
-        editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
-        editBtn.style.color = pc ? pc.trim() : "#4a90e2";
-      } catch (e) {
-        editBtn.style.border = "1px solid #4a90e2";
-        editBtn.style.color = "#4a90e2";
-      }
-      editBtn.style.borderRadius = "4px";
-      editBtn.style.boxShadow = "none";
-      editBtn.style.fontWeight = "bold";
-
-      editBtn.addEventListener("click", () => {
-        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
-        const currentName = this.getNickname(pid);
-        const newName = prompt(
-          "Enter nickname for this peer:",
-          currentName === pid ? "" : currentName,
-        );
-        if (newName !== null) {
-          this.setNickname(pid, newName);
-        }
-      });
-      this.activeConnectionContainer.appendChild(editBtn);
-    }
+    const editBtn = this.ensureEditNicknameButton();
     editBtn.style.display = "inline-block";
 
     this.updatePeerIdentityDisplay(peerId);
@@ -709,44 +724,7 @@ class UIManager {
     if (this.endBtn.style.display !== "inline-block") {
       this.endBtn.style.display = "inline-block";
     }
-
-    let editBtn = document.getElementById("edit-nickname-btn");
-    if (!editBtn) {
-      editBtn = document.createElement("button");
-      editBtn.id = "edit-nickname-btn";
-      editBtn.textContent = "✎";
-      editBtn.title = "Edit Nickname";
-      editBtn.style.padding = "2px 6px";
-      editBtn.style.cursor = "pointer";
-      editBtn.style.fontSize = "0.9rem";
-      try {
-        const pc = getComputedStyle(document.documentElement).getPropertyValue(
-          "--primary-color",
-        );
-        editBtn.style.color = pc ? pc.trim() : "#4a90e2";
-        editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
-      } catch (e) {
-        editBtn.style.color = "#4a90e2";
-        editBtn.style.border = "1px solid #4a90e2";
-      }
-      editBtn.style.fontWeight = "bold";
-      editBtn.style.background = "transparent";
-      editBtn.style.borderRadius = "4px";
-      editBtn.style.boxShadow = "none";
-
-      editBtn.addEventListener("click", () => {
-        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
-        const currentName = this.getNickname(pid);
-        const newName = prompt(
-          "Enter nickname for this peer:",
-          currentName === pid ? "" : currentName,
-        );
-        if (newName !== null) {
-          this.setNickname(pid, newName);
-        }
-      });
-      this.activeConnectionContainer.appendChild(editBtn);
-    }
+    const editBtn = this.ensureEditNicknameButton();
     if (editBtn.style.display !== "inline-block") {
       editBtn.style.display = "inline-block";
     }

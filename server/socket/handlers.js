@@ -1,3 +1,7 @@
+const relayToTarget = (io, socket, payload, event, dataBuilder) => {
+  io.to(payload.target).emit(event, dataBuilder(payload, socket.id));
+};
+
 const handleSocketConnection = (io, connectionStats) => {
   io.on("connection", (socket) => {
     console.log(`Socket connected: ${socket.id}`);
@@ -27,26 +31,26 @@ const handleSocketConnection = (io, connectionStats) => {
         return;
       }
 
-      io.to(payload.target).emit("offer", {
-        sdp: payload.sdp,
-        caller: socket.id,
-      });
+      relayToTarget(io, socket, payload, "offer", (data, senderId) => ({
+        sdp: data.sdp,
+        caller: senderId,
+      }));
     });
 
     socket.on("answer", (payload) => {
       console.log(`Received answer from ${socket.id} to ${payload.target}`);
-      io.to(payload.target).emit("answer", {
-        sdp: payload.sdp,
-        callee: socket.id,
-      });
+      relayToTarget(io, socket, payload, "answer", (data, senderId) => ({
+        sdp: data.sdp,
+        callee: senderId,
+      }));
     });
 
     socket.on("candidate", (payload) => {
       console.log(`Received candidate from ${socket.id} to ${payload.target}`);
-      io.to(payload.target).emit("candidate", {
-        candidate: payload.candidate,
-        from: socket.id,
-      });
+      relayToTarget(io, socket, payload, "candidate", (data, senderId) => ({
+        candidate: data.candidate,
+        from: senderId,
+      }));
     });
   });
 };
