@@ -2,8 +2,6 @@
 
 # RTCPortal - Peer-to-Peer File Transfer
 
-<img src="assets/app_image.png" alt="RTCPortal app interface" />
-
 ## Live Demo
 
 **[RTCPortal](https://dpxa.github.io/RTCPortal/)**
