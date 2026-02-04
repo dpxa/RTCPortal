@@ -184,7 +184,8 @@ class FileTransferManager {
       this.fileTransferBtn.disabled =
         this.selectedFiles.length === 0 ||
         !webrtcManager.dataChannel ||
-        webrtcManager.dataChannel.readyState !== "open";
+        webrtcManager.dataChannel.readyState !== "open" ||
+        this.isSending;
     } else {
       this.selectedFiles = [];
       this.fileNameDisplay.textContent = "";
@@ -347,8 +348,7 @@ class FileTransferManager {
           return;
         }
 
-        const MIN_PAUSE_SIZE = 1024 * 1024;
-        while (this.isPaused && fileObj.size > MIN_PAUSE_SIZE) {
+        while (this.isPaused) {
           if (this.isStopped) {
             this.cleanupSentTransfer();
             resolve();
@@ -369,7 +369,10 @@ class FileTransferManager {
 
         const chunk = evt.target.result;
 
-        while (webrtcManager.dataChannel.bufferedAmount > 65535) {
+        while (
+          webrtcManager.dataChannel.bufferedAmount > 65535 ||
+          this.isPaused
+        ) {
           await new Promise((r) => setTimeout(r, 100));
 
           if (this.isStopped) {
