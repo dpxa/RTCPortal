@@ -10,29 +10,19 @@ class ConnectionStats {
   }
 
   incrementSuccesses() {
-    // Prevent successes from exceeding attempts
-    if (this.successfulConnections < this.totalAttempts) {
-      this.successfulConnections++;
-    }
+    this.successfulConnections++;
   }
 
   decrementAttempts() {
     if (this.totalAttempts > 0) {
       this.totalAttempts--;
-      // Keep successes within attempts if attempts are decremented.
-      if (this.successfulConnections > this.totalAttempts) {
-        this.successfulConnections = this.totalAttempts;
-      }
     }
   }
 
   getStats() {
     const successRate =
       this.totalAttempts > 0
-        ? Math.min(
-            (this.successfulConnections / this.totalAttempts) * 100,
-            100,
-          ).toFixed(1)
+        ? ((this.successfulConnections / this.totalAttempts) * 100).toFixed(1)
         : "0.0";
 
     const uptimeMs = Date.now() - this.startTime;
