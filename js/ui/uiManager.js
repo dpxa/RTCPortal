@@ -71,7 +71,7 @@ class UIManager {
       if (isDark) document.body.classList.add("dark-mode");
       else document.body.classList.remove("dark-mode");
       if (this.themeToggleBtn)
-        this.themeToggleBtn.textContent = isDark ? "○" : "●";
+        this.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
       if (savePreference) {
         try {
           localStorage.setItem("rtcTheme", isDark ? "dark" : "light");

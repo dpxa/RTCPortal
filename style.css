@@ -904,9 +904,4 @@ body.dark-mode .zip-download-btn:hover {
   .label-container > div {
     margin-top: 4px;
   }
-
-  /* Fix Clear History button spacing from header */
-  .erase-history-btn {
-    margin-bottom: 10px;
-  }
 }
