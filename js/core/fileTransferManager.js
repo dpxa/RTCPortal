@@ -181,9 +181,9 @@ class FileTransferManager {
       const mt = getComputedStyle(document.documentElement).getPropertyValue(
         "--meta-text",
       );
-      metaSpan.style.color = mt ? mt.trim() : "#888";
+      metaSpan.style.color = mt ? mt.trim() : getCssVar("--meta-text", "#888");
     } catch (e) {
-      metaSpan.style.color = "#888";
+      metaSpan.style.color = getCssVar("--meta-text", "#888");
     }
     metaSpan.style.marginLeft = "8px";
     return metaSpan;
