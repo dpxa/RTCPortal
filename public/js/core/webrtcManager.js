@@ -170,8 +170,8 @@ class WebRTCManager {
         text: url,
         width: 128,
         height: 128,
-        colorDark: "#000000",
-        colorLight: "#ffffff",
+        colorDark: getCssVar("--qr-color-dark", "#000000"),
+        colorLight: getCssVar("--qr-color-light", "#ffffff"),
         correctLevel: QRCode.CorrectLevel.H,
       });
     } else {
@@ -229,6 +229,7 @@ class WebRTCManager {
 
     this.newConnTimer = setTimeout(() => {
       uiManager.showIdError("Connection timed out.");
+      this.socket.emit("connection-user-failed");
       this.abortPendingConnection(false);
       statsService.fetchConnectionStats();
     }, CONNECTION_TIMEOUT);
@@ -361,6 +362,8 @@ class WebRTCManager {
   }
 
   configureConnection(conn, targetId, isInitiator) {
+    conn._successEmitted = false;
+
     conn.onicecandidate = (evt) => {
       if (evt.candidate) {
         this.socket.emit("candidate", {
@@ -386,7 +389,8 @@ class WebRTCManager {
 
       if (conn.connectionState === "connected") {
         this.startHeartbeat();
-        if (isInitiator) {
+        if (isInitiator && !conn._successEmitted) {
+          conn._successEmitted = true;
           this.socket.emit("connection-success");
         }
 
@@ -577,7 +581,7 @@ class WebRTCManager {
           console.warn("Heartbeat failed", e);
         }
       }
-    }, 2000); // 2 seconds
+    }, 2000);
   }
 
   stopHeartbeat() {

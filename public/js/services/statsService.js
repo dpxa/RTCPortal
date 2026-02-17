@@ -35,19 +35,10 @@ class StatsService {
     this.applySuccessRateColor(stats.successRate);
   }
 
-  getCssVar(name, fallback) {
-    try {
-      const root = getComputedStyle(document.documentElement);
-      return (root.getPropertyValue(name) || fallback).trim();
-    } catch (e) {
-      return fallback;
-    }
-  }
-
   applySuccessRateColor(rate) {
-    const good = this.getCssVar("--accent", "#27ae60");
-    const warn = this.getCssVar("--pause-color", "#f39c12");
-    const bad = this.getCssVar("--danger", "#e74c3c");
+    const good = getCssVar("--accent", "#27ae60");
+    const warn = getCssVar("--pause-color", "#f39c12");
+    const bad = getCssVar("--danger", "#e74c3c");
 
     if (rate >= 80) this.successRateDisplay.style.color = good;
     else if (rate >= 60) this.successRateDisplay.style.color = warn;

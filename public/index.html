@@ -39,9 +39,11 @@
   <body>
     <div class="wrapper">
       <div class="header-controls">
-        <button id="theme-toggle" class="theme-toggle" title="Toggle Dark Mode">
-          🌙
-        </button>
+        <button
+          id="theme-toggle"
+          class="theme-toggle"
+          title="Toggle Dark Mode"
+        ></button>
         <a href="https://github.com/dpxa" target="_blank" class="repo-link"
           >GitHub</a
         >
@@ -124,7 +126,7 @@
             </section>
 
             <section id="file-transfer-section" style="display: none">
-              <h2>Send File</h2>
+              <h2>Send</h2>
               <div class="label-container">
                 <span
                   id="file-status-message"
@@ -155,13 +157,11 @@
                 />
                 <div id="file-name-display"></div>
               </div>
-              <button id="file-transfer-btn" disabled>Send File</button>
+              <button id="file-transfer-btn" disabled>Send</button>
               <button id="toggle-chat-btn" style="display: none">
                 Open Chat
               </button>
             </section>
-
-            <!-- Dynamically create progress bar -->
 
             <section id="chat-section" style="display: none">
               <h2>Chat</h2>
@@ -260,7 +260,6 @@
     <script src="js/services/turnService.js"></script>
     <script src="js/services/statsService.js"></script>
     <script src="js/core/fileTransferManager.js"></script>
-    <!-- webrtcManager is loaded by loadSocketIO.js -->
 
     <script src="js/loadSocketIO.js"></script>
 

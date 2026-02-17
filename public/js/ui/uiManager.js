@@ -67,11 +67,12 @@ class UIManager {
 
   initializeTheme() {
     this.themeToggleBtn = document.getElementById("theme-toggle");
+    this.createThemeIcon();
+
     const apply = (isDark, savePreference = false) => {
       if (isDark) document.body.classList.add("dark-mode");
       else document.body.classList.remove("dark-mode");
-      if (this.themeToggleBtn)
-        this.themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+      this.updateThemeIcon(isDark);
       if (savePreference) {
         try {
           localStorage.setItem("rtcTheme", isDark ? "dark" : "light");
@@ -122,6 +123,89 @@ class UIManager {
     }
   }
 
+  createThemeIcon() {
+    if (!this.themeToggleBtn) return;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "20");
+    svg.setAttribute("height", "20");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+
+    const moonPath = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "path",
+    );
+    moonPath.setAttribute(
+      "d",
+      "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
+    );
+    moonPath.classList.add("moon-icon");
+    svg.appendChild(moonPath);
+
+    const sunGroup = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "g",
+    );
+    sunGroup.classList.add("sun-icon");
+    sunGroup.style.display = "none";
+
+    const circle = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle",
+    );
+    circle.setAttribute("cx", "12");
+    circle.setAttribute("cy", "12");
+    circle.setAttribute("r", "5");
+    sunGroup.appendChild(circle);
+
+    const lines = [
+      { x1: "12", y1: "1", x2: "12", y2: "3" },
+      { x1: "12", y1: "21", x2: "12", y2: "23" },
+      { x1: "4.22", y1: "4.22", x2: "5.64", y2: "5.64" },
+      { x1: "18.36", y1: "18.36", x2: "19.78", y2: "19.78" },
+      { x1: "1", y1: "12", x2: "3", y2: "12" },
+      { x1: "21", y1: "12", x2: "23", y2: "12" },
+      { x1: "4.22", y1: "19.78", x2: "5.64", y2: "18.36" },
+      { x1: "18.36", y1: "5.64", x2: "19.78", y2: "4.22" },
+    ];
+
+    lines.forEach((lineData) => {
+      const line = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "line",
+      );
+      Object.entries(lineData).forEach(([key, value]) => {
+        line.setAttribute(key, value);
+      });
+      sunGroup.appendChild(line);
+    });
+
+    svg.appendChild(sunGroup);
+    this.themeToggleBtn.appendChild(svg);
+  }
+
+  updateThemeIcon(isDark) {
+    if (!this.themeToggleBtn) return;
+
+    const moonIcon = this.themeToggleBtn.querySelector(".moon-icon");
+    const sunIcon = this.themeToggleBtn.querySelector(".sun-icon");
+
+    if (moonIcon && sunIcon) {
+      if (isDark) {
+        moonIcon.style.display = "none";
+        sunIcon.style.display = "block";
+      } else {
+        moonIcon.style.display = "block";
+        sunIcon.style.display = "none";
+      }
+    }
+  }
+
   getNickname(peerId) {
     if (!peerId) return "";
     return this.nicknames[peerId] || peerId;
@@ -157,9 +241,11 @@ class UIManager {
           const mut = getComputedStyle(
             document.documentElement,
           ).getPropertyValue("--muted-text");
-          idSpan.style.color = mut ? mut.trim() : "#999";
+          idSpan.style.color = mut
+            ? mut.trim()
+            : getCssVar("--muted-text", "#999");
         } catch (e) {
-          idSpan.style.color = "#999";
+          idSpan.style.color = getCssVar("--muted-text", "#999");
         }
       }
       idSpan.textContent = peerId;
@@ -184,11 +270,13 @@ class UIManager {
       const pc = getComputedStyle(document.documentElement).getPropertyValue(
         "--primary-color",
       );
-      editBtn.style.border = `1px solid ${pc ? pc.trim() : "#4a90e2"}`;
-      editBtn.style.color = pc ? pc.trim() : "#4a90e2";
+      editBtn.style.border = `1px solid ${pc ? pc.trim() : getCssVar("--primary-color", "#4a90e2")}`;
+      editBtn.style.color = pc
+        ? pc.trim()
+        : getCssVar("--primary-color", "#4a90e2");
     } catch (e) {
-      editBtn.style.border = "1px solid #4a90e2";
-      editBtn.style.color = "#4a90e2";
+      editBtn.style.border = `1px solid ${getCssVar("--primary-color", "#4a90e2")}`;
+      editBtn.style.color = getCssVar("--primary-color", "#4a90e2");
     }
     editBtn.style.borderRadius = "4px";
     editBtn.style.boxShadow = "none";
@@ -253,7 +341,9 @@ class UIManager {
       document.body && document.body.classList.contains("dark-mode");
     this.setMessage(this.statusIdMessage, {
       text: "Copied",
-      color: isDark ? "#f1f1f1" : "black",
+      color: isDark
+        ? getCssVar("--text-color", "#ecf0f1")
+        : getCssVar("--text-color", "#102a43"),
       padding: "2px 4px 2px 0",
     });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
@@ -500,7 +590,7 @@ class UIManager {
     if (messages.length === 0) return;
 
     const historyBlock = document.createElement("div");
-    historyBlock.style.borderBottom = "1px dashed #ccc";
+    historyBlock.style.borderBottom = `1px dashed ${getCssVar("--input-border", "#ccc")}`;
     historyBlock.style.paddingBottom = "10px";
     historyBlock.style.marginBottom = "5px";
     historyBlock.style.display = "flex";
@@ -526,9 +616,11 @@ class UIManager {
       const mut = getComputedStyle(document.documentElement).getPropertyValue(
         "--muted-text",
       );
-      timestamp.style.color = mut ? mut.trim() : "#999";
+      timestamp.style.color = mut
+        ? mut.trim()
+        : getCssVar("--muted-text", "#999");
     } catch (e) {
-      timestamp.style.color = "#999";
+      timestamp.style.color = getCssVar("--muted-text", "#999");
     }
     timestamp.style.marginBottom = "8px";
     historyBlock.appendChild(timestamp);
@@ -714,9 +806,12 @@ class UIManager {
       );
       this.activeConnectionStatus.style.textDecorationColor = ac
         ? ac.trim()
-        : "#27ae60";
+        : getCssVar("--accent", "#27ae60");
     } catch (e) {
-      this.activeConnectionStatus.style.textDecorationColor = "#27ae60";
+      this.activeConnectionStatus.style.textDecorationColor = getCssVar(
+        "--accent",
+        "#27ae60",
+      );
     }
     this.activeConnectionStatus.style.textDecorationThickness = "3px";
 

@@ -26,3 +26,12 @@ const ID_UNDERLINE_TIMEOUT = 4000;
 const STATS_FETCH_INTERVAL = 30000;
 
 const SOCKET_IO_TRANSPORTS = ["websocket", "polling"];
+
+function getCssVar(name, fallback = "") {
+  try {
+    const root = getComputedStyle(document.documentElement);
+    return (root.getPropertyValue(name) || fallback).trim();
+  } catch (e) {
+    return fallback;
+  }
+}
