@@ -177,11 +177,7 @@ async function runConnectionTest() {
           By.id("transfer-status-sent"),
         );
         const statusText = await statusDiv.getText();
-        return (
-          statusText.toLowerCase().includes("complete") ||
-          statusText.toLowerCase().includes("success") ||
-          statusText.toLowerCase().includes("100%")
-        );
+        return statusText.toLowerCase().includes("sent");
       } catch (e) {
         return false;
       }
