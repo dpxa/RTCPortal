@@ -337,14 +337,11 @@ class UIManager {
 
   showCopied() {
     clearTimeout(this.idMsgTimer);
-    const isDark =
-      document.body && document.body.classList.contains("dark-mode");
+
+    // Apply the success class so it uses var(--text-color)
+    this.statusIdMessage.classList.add("success");
     this.setMessage(this.statusIdMessage, {
       text: "Copied",
-      color: isDark
-        ? getCssVar("--text-color", "#ecf0f1")
-        : getCssVar("--text-color", "#102a43"),
-      padding: "2px 4px 2px 0",
     });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
@@ -362,6 +359,7 @@ class UIManager {
 
   clearAlert() {
     clearTimeout(this.idMsgTimer);
+    this.statusIdMessage.classList.remove("success");
     this.clearMessage(this.statusIdMessage);
   }
 
