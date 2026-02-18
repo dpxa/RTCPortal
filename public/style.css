@@ -301,6 +301,11 @@ input:disabled {
   font-size: 0.7rem;
 }
 
+.message.success {
+  color: var(--text-color);
+  padding: 2px 4px 2px 0;
+}
+
 .file-history-header {
   display: flex;
   align-items: center;
