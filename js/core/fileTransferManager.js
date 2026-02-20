@@ -319,12 +319,13 @@ class FileTransferManager {
         uiManager.updateSentStats("-", "-");
       }
 
-      uiManager.transferStatusDivSent.textContent = this.formatBatchMessage(
+      this.currentSendStatus = this.formatBatchMessage(
         "Sending",
         i + 1,
         this.selectedFiles.length,
         fileToSend.name,
       );
+      uiManager.transferStatusDivSent.textContent = this.currentSendStatus;
 
       webrtcManager.dataChannel.send(
         JSON.stringify({
@@ -381,7 +382,8 @@ class FileTransferManager {
     } else {
       if (uiManager.pauseTransferBtn)
         uiManager.pauseTransferBtn.textContent = "Pause";
-      uiManager.transferStatusDivSent.textContent = "Resuming...";
+      uiManager.transferStatusDivSent.textContent =
+        this.currentSendStatus || "Sending...";
     }
   }
 
@@ -520,6 +522,7 @@ class FileTransferManager {
           this.recordSentFile(fileObj);
 
           if (currentIdx === totalCount) {
+            this.isSending = false;
             await new Promise((r) => setTimeout(r, 500));
             uiManager.updateSentStats("-", "-");
           }
