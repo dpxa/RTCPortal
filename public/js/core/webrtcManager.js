@@ -221,6 +221,8 @@ class WebRTCManager {
     this.abortPendingConnection();
     uiManager.updateToWaiting();
 
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
     if (fileTransferManager) {
       fileTransferManager.clearFileSelection();
     }
