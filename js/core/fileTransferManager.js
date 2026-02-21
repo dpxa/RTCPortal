@@ -364,7 +364,7 @@ class FileTransferManager {
     this.isStopped = false;
     this.isPaused = false;
 
-    if (this.selectedFiles.length > 0 && !wasStopped && this.isSending) {
+    if (this.selectedFiles.length > 0 && !wasStopped) {
       uiManager.updateSentProgressBarValue(100);
 
       uiManager.resetSentTransferUI();
