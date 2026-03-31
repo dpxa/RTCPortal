@@ -3,7 +3,6 @@ class FileTransferManager {
     this.receivedFileDetails = null;
     this.collectedChunks = [];
     this.receivedBytes = 0;
-    this.fileMsgTimer = null;
     this.isSending = false;
     this.isReceiving = false;
     this.isStopped = false;
@@ -18,7 +17,6 @@ class FileTransferManager {
     this.opfsFileHandle = null;
     this.opfsWritable = null;
     this.opfsReady = false;
-    this.writeQueue = Promise.resolve();
 
     this.initializeElements();
     this.initializeEventListeners();
@@ -171,12 +169,18 @@ class FileTransferManager {
     });
   }
 
+  isDataChannelOpen() {
+    return (
+      window.webrtcManager &&
+      window.webrtcManager.dataChannel &&
+      window.webrtcManager.dataChannel.readyState === "open"
+    );
+  }
+
   updateTransferButtonState() {
     this.fileTransferBtn.disabled =
       this.selectedFiles.length === 0 ||
-      !window.webrtcManager ||
-      !window.webrtcManager.dataChannel ||
-      window.webrtcManager.dataChannel.readyState !== "open" ||
+      !this.isDataChannelOpen() ||
       this.isSending;
   }
 
@@ -213,6 +217,8 @@ class FileTransferManager {
   createHistoryEntry({ name, size, direction, blob, opfsHandle }) {
     const wrapperDiv = document.createElement("div");
     wrapperDiv.style.padding = "4px 0";
+    wrapperDiv.style.wordBreak = "break-all";
+    wrapperDiv.style.overflowWrap = "anywhere";
 
     const label = blob
       ? document.createElement("a")
@@ -247,22 +253,6 @@ class FileTransferManager {
     }
   }
 
-  filterValidFiles(files) {
-    const MAX_SIZE = 2 * 1024 * 1024 * 1024;
-    const validFiles = [];
-    const skippedFiles = [];
-
-    Array.from(files).forEach((file) => {
-      if (file.size === 0 || file.size > MAX_SIZE) {
-        skippedFiles.push(file.name);
-      } else {
-        validFiles.push(file);
-      }
-    });
-
-    return { validFiles, skippedFiles };
-  }
-
   async revokeAllBlobUrls() {
     this.activeBlobUrls.forEach((url) => {
       URL.revokeObjectURL(url);
@@ -282,47 +272,54 @@ class FileTransferManager {
     }
   }
 
+  clearFileSelectionUI() {
+    this.selectedFiles = [];
+    if (this.fileNameDisplay) this.fileNameDisplay.textContent = "";
+    if (this.fileTransferBtn) this.fileTransferBtn.disabled = true;
+    this.resetInputFields();
+  }
+
+  resetInputFields() {
+    if (this.uploadField) this.uploadField.value = "";
+    if (this.folderUploadField) this.folderUploadField.value = "";
+  }
+
   handleFileSelection(files) {
-    if (files.length > 0) {
-      const { validFiles, skippedFiles } = this.filterValidFiles(files);
+    if (!files || files.length === 0) {
+      this.clearFileSelectionUI();
+      return;
+    }
 
-      if (skippedFiles.length > 0) {
-        console.warn("Skipped files:", skippedFiles);
-        uiManager.showFileWarning(
-          `Skipped ${skippedFiles.length} files (empty or > 2GB).`,
-        );
-      }
+    const fileArray = Array.from(files);
+    const totalSize = fileArray.reduce((acc, file) => acc + file.size, 0);
+    const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
-      this.selectedFiles = validFiles;
-
-      const totalSize = this.selectedFiles.reduce(
-        (acc, file) => acc + file.size,
-        0,
+    if (totalSize > MAX_SIZE) {
+      uiManager.showFileWarning(
+        `Total transfer size exceeds 2GB limit (${this.displayFileSize(totalSize)}). Please select fewer files.`,
       );
+      this.clearFileSelectionUI();
+      return;
+    }
 
-      if (this.selectedFiles.length === 1) {
-        this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles[0].name} (${this.displayFileSize(this.selectedFiles[0].size)})`;
-      } else if (this.selectedFiles.length > 1) {
-        this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles.length} files (${this.displayFileSize(totalSize)})`;
-      } else {
-        this.fileNameDisplay.textContent = "";
-      }
+    this.selectedFiles = fileArray;
+    this.updateFileNameDisplay(totalSize);
+    this.updateTransferButtonState();
+    this.resetInputFields();
+  }
 
-      this.updateTransferButtonState();
+  updateFileNameDisplay(totalSize) {
+    if (!this.fileNameDisplay) return;
+
+    if (this.selectedFiles.length === 1) {
+      this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles[0].name} (${this.displayFileSize(this.selectedFiles[0].size)})`;
     } else {
-      this.selectedFiles = [];
-      this.fileNameDisplay.textContent = "";
-      this.fileTransferBtn.disabled = true;
+      this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles.length} files (${this.displayFileSize(totalSize)})`;
     }
   }
 
   async sendFile() {
-    if (
-      !window.webrtcManager ||
-      !window.webrtcManager.dataChannel ||
-      window.webrtcManager.dataChannel.readyState !== "open"
-    ) {
-      uiManager.showFileAlert("Data channel not open! Ending connection...");
+    if (!this.isDataChannelOpen()) {
       setTimeout(() => {
         if (window.webrtcManager) window.webrtcManager.resetCurrentConnection();
       }, 4000);
@@ -364,14 +361,16 @@ class FileTransferManager {
       );
       uiManager.transferStatusDivSent.textContent = this.currentSendStatus;
 
-      webrtcManager.sendControlMessage({
-        type: "metadata",
-        fileName: fileToSend.name,
-        fileSize: fileToSend.size,
-        batchIndex: i + 1,
-        batchTotal: this.selectedFiles.length,
-        totalBatchSize: totalBatchSize,
-      });
+      webrtcManager.dataChannel.send(
+        JSON.stringify({
+          type: "metadata",
+          fileName: fileToSend.name,
+          fileSize: fileToSend.size,
+          batchIndex: i + 1,
+          batchTotal: this.selectedFiles.length,
+          totalBatchSize: totalBatchSize,
+        }),
+      );
 
       try {
         await this.sendFileSlicesPromise(
@@ -426,11 +425,10 @@ class FileTransferManager {
     this.isStopped = true;
     this.isPaused = false;
 
-    if (
-      webrtcManager.dataChannel &&
-      webrtcManager.dataChannel.readyState === "open"
-    ) {
-      webrtcManager.sendControlMessage({ type: "cancel-transfer" });
+    if (this.isDataChannelOpen()) {
+      webrtcManager.dataChannel.send(
+        JSON.stringify({ type: "cancel-transfer" }),
+      );
     }
 
     this.isSending = false;
@@ -441,10 +439,23 @@ class FileTransferManager {
     uiManager.resetSentTransferUI();
   }
 
-  updateFileSelectionUI() {
-    if (this.selectedFiles.length === 0 && this.fileNameDisplay) {
-      this.fileNameDisplay.textContent = "";
-    }
+  async waitForWebRTCBuffer() {
+    if (
+      !this.isDataChannelOpen() ||
+      webrtcManager.dataChannel.bufferedAmount <= 65535 * 4
+    )
+      return;
+
+    return new Promise((resolve) => {
+      const onLow = () => {
+        webrtcManager.dataChannel.removeEventListener(
+          "bufferedamountlow",
+          onLow,
+        );
+        resolve();
+      };
+      webrtcManager.dataChannel.addEventListener("bufferedamountlow", onLow);
+    });
   }
 
   async sendFileSlicesPromise(
@@ -480,11 +491,7 @@ class FileTransferManager {
           await new Promise((r) => setTimeout(r, 200));
         }
 
-        if (
-          !this.isSending ||
-          !webrtcManager.dataChannel ||
-          webrtcManager.dataChannel.readyState !== "open"
-        ) {
+        if (!this.isSending || !this.isDataChannelOpen()) {
           this.cleanupSentTransfer();
           reject("Transfer aborted");
           return;
@@ -492,21 +499,7 @@ class FileTransferManager {
 
         const chunk = evt.target.result;
 
-        if (webrtcManager.dataChannel.bufferedAmount > 65535 * 4) {
-          await new Promise((resolveBuffer) => {
-            const onLow = () => {
-              webrtcManager.dataChannel.removeEventListener(
-                "bufferedamountlow",
-                onLow,
-              );
-              resolveBuffer();
-            };
-            webrtcManager.dataChannel.addEventListener(
-              "bufferedamountlow",
-              onLow,
-            );
-          });
-        }
+        await this.waitForWebRTCBuffer();
 
         while (this.isPaused) {
           await new Promise((r) => setTimeout(r, 100));
@@ -523,11 +516,7 @@ class FileTransferManager {
           return;
         }
 
-        if (
-          !this.isSending ||
-          !webrtcManager.dataChannel ||
-          webrtcManager.dataChannel.readyState !== "open"
-        ) {
+        if (!this.isSending || !this.isDataChannelOpen()) {
           this.cleanupSentTransfer();
           reject("Transfer aborted");
           return;
@@ -541,10 +530,12 @@ class FileTransferManager {
           uiManager.ensureSentContainer();
 
           const currentTotalSent = totalBytesSentStart + offset;
-          const totalSize = totalBatchSize || fileObj.size;
-          uiManager.updateSentProgressBarValue(
-            Math.floor((currentTotalSent / totalSize) * 100),
-          );
+          const totalSize = Number(totalBatchSize) || Number(fileObj.size) || 0;
+          const progressValue =
+            totalSize > 0
+              ? Math.floor((currentTotalSent / totalSize) * 100)
+              : 100;
+          uiManager.updateSentProgressBarValue(progressValue);
 
           const stats = this.calculateTransferStats(
             currentTotalSent,
@@ -568,7 +559,7 @@ class FileTransferManager {
             fileObj.name,
           );
 
-          webrtcManager.sendControlMessage({ type: "done" });
+          webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
 
           if (window.webrtcManager && window.webrtcManager.socket) {
             window.webrtcManager.socket.emit("transfer-complete", {
@@ -629,105 +620,134 @@ class FileTransferManager {
     };
   }
 
-  async sendFileSlices(fileObj) {
-    return this.sendFileSlicesPromise(fileObj, 1, 1);
+  handleIncomingData(data) {
+    if (!this.receiveBuffer) this.receiveBuffer = [];
+    this.receiveBuffer.push(data);
+    if (!this.isProcessingReceive) {
+      this.isProcessingReceive = true;
+      Promise.resolve().then(() => this.processReceiveBuffer());
+    }
+  }
+
+  async processReceiveBuffer() {
+    while (this.receiveBuffer && this.receiveBuffer.length > 0) {
+      const data = this.receiveBuffer.shift();
+      if (typeof data === "string") {
+        await this.processControlInstruction(data);
+      } else {
+        await this.processIncomingChunk(data);
+      }
+    }
+    this.isProcessingReceive = false;
   }
 
   async processControlInstruction(input) {
     try {
       const info = JSON.parse(input);
-      if (info.type === "metadata") {
-        if (this.receivedCleanupTimer) {
-          clearTimeout(this.receivedCleanupTimer);
-          this.receivedCleanupTimer = null;
-        }
 
-        if (info.batchIndex === 1 && this.receivedBatch.length > 0) {
-          this.receivedBatch = [];
-        }
-
-        if (
-          info.batchIndex === 1 ||
-          typeof this.totalBatchBytesReceived === "undefined"
-        ) {
-          this.totalBatchBytesReceived = 0;
-          this.receivedBatchStartTime = Date.now();
-        }
-
-        this.receivedFileDetails = {
-          fileName: info.fileName,
-          fileSize: info.fileSize,
-          batchIndex: info.batchIndex || 1,
-          batchTotal: info.batchTotal || 1,
-          totalBatchSize: info.totalBatchSize || info.fileSize,
-        };
-        this.collectedChunks = [];
-        this.receivedBytes = 0;
-        this.isReceiving = true;
-        this.lastReceivedUIUpdate = 0;
-        this.opfsReady = false;
-        this.writeQueue = Promise.resolve();
-
-        uiManager.ensureReceivedContainer();
-        if (info.batchIndex === 1) {
-          uiManager.resetReceivedProgressOnly();
-          uiManager.updateReceivedStats("...", "-");
-        }
-
-        uiManager.transferStatusDivReceived.textContent =
-          this.formatBatchMessage(
-            "Receiving",
-            info.batchIndex,
-            info.batchTotal,
-            info.fileName,
-          );
-
-        try {
-          const root = await navigator.storage.getDirectory();
-          let safeFileName = info.fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-          const tempFileName = `temp_${Date.now()}_${safeFileName}`;
-          this.opfsFileHandle = await root.getFileHandle(tempFileName, {
-            create: true,
-          });
-          this.opfsWritable = await this.opfsFileHandle.createWritable();
-
-          const chunksToWrite = this.collectedChunks;
-          this.collectedChunks = [];
-
-          for (const chunk of chunksToWrite) {
-            this.writeQueue = this.writeQueue.then(() =>
-              this.opfsWritable.write(chunk),
-            );
-          }
-          this.opfsReady = true;
-        } catch (e) {
-          console.error("OPFS setup failed, falling back to memory:", e);
-          this.opfsReady = false;
-        }
-      } else if (info.type === "done") {
-        await this.finalizeIncomingFile();
-        this.isReceiving = false;
-      } else if (info.type === "cancel-transfer") {
-        if (this.receivedBatch.length > 1) {
-          this.createBatchZipButton([...this.receivedBatch]);
-        }
-        this.receivedBatch = [];
-
-        await this.cleanupReceivedTransfer();
-        uiManager.showFileWarning("Sender cancelled transfer.");
+      switch (info.type) {
+        case "metadata":
+          await this.handleIncomingMetadata(info);
+          break;
+        case "done":
+          await this.finalizeIncomingFile();
+          this.isReceiving = false;
+          break;
+        case "cancel-transfer":
+          this.handleTransferCancellation();
+          break;
+        default:
+          console.warn("Unknown control instruction:", info.type);
       }
     } catch (err) {
-      console.log("Received text message:", input);
+      console.log("Received unparsable text message:", input);
     }
   }
 
-  processIncomingChunk(arrayBuffer) {
+  handleTransferCancellation() {
+    if (this.receivedBatch.length > 1) {
+      this.createBatchZipButton([...this.receivedBatch]);
+    }
+    this.receivedBatch = [];
+
+    this.cleanupReceivedTransfer();
+    uiManager.showFileWarning("Sender cancelled transfer.");
+  }
+
+  async handleIncomingMetadata(info) {
+    if (this.receivedCleanupTimer) {
+      clearTimeout(this.receivedCleanupTimer);
+      this.receivedCleanupTimer = null;
+    }
+
+    uiManager.ensureReceivedContainer();
+
+    if (info.batchIndex === 1) {
+      this.receivedBatch = [];
+      this.totalBatchBytesReceived = 0;
+      this.receivedBatchStartTime = Date.now();
+      uiManager.resetReceivedProgressOnly();
+      uiManager.updateReceivedStats("-", "-");
+    }
+
+    this.receivedFileDetails = {
+      fileName: info.fileName,
+      fileSize: info.fileSize,
+      batchIndex: info.batchIndex || 1,
+      batchTotal: info.batchTotal || 1,
+      totalBatchSize: info.totalBatchSize || info.fileSize,
+    };
+
+    this.collectedChunks = [];
+    this.receivedBytes = 0;
+    this.isReceiving = true;
+    this.lastReceivedUIUpdate = 0;
+    this.opfsReady = false;
+
+    uiManager.ensureReceivedContainer();
+    uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
+      "Receiving",
+      info.batchIndex,
+      info.batchTotal,
+      info.fileName,
+    );
+
+    await this.initializeOPFSForIncomingFile(info.fileName);
+  }
+
+  async initializeOPFSForIncomingFile(fileName) {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const safeFileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const tempFileName = `temp_${Date.now()}_${safeFileName}`;
+
+      this.opfsFileHandle = await root.getFileHandle(tempFileName, {
+        create: true,
+      });
+      this.opfsWritable = await this.opfsFileHandle.createWritable();
+
+      const chunksToWrite = this.collectedChunks;
+      this.collectedChunks = [];
+
+      for (const chunk of chunksToWrite) {
+        await this.opfsWritable.write(chunk);
+      }
+      this.opfsReady = true;
+    } catch (e) {
+      console.error("OPFS setup failed, falling back to memory storage.", e);
+      this.opfsReady = false;
+    }
+  }
+
+  async processIncomingChunk(arrayBuffer) {
     if (!this.receivedFileDetails) return;
 
     if (this.opfsReady && this.opfsWritable) {
-      this.writeQueue = this.writeQueue
-        .then(() => this.opfsWritable.write(arrayBuffer))
-        .catch((err) => console.error("OPFS write error:", err));
+      try {
+        await this.opfsWritable.write(arrayBuffer);
+      } catch (err) {
+        console.error("OPFS write error:", err);
+      }
     } else {
       this.collectedChunks.push(arrayBuffer);
     }
@@ -754,7 +774,13 @@ class FileTransferManager {
     ) {
       const totalSize = this.receivedFileDetails.totalBatchSize;
 
-      if (this.receivedBytes === this.receivedFileDetails.fileSize) {
+      const isFileComplete =
+        this.receivedBytes === this.receivedFileDetails.fileSize;
+      const isLastBatchFile =
+        this.receivedFileDetails.batchIndex ===
+        this.receivedFileDetails.batchTotal;
+
+      if (isFileComplete && isLastBatchFile) {
         uiManager.transferStatusDivReceived.textContent =
           this.formatBatchMessage(
             "Received",
@@ -775,63 +801,73 @@ class FileTransferManager {
         }
       }
 
-      uiManager.updateReceivedProgressBarValue(
-        Math.floor((this.totalBatchBytesReceived / totalSize) * 100),
-      );
+      const totalSizeToUse = Number(totalSize) || 0;
+      const progressValue =
+        totalSizeToUse > 0
+          ? Math.floor((this.totalBatchBytesReceived / totalSizeToUse) * 100)
+          : 100;
+      uiManager.updateReceivedProgressBarValue(progressValue);
       this.lastReceivedUIUpdate = now;
     }
   }
 
   async finalizeIncomingFile() {
-    await this.writeQueue;
+    const currentWritable = this.opfsWritable;
+    const currentFileHandle = this.opfsFileHandle;
+    const currentDetails = this.receivedFileDetails;
+    let currentChunks = this.collectedChunks;
+
+    this.opfsWritable = null;
+    this.opfsFileHandle = null;
+    this.opfsReady = false;
+    this.collectedChunks = [];
 
     let fileBlob;
     let fileHandle = null;
 
-    if (this.opfsWritable) {
+    if (currentWritable) {
       try {
-        await this.opfsWritable.close();
-        fileBlob = await this.opfsFileHandle.getFile();
-        fileHandle = this.opfsFileHandle;
+        await currentWritable.close();
+        fileBlob = await currentFileHandle.getFile();
+        fileHandle = currentFileHandle;
       } catch (err) {
         console.error("Error finalizing OPFS file:", err);
-        fileBlob = new Blob(this.collectedChunks);
+        fileBlob = new Blob(currentChunks);
       }
-      this.opfsWritable = null;
-      this.opfsFileHandle = null;
-      this.opfsReady = false;
     } else {
-      fileBlob = new Blob(this.collectedChunks);
+      fileBlob = new Blob(currentChunks);
     }
 
+    currentChunks = null;
+
     this.receivedBatch.push({
-      name: this.receivedFileDetails.fileName,
+      name: currentDetails.fileName,
       blob: fileBlob,
       opfsHandle: fileHandle,
     });
 
     const { wrapperDiv } = this.createHistoryEntry({
-      name: this.receivedFileDetails.fileName,
-      size: this.receivedFileDetails.fileSize,
+      name: currentDetails.fileName,
+      size: currentDetails.fileSize,
       direction: "from",
       blob: fileBlob,
       opfsHandle: fileHandle,
     });
 
-    uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
-      "Received",
-      this.receivedFileDetails.batchIndex,
-      this.receivedFileDetails.batchTotal,
-      this.receivedFileDetails.fileName,
-    );
-
-    uiManager.updateReceivedStats("", "");
+    if (currentDetails.batchIndex === currentDetails.batchTotal) {
+      uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
+        "Received",
+        currentDetails.batchIndex,
+        currentDetails.batchTotal,
+        currentDetails.fileName,
+      );
+    }
 
     const isLastInBatch =
-      this.receivedFileDetails.batchIndex ===
-      this.receivedFileDetails.batchTotal;
+      currentDetails.batchIndex === currentDetails.batchTotal;
 
     if (isLastInBatch) {
+      uiManager.updateReceivedStats("", "");
       this.receivedCleanupTimer = setTimeout(() => {
         this.insertHistoryEntry(
           this.incomingFilesContainer,
@@ -873,10 +909,12 @@ class FileTransferManager {
       this.incomingFilesContainer.querySelectorAll("div").length;
 
     const count = files.length;
+    const zipIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 5px; margin-bottom: 2px;"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`;
+
     if (totalItems > count) {
-      btn.innerHTML = `📦 Download Last ${count} Files (ZIP)`;
+      btn.innerHTML = `${zipIcon} Download Last ${count} Files (ZIP)`;
     } else {
-      btn.innerHTML = `📦 Download ${count} Files (ZIP)`;
+      btn.innerHTML = `${zipIcon} Download ${count} Files (ZIP)`;
     }
 
     btn.addEventListener("click", () => {
@@ -904,7 +942,10 @@ class FileTransferManager {
     });
 
     try {
-      const content = await zip.generateAsync({ type: "blob" });
+      const content = await zip.generateAsync({
+        type: "blob",
+        compression: "STORE",
+      });
       const blobUrl = URL.createObjectURL(content);
       const link = document.createElement("a");
       link.href = blobUrl;
@@ -915,6 +956,9 @@ class FileTransferManager {
       }, 100);
     } catch (e) {
       console.error("Error generating zip:", e);
+      uiManager.showFileWarning(
+        "Failed to create ZIP: Transfer may be too large for browser memory.",
+      );
     }
   }
 
@@ -965,6 +1009,12 @@ class FileTransferManager {
 
   cleanupSentTransfer() {
     this.isSending = false;
+
+    if (this.sentCleanupTimer) {
+      clearTimeout(this.sentCleanupTimer);
+      this.sentCleanupTimer = null;
+    }
+
     uiManager.resetSentTransferUI();
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
@@ -974,8 +1024,14 @@ class FileTransferManager {
     this.isReceiving = false;
     this.receivedFileDetails = null;
     this.collectedChunks = [];
+    this.receiveBuffer = [];
     this.receivedBytes = 0;
     this.totalBatchBytesReceived = 0;
+
+    if (this.receivedCleanupTimer) {
+      clearTimeout(this.receivedCleanupTimer);
+      this.receivedCleanupTimer = null;
+    }
 
     if (this.opfsWritable) {
       try {
@@ -991,7 +1047,6 @@ class FileTransferManager {
       this.opfsFileHandle = null;
     }
     this.opfsReady = false;
-    this.writeQueue = Promise.resolve();
 
     uiManager.resetReceivedTransferUI();
   }
@@ -1011,7 +1066,6 @@ class FileTransferManager {
     this.cleanupSentTransfer();
     await this.cleanupReceivedTransfer();
     uiManager.clearFileAlert();
-    clearTimeout(this.fileMsgTimer);
   }
 
   clearHistory() {

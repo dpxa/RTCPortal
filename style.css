@@ -74,12 +74,21 @@
   margin: 0;
   padding: 0;
   font-family: var(--font-family);
+  overflow-wrap: anywhere;
 }
 
 html,
 body {
   min-height: 100vh;
   margin: 0;
+}
+
+img,
+canvas,
+video,
+iframe {
+  max-width: 100%;
+  height: auto;
 }
 
 body {
@@ -700,6 +709,7 @@ body.dark-mode .chat-input-container input {
   gap: 10px;
   margin-top: 8px;
   z-index: 10;
+  flex-wrap: wrap;
 }
 
 #browse-files-btn,
