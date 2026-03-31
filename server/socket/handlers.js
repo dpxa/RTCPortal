@@ -64,6 +64,7 @@ const handleSocketConnection = (io, connectionStats) => {
 
       const targetSocket = io.sockets.sockets.get(targetId);
       if (!targetSocket) {
+        connectionStats.decrementAttempts();
         socket.emit("peer-not-found", { target: payload.target });
         return;
       }

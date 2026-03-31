@@ -20,9 +20,6 @@ class ConnectionStats {
   decrementAttempts() {
     if (this.totalAttempts > 0) {
       this.totalAttempts--;
-      if (this.successfulConnections > this.totalAttempts) {
-        this.successfulConnections = this.totalAttempts;
-      }
     }
   }
 
