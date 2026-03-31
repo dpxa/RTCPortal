@@ -425,6 +425,9 @@ class UIManager {
       this.transferStatusDivSent = container.querySelector(
         "#transfer-status-sent",
       );
+      this.transferStatusDivSent.style.wordBreak = "break-all";
+      this.transferStatusDivSent.style.overflowWrap = "anywhere";
+      this.transferStatusDivSent.style.whiteSpace = "pre-wrap";
       this.progressContainerSent = container.querySelector(
         "#sent-progress-container",
       );
@@ -567,6 +570,9 @@ class UIManager {
       this.transferStatusDivReceived = container.querySelector(
         "#transfer-status-received",
       );
+      this.transferStatusDivReceived.style.wordBreak = "break-all";
+      this.transferStatusDivReceived.style.overflowWrap = "anywhere";
+      this.transferStatusDivReceived.style.whiteSpace = "pre-wrap";
       this.progressContainerReceived = container.querySelector(
         "#received-progress-container",
       );
