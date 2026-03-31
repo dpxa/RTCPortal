@@ -44,6 +44,12 @@ const handleSocketConnection = (io, connectionStats) => {
       connectionStats.decrementAttempts();
     });
 
+    socket.on("transfer-complete", (payload) => {
+      if (payload && typeof payload.fileSize === "number") {
+        connectionStats.addTransfer(payload.fileSize);
+      }
+    });
+
     socket.on("offer", (payload) => {
       console.log(`Received offer from ${socket.id} to ${payload.target}`);
 

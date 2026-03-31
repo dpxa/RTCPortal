@@ -3,6 +3,8 @@ class ConnectionStats {
     this.totalAttempts = 0;
     this.successfulConnections = 0;
     this.startTime = Date.now();
+    this.totalBytesTransferred = 0;
+    this.totalFilesTransferred = 0;
   }
 
   incrementAttempts() {
@@ -24,6 +26,13 @@ class ConnectionStats {
     }
   }
 
+  addTransfer(bytes) {
+    if (typeof bytes === "number") {
+      this.totalBytesTransferred += bytes;
+      this.totalFilesTransferred++;
+    }
+  }
+
   getStats() {
     const successRate =
       this.totalAttempts > 0
@@ -35,6 +44,8 @@ class ConnectionStats {
     return {
       successRate: parseFloat(successRate),
       uptimeMs: uptimeMs,
+      totalBytesTransferred: this.totalBytesTransferred,
+      totalFilesTransferred: this.totalFilesTransferred,
     };
   }
 }
