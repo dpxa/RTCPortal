@@ -1,10 +1,36 @@
+const pinMap = new Map();
+
+const generatePin = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 const relayToTarget = (io, socket, payload, event, dataBuilder) => {
-  io.to(payload.target).emit(event, dataBuilder(payload, socket.id));
+  let targetId = payload.target;
+  if (pinMap.has(targetId)) {
+    targetId = pinMap.get(targetId);
+  }
+  io.to(targetId).emit(event, dataBuilder(payload, socket.pin || socket.id));
 };
 
 const handleSocketConnection = (io, connectionStats) => {
   io.on("connection", (socket) => {
-    console.log(`Socket connected: ${socket.id}`);
+    let pin;
+    do {
+      pin = generatePin();
+    } while (pinMap.has(pin));
+
+    pinMap.set(pin, socket.id);
+    socket.pin = pin;
+
+    console.log(`Socket connected: ${socket.id} (PIN: ${pin})`);
+
+    socket.emit("pin-assigned", { pin });
+
+    socket.on("disconnect", () => {
+      if (socket.pin) {
+        pinMap.delete(socket.pin);
+      }
+    });
 
     socket.on("connection-attempt", () => {
       connectionStats.incrementAttempts();
@@ -21,11 +47,16 @@ const handleSocketConnection = (io, connectionStats) => {
     socket.on("offer", (payload) => {
       console.log(`Received offer from ${socket.id} to ${payload.target}`);
 
-      if (payload.target === socket.id) {
+      let targetId = payload.target;
+      if (pinMap.has(targetId)) {
+        targetId = pinMap.get(targetId);
+      }
+
+      if (targetId === socket.id) {
         return;
       }
 
-      const targetSocket = io.sockets.sockets.get(payload.target);
+      const targetSocket = io.sockets.sockets.get(targetId);
       if (!targetSocket) {
         socket.emit("peer-not-found", { target: payload.target });
         return;
