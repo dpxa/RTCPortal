@@ -1,7 +1,7 @@
 class WebRTCManager {
   constructor() {
     this.socket = environmentIsProd
-      ? io("https://rtcportal.onrender.com", {
+      ? io(PROD_API_URL, {
           transports: SOCKET_IO_TRANSPORTS,
         })
       : io({
@@ -55,15 +55,17 @@ class WebRTCManager {
 
   initializeSocketEvents() {
     this.socket.on("connect", () => {
-      this.selfId = this.socket.id;
+      uiManager.clearAlert();
+    });
+
+    this.socket.on("pin-assigned", (data) => {
+      this.selfId = data.pin;
       this.myIdDisplay.classList.remove("inactive");
       this.myIdDisplay.classList.add("active");
       this.myIdDisplay.textContent = this.selfId;
       this.copyIdBtn.style.display = "inline-block";
       this.copyLinkBtn.style.display = "inline-block";
       this.showQrBtn.style.display = "inline-block";
-
-      uiManager.clearAlert();
 
       this.handleUrlParameters();
     });
@@ -203,7 +205,7 @@ class WebRTCManager {
     this.connectBtn.disabled = true;
 
     if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
-      uiManager.showIdError("Invalid peer ID!");
+      uiManager.showIdError("Invalid peer PIN/ID!");
       return;
     }
     if (peerId === this.selfId) {
@@ -311,8 +313,10 @@ class WebRTCManager {
 
       this.peerConnection = this.pendingPeerConnection;
       this.dataChannel = this.pendingDataChannel;
+      this.controlChannel = this.pendingControlChannel;
       this.pendingPeerConnection = null;
       this.pendingDataChannel = null;
+      this.pendingControlChannel = null;
     } catch (err) {
       console.error("Error applying remote description:", err);
       uiManager.showIdError("Failed to establish connection.");
@@ -377,9 +381,16 @@ class WebRTCManager {
 
     conn.ondatachannel = (evt) => {
       const channel = evt.channel;
-      this.initializeDataChannel(channel);
-      if (!isInitiator) {
-        this.dataChannel = channel;
+      if (channel.label === "controlChannel") {
+        this.initializeControlChannel(channel);
+        if (!isInitiator) {
+          this.controlChannel = channel;
+        }
+      } else {
+        this.initializeDataChannel(channel);
+        if (!isInitiator) {
+          this.dataChannel = channel;
+        }
       }
     };
 
@@ -427,13 +438,16 @@ class WebRTCManager {
     };
 
     if (isInitiator) {
+      this.pendingControlChannel = conn.createDataChannel("controlChannel");
+      this.initializeControlChannel(this.pendingControlChannel);
+
       this.pendingDataChannel = conn.createDataChannel("fileChannel");
+      this.pendingDataChannel.bufferedAmountLowThreshold = 65535 * 2;
       this.initializeDataChannel(this.pendingDataChannel);
     }
   }
 
-  initializeDataChannel(channel) {
-    channel.binaryType = "arraybuffer";
+  initializeControlChannel(channel) {
     channel.onmessage = (evt) => {
       if (typeof evt.data === "string") {
         try {
@@ -441,10 +455,33 @@ class WebRTCManager {
           if (this.handleControlMessage(message)) return;
         } catch (e) {}
         fileTransferManager.processControlInstruction(evt.data);
-      } else {
-        fileTransferManager.processIncomingChunk(evt.data);
       }
     };
+  }
+
+  initializeDataChannel(channel) {
+    channel.bufferedAmountLowThreshold = 65535 * 4;
+    channel.binaryType = "arraybuffer";
+    channel.onmessage = (evt) => {
+      if (typeof evt.data !== "string") {
+        fileTransferManager.processIncomingChunk(evt.data);
+      } else {
+        try {
+          const message = JSON.parse(evt.data);
+          if (this.handleControlMessage(message)) return;
+        } catch (e) {}
+        fileTransferManager.processControlInstruction(evt.data);
+      }
+    };
+  }
+
+  sendControlMessage(msgObj) {
+    const payload = JSON.stringify(msgObj);
+    if (this.controlChannel && this.controlChannel.readyState === "open") {
+      this.controlChannel.send(payload);
+    } else if (this.dataChannel && this.dataChannel.readyState === "open") {
+      this.dataChannel.send(payload);
+    }
   }
 
   handleControlMessage(message) {
@@ -455,7 +492,7 @@ class WebRTCManager {
 
     if (message.type === "ping") {
       try {
-        this.dataChannel.send(JSON.stringify({ type: "pong" }));
+        this.sendControlMessage({ type: "pong" });
       } catch (e) {}
       return true;
     }
@@ -473,9 +510,11 @@ class WebRTCManager {
   }
 
   sendChat(text) {
-    if (this.dataChannel && this.dataChannel.readyState === "open") {
-      const msg = { type: "chat", text: text };
-      this.dataChannel.send(JSON.stringify(msg));
+    if (
+      (this.controlChannel && this.controlChannel.readyState === "open") ||
+      (this.dataChannel && this.dataChannel.readyState === "open")
+    ) {
+      this.sendControlMessage({ type: "chat", text });
       uiManager.appendChatMessage(text, true);
     } else {
       console.warn("Cannot send chat: Data channel not open.");
@@ -515,6 +554,10 @@ class WebRTCManager {
       this.pendingDataChannel.close();
       this.pendingDataChannel = null;
     }
+    if (this.pendingControlChannel) {
+      this.pendingControlChannel.close();
+      this.pendingControlChannel = null;
+    }
     if (this.peerConnection) {
       uiManager.updateToConnectedAfterAbort(this.activePeerId);
     }
@@ -532,7 +575,7 @@ class WebRTCManager {
     }
 
     if (this.dataChannel && this.dataChannel.readyState === "open") {
-      this.dataChannel.send(JSON.stringify({ type: "disconnect" }));
+      this.sendControlMessage({ type: "disconnect" });
     }
     if (this.peerConnection) {
       this.peerConnection.onicecandidate = null;
@@ -544,6 +587,10 @@ class WebRTCManager {
     if (this.dataChannel) {
       this.dataChannel.close();
       this.dataChannel = null;
+    }
+    if (this.controlChannel) {
+      this.controlChannel.close();
+      this.controlChannel = null;
     }
     this.activePeerId = null;
     uiManager.updateToIdle();
@@ -576,12 +623,10 @@ class WebRTCManager {
   startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatInterval = setInterval(() => {
-      if (this.dataChannel && this.dataChannel.readyState === "open") {
-        try {
-          this.dataChannel.send(JSON.stringify({ type: "ping" }));
-        } catch (e) {
-          console.warn("Heartbeat failed", e);
-        }
+      try {
+        this.sendControlMessage({ type: "ping" });
+      } catch (e) {
+        console.warn("Heartbeat failed", e);
       }
     }, 2000);
   }

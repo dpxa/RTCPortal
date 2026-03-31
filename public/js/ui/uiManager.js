@@ -61,6 +61,9 @@ class UIManager {
     this.progressBarReceived = null;
     this.progressPercentReceived = null;
 
+    this.currentSendProgress = -1;
+    this.currentReceiveProgress = -1;
+
     this.initializeTemplates();
     this.initializeTheme();
   }
@@ -338,7 +341,6 @@ class UIManager {
   showCopied() {
     clearTimeout(this.idMsgTimer);
 
-    // Apply the success class so it uses var(--text-color)
     this.statusIdMessage.classList.add("success");
     this.setMessage(this.statusIdMessage, {
       text: "Copied",
@@ -413,40 +415,42 @@ class UIManager {
 
   ensureSentContainer() {
     let container = document.getElementById("sent-container");
-    if (!container) {
+    const isNew = !container;
+    if (isNew) {
       const temp = document.createElement("div");
       temp.innerHTML = this.sentTemplateHTML;
       container = temp.firstElementChild;
       this.fileTransferSection.appendChild(container);
-    }
-    this.transferStatusDivSent = container.querySelector(
-      "#transfer-status-sent",
-    );
-    this.progressContainerSent = container.querySelector(
-      "#sent-progress-container",
-    );
-    this.progressBarSent =
-      this.progressContainerSent.querySelector(".progress-bar");
-    this.progressPercentSent = this.progressContainerSent.querySelector(
-      ".progress-percentage",
-    );
-    this.sentStatsDiv = container.querySelector("#sent-stats");
-    this.sentButtonsContainer = container.querySelector(
-      "#sent-buttons-container",
-    );
-    this.pauseTransferBtn = container.querySelector("#pause-transfer-btn");
-    this.stopTransferBtn = container.querySelector("#stop-transfer-btn");
 
-    if (this.pauseTransferBtn) {
-      this.pauseTransferBtn.addEventListener("click", () => {
-        window.fileTransferManager.togglePause();
-      });
-    }
+      this.transferStatusDivSent = container.querySelector(
+        "#transfer-status-sent",
+      );
+      this.progressContainerSent = container.querySelector(
+        "#sent-progress-container",
+      );
+      this.progressBarSent =
+        this.progressContainerSent.querySelector(".progress-bar");
+      this.progressPercentSent = this.progressContainerSent.querySelector(
+        ".progress-percentage",
+      );
+      this.sentStatsDiv = container.querySelector("#sent-stats");
+      this.sentButtonsContainer = container.querySelector(
+        "#sent-buttons-container",
+      );
+      this.pauseTransferBtn = container.querySelector("#pause-transfer-btn");
+      this.stopTransferBtn = container.querySelector("#stop-transfer-btn");
 
-    if (this.stopTransferBtn) {
-      this.stopTransferBtn.addEventListener("click", () => {
-        window.fileTransferManager.stopTransfer();
-      });
+      if (this.pauseTransferBtn) {
+        this.pauseTransferBtn.addEventListener("click", () => {
+          window.fileTransferManager.togglePause();
+        });
+      }
+
+      if (this.stopTransferBtn) {
+        this.stopTransferBtn.addEventListener("click", () => {
+          window.fileTransferManager.stopTransfer();
+        });
+      }
     }
 
     this.progressContainerSent.style.display = "block";
@@ -454,39 +458,84 @@ class UIManager {
     this.progressPercentSent.style.display = "inline-block";
   }
 
-  updateSentProgressBarValue(value) {
-    if (this.progressBarSent) {
-      this.progressBarSent.style.width = `${value}%`;
+  _updateDocumentTitle() {
+    let parts = [];
+    if (this.currentSendProgress >= 0 && this.currentSendProgress <= 100) {
+      parts.push(`${this.currentSendProgress}% S`);
     }
-    if (this.progressPercentSent) {
-      this.progressPercentSent.textContent = `${value}%`;
+    if (
+      this.currentReceiveProgress >= 0 &&
+      this.currentReceiveProgress <= 100
+    ) {
+      parts.push(`${this.currentReceiveProgress}% R`);
+    }
+
+    if (parts.length > 0) {
+      document.title = `(${parts.join(", ")}) RTCPortal`;
+    } else {
+      document.title = "RTCPortal";
     }
   }
 
-  updateSentStats(speed, eta) {
-    if (!this.sentStatsDiv) return;
+  _updateProgressBar(barElem, percentElem, value) {
+    if (barElem) barElem.style.width = `${value}%`;
+    if (percentElem) percentElem.textContent = `${value}%`;
+  }
+
+  updateSentProgressBarValue(value) {
+    this.currentSendProgress = value;
+    this._updateProgressBar(
+      this.progressBarSent,
+      this.progressPercentSent,
+      value,
+    );
+    this._updateDocumentTitle();
+  }
+
+  _updateStatsBlock(statsDiv, buttonsContainer, speed, eta) {
+    if (!statsDiv) return;
+    if (speed === "" && eta === "") {
+      statsDiv.style.display = "none";
+      statsDiv.textContent = "";
+      if (buttonsContainer) {
+        buttonsContainer.style.display = "none";
+      }
+      return;
+    }
+    statsDiv.style.display = "block";
     const isCalculating =
       !speed || speed === "-" || speed === "..." || !eta || eta === "-";
-    this.sentStatsDiv.textContent = isCalculating
+    statsDiv.textContent = isCalculating
       ? "Calculating..."
       : `${speed} - ETA: ${eta}`;
   }
 
+  updateSentStats(speed, eta) {
+    this._updateStatsBlock(
+      this.sentStatsDiv,
+      this.sentButtonsContainer,
+      speed,
+      eta,
+    );
+  }
+
   resetSentProgressOnly() {
-    if (this.progressBarSent) {
-      this.progressBarSent.style.width = "0%";
-    }
-    if (this.progressPercentSent) {
-      this.progressPercentSent.textContent = "0%";
+    this.currentSendProgress = -1;
+    this._updateProgressBar(this.progressBarSent, this.progressPercentSent, 0);
+    this._updateDocumentTitle();
+  }
+
+  _removeContainerAndReset(type) {
+    const container = document.getElementById(`${type}-container`);
+    if (container) {
+      container.remove();
     }
   }
 
   resetSentTransferUI() {
-    const container = document.getElementById("sent-container");
-    if (container) {
-      container.remove();
-    }
-
+    this._removeContainerAndReset("sent");
+    this.currentSendProgress = -1;
+    this._updateDocumentTitle();
     this.transferStatusDivSent = null;
     this.progressContainerSent = null;
     this.progressBarSent = null;
@@ -498,12 +547,13 @@ class UIManager {
   }
 
   resetReceivedProgressOnly() {
-    if (this.progressBarReceived) {
-      this.progressBarReceived.style.width = "0%";
-    }
-    if (this.progressPercentReceived) {
-      this.progressPercentReceived.textContent = "0%";
-    }
+    this.currentReceiveProgress = -1;
+    this._updateProgressBar(
+      this.progressBarReceived,
+      this.progressPercentReceived,
+      0,
+    );
+    this._updateDocumentTitle();
   }
 
   ensureReceivedContainer() {
@@ -513,43 +563,42 @@ class UIManager {
       temp.innerHTML = this.receivedTemplateHTML;
       container = temp.firstElementChild;
       this.fileTransferSection.appendChild(container);
+
+      this.transferStatusDivReceived = container.querySelector(
+        "#transfer-status-received",
+      );
+      this.progressContainerReceived = container.querySelector(
+        "#received-progress-container",
+      );
+      this.progressBarReceived =
+        this.progressContainerReceived.querySelector(".progress-bar");
+      this.progressPercentReceived =
+        this.progressContainerReceived.querySelector(".progress-percentage");
+      this.receivedStatsDiv = container.querySelector("#received-stats");
     }
-    this.transferStatusDivReceived = container.querySelector(
-      "#transfer-status-received",
-    );
-    this.progressContainerReceived = container.querySelector(
-      "#received-progress-container",
-    );
-    this.progressBarReceived =
-      this.progressContainerReceived.querySelector(".progress-bar");
-    this.progressPercentReceived = this.progressContainerReceived.querySelector(
-      ".progress-percentage",
-    );
-    this.receivedStatsDiv = container.querySelector("#received-stats");
 
     this.progressContainerReceived.style.display = "block";
     this.progressPercentReceived.style.display = "inline-block";
   }
 
   updateReceivedProgressBarValue(value) {
-    this.progressBarReceived.style.width = `${value}%`;
-    this.progressPercentReceived.textContent = `${value}%`;
+    this.currentReceiveProgress = value;
+    this._updateProgressBar(
+      this.progressBarReceived,
+      this.progressPercentReceived,
+      value,
+    );
+    this._updateDocumentTitle();
   }
 
   updateReceivedStats(speed, eta) {
-    if (!this.receivedStatsDiv) return;
-    const isCalculating =
-      !speed || speed === "-" || speed === "..." || !eta || eta === "-";
-    this.receivedStatsDiv.textContent = isCalculating
-      ? "Calculating..."
-      : `${speed} - ETA: ${eta}`;
+    this._updateStatsBlock(this.receivedStatsDiv, null, speed, eta);
   }
 
   resetReceivedTransferUI() {
-    const container = document.getElementById("received-container");
-    if (container) {
-      container.remove();
-    }
+    this._removeContainerAndReset("received");
+    this.currentReceiveProgress = -1;
+    this._updateDocumentTitle();
     this.transferStatusDivReceived = null;
     this.progressContainerReceived = null;
     this.progressBarReceived = null;
