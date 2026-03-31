@@ -569,13 +569,20 @@ class FileTransferManager {
           );
 
           webrtcManager.sendControlMessage({ type: "done" });
-          this.recordSentFile(fileObj);
+
+          if (window.webrtcManager && window.webrtcManager.socket) {
+            window.webrtcManager.socket.emit("transfer-complete", {
+              fileSize: fileObj.size,
+            });
+          }
 
           if (currentIdx === totalCount) {
-            this.isSending = false;
             uiManager.updateSentStats("", "");
-            await new Promise((r) => setTimeout(r, 500));
+            await new Promise((r) => setTimeout(r, 600));
+            this.isSending = false;
           }
+
+          this.recordSentFile(fileObj);
 
           resolve();
         }
@@ -811,24 +818,6 @@ class FileTransferManager {
       opfsHandle: fileHandle,
     });
 
-    this.insertHistoryEntry(
-      this.incomingFilesContainer,
-      this.incomingSectionDiv,
-      wrapperDiv,
-    );
-
-    if (
-      this.receivedFileDetails.batchIndex ===
-      this.receivedFileDetails.batchTotal
-    ) {
-      if (this.receivedBatch.length > 1) {
-        this.createBatchZipButton([...this.receivedBatch]);
-      }
-      this.receivedBatch = [];
-    }
-
-    this.toggleClearHistoryOption();
-
     uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
       "Received",
       this.receivedFileDetails.batchIndex,
@@ -838,16 +827,34 @@ class FileTransferManager {
 
     uiManager.updateReceivedStats("", "");
 
-    if (
-      this.receivedFileDetails &&
+    const isLastInBatch =
       this.receivedFileDetails.batchIndex ===
-        this.receivedFileDetails.batchTotal
-    ) {
-      this.receivedCleanupTimer = setTimeout(
-        () => uiManager.resetReceivedTransferUI(),
-        500,
+      this.receivedFileDetails.batchTotal;
+
+    if (isLastInBatch) {
+      this.receivedCleanupTimer = setTimeout(() => {
+        this.insertHistoryEntry(
+          this.incomingFilesContainer,
+          this.incomingSectionDiv,
+          wrapperDiv,
+        );
+
+        if (this.receivedBatch.length > 1) {
+          this.createBatchZipButton([...this.receivedBatch]);
+        }
+        this.receivedBatch = [];
+        this.toggleClearHistoryOption();
+
+        uiManager.resetReceivedTransferUI();
+        this.totalBatchBytesReceived = 0;
+      }, 600);
+    } else {
+      this.insertHistoryEntry(
+        this.incomingFilesContainer,
+        this.incomingSectionDiv,
+        wrapperDiv,
       );
-      this.totalBatchBytesReceived = 0;
+      this.toggleClearHistoryOption();
     }
 
     this.receivedFileDetails = null;
