@@ -233,7 +233,6 @@ class WebRTCManager {
 
     this.newConnTimer = setTimeout(() => {
       uiManager.showIdError("Connection timed out.");
-      this.socket.emit("connection-user-failed");
       this.abortPendingConnection(false);
       statsService.fetchConnectionStats();
     }, CONNECTION_TIMEOUT);
@@ -360,7 +359,7 @@ class WebRTCManager {
       uiManager.updateToIdle();
     }
     if (this.pendingPeerConnection) {
-      this.abortPendingConnection();
+      this.abortPendingConnection(false);
     } else {
       this.resetCurrentConnection();
     }
