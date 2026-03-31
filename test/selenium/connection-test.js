@@ -55,7 +55,13 @@ async function runConnectionTest() {
     );
     await driver1.wait(async () => {
       const text = await myIdDisplay1.getText();
-      return text !== "Waiting for ID..." && text !== "" && text.length > 5;
+      return (
+        text !== "Waiting for PIN..." &&
+        text !== "Waiting for ID..." &&
+        text !== "" &&
+        text !== "Connection Error" &&
+        text.length > 5
+      );
     }, 20000);
 
     peer1Id = (await myIdDisplay1.getText()).trim();
@@ -78,7 +84,13 @@ async function runConnectionTest() {
     );
     await driver2.wait(async () => {
       const text = await myIdDisplay2.getText();
-      return text !== "Waiting for ID..." && text !== "" && text.length > 5;
+      return (
+        text !== "Waiting for PIN..." &&
+        text !== "Waiting for ID..." &&
+        text !== "" &&
+        text !== "Connection Error" &&
+        text.length > 5
+      );
     }, 20000);
 
     peer2Id = (await myIdDisplay2.getText()).trim();
