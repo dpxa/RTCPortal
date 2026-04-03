@@ -453,7 +453,9 @@ class WebRTCManager {
           const message = JSON.parse(evt.data);
           if (this.handleControlMessage(message)) return;
         } catch (e) {}
-        fileTransferManager.processControlInstruction(evt.data);
+        if (fileTransferManager) {
+          fileTransferManager.handleIncomingData(evt.data);
+        }
       }
     };
   }
@@ -463,13 +465,17 @@ class WebRTCManager {
     channel.binaryType = "arraybuffer";
     channel.onmessage = (evt) => {
       if (typeof evt.data !== "string") {
-        fileTransferManager.processIncomingChunk(evt.data);
+        if (fileTransferManager) {
+          fileTransferManager.handleIncomingData(evt.data);
+        }
       } else {
         try {
           const message = JSON.parse(evt.data);
           if (this.handleControlMessage(message)) return;
         } catch (e) {}
-        fileTransferManager.processControlInstruction(evt.data);
+        if (fileTransferManager) {
+          fileTransferManager.handleIncomingData(evt.data);
+        }
       }
     };
   }
