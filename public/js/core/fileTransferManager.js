@@ -293,7 +293,7 @@ class FileTransferManager {
 
     const fileArray = Array.from(files);
     const totalSize = fileArray.reduce((acc, file) => acc + file.size, 0);
-    const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+    const MAX_SIZE = 2 * 1024 * 1024 * 1024;
 
     if (totalSize > MAX_SIZE) {
       uiManager.showFileWarning(
@@ -580,6 +580,7 @@ class FileTransferManager {
             totalSize,
             batchStartTime + effectivePauseTime,
             now,
+            true,
           );
           if (stats) {
             uiManager.updateSentStats(stats.speedStr, stats.etaStr);
@@ -607,6 +608,9 @@ class FileTransferManager {
 
           if (currentIdx === totalCount) {
             uiManager.updateSentStats("", "");
+            if (window.statsService) {
+              window.statsService.fetchConnectionStats();
+            }
             await new Promise((r) => setTimeout(r, 600));
             this.isSending = false;
           }
@@ -645,12 +649,38 @@ class FileTransferManager {
     totalBytes,
     startTime,
     now = Date.now(),
+    isSending = true,
   ) {
     const elapsed = (now - startTime) / 1000;
     if (elapsed <= 0.5) return null;
 
-    const speed = bytesTransferred / elapsed;
-    const eta = (totalBytes - bytesTransferred) / speed;
+    const ctxKey = isSending ? "_sendSpeedCtx" : "_recvSpeedCtx";
+    let ctx = this[ctxKey];
+
+    if (!ctx || ctx.startTime !== startTime) {
+      ctx = { startTime, lastTime: startTime, lastBytes: 0, currentSpeed: 0 };
+      this[ctxKey] = ctx;
+    }
+
+    const deltaT = (now - ctx.lastTime) / 1000;
+
+    if (deltaT >= 0.5) {
+      const deltaB = bytesTransferred - ctx.lastBytes;
+      const instantSpeed = deltaT > 0 ? deltaB / deltaT : 0;
+
+      if (ctx.currentSpeed === 0) {
+        ctx.currentSpeed = instantSpeed;
+      } else {
+        ctx.currentSpeed = ctx.currentSpeed * 0.4 + instantSpeed * 0.6;
+      }
+
+      ctx.lastTime = now;
+      ctx.lastBytes = bytesTransferred;
+    }
+
+    let speed =
+      ctx.currentSpeed > 0 ? ctx.currentSpeed : bytesTransferred / elapsed;
+    const eta = speed > 0 ? (totalBytes - bytesTransferred) / speed : 0;
 
     return {
       speedStr: this.displayFileSize(speed) + "/s",
@@ -861,11 +891,12 @@ class FileTransferManager {
           (this.currentPauseStartReceived
             ? now - this.currentPauseStartReceived
             : 0);
-        const stats = this.calculateTransferStats(
+        const stats = this.calculateTransferStats( 
           this.totalBatchBytesReceived,
           totalSize,
           this.receivedBatchStartTime + effectivePauseTime,
           now,
+          false,
         );
         if (stats) {
           uiManager.updateReceivedStats(stats.speedStr, stats.etaStr);
@@ -952,6 +983,9 @@ class FileTransferManager {
 
     if (isLastInBatch) {
       uiManager.updateReceivedStats("", "");
+      if (window.statsService) {
+        window.statsService.fetchConnectionStats();
+      }
       this.receivedCleanupTimer = setTimeout(() => {
         this.insertHistoryEntry(
           this.incomingFilesContainer,

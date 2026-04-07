@@ -240,6 +240,7 @@ class UIManager {
         idSpan.id = "peer-id-display-span";
         idSpan.style.fontSize = "0.75rem";
         idSpan.style.fontStyle = "italic";
+        idSpan.style.marginLeft = "-2px";
         try {
           const mut = getComputedStyle(
             document.documentElement,
@@ -251,7 +252,7 @@ class UIManager {
           idSpan.style.color = getCssVar("--muted-text", "#999");
         }
       }
-      idSpan.textContent = peerId;
+      idSpan.textContent = `(${peerId})`;
 
       const editBtn = document.getElementById("edit-nickname-btn");
       if (editBtn && editBtn.parentNode === this.activeConnectionContainer) {
