@@ -44,7 +44,10 @@
           class="theme-toggle"
           title="Toggle Dark Mode"
         ></button>
-        <a href="https://github.com/dpxa/RTCPortal" target="_blank" class="repo-link"
+        <a
+          href="https://github.com/dpxa/RTCPortal"
+          target="_blank"
+          class="repo-link"
           >GitHub</a
         >
       </div>
@@ -55,7 +58,7 @@
             <section id="connection-panel">
               <h2>Connection</h2>
               <div class="label-container">
-                <label for="my-id-display">Your PIN:</label>
+                <span id="my-id-label">Your PIN:</span>
                 <span
                   id="my-id-display"
                   class="inactive"
@@ -114,13 +117,14 @@
                 type="text"
                 id="partner-id-field"
                 placeholder="Enter peer PIN..."
+                aria-label="Enter peer PIN to connect"
               />
               <button id="connect-btn" disabled>Connect</button>
               <button id="end-btn" class="end-btn" style="display: none">
                 Disconnect
               </button>
               <div id="active-connection-container" style="display: none">
-                <label id="active-connection-label">Connected to:</label>
+                <span id="active-connection-label">Connected to:</span>
                 <span id="active-connection-status"></span>
               </div>
             </section>
@@ -145,12 +149,14 @@
                   type="file"
                   id="upload-field"
                   style="display: none"
+                  aria-label="Select files to upload"
                   multiple
                 />
                 <input
                   type="file"
                   id="folder-upload-field"
                   style="display: none"
+                  aria-label="Select folder to upload"
                   webkitdirectory
                   directory
                   multiple
@@ -173,6 +179,7 @@
                   type="text"
                   id="chat-input"
                   placeholder="Type a message..."
+                  aria-label="Type a chat message"
                   autocomplete="off"
                 />
                 <button id="send-chat-btn">Send</button>
