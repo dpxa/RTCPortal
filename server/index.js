@@ -51,7 +51,7 @@ app.set("connectionStats", connectionStats);
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: "Too many requests from this IP, please try again later.",
+  message: { error: "Too many requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -59,7 +59,9 @@ const apiLimiter = rateLimit({
 const turnLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: "Too many TURN credential requests, please try again later.",
+  message: {
+    error: "Too many TURN credential requests, please try again later.",
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -78,6 +80,15 @@ app.get("/test", (req, res) => {
 
 app.use("/api", apiLimiter, apiRoutes);
 app.use("/api/turn-credentials", turnLimiter);
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "API route not found" });
+});
+
+app.use("/api", (err, req, res, next) => {
+  console.error("API Error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
 
 handleSocketConnection(io, connectionStats);
 

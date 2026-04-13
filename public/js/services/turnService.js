@@ -9,11 +9,12 @@ class TurnService {
       const response = await fetch(`${BASE_API_URL}/api/turn-credentials`);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error ||
-            `Failed to fetch TURN credentials: ${response.status}`,
-        );
+        let errorMsg = `Failed to fetch TURN credentials: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch {}
+        throw new Error(errorMsg);
       }
 
       const turnServers = await response.json();
