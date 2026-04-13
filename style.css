@@ -950,11 +950,6 @@ body.dark-mode .zip-download-btn:hover {
   #toggle-chat-btn {
     margin-bottom: 0;
   }
-  .stats-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
   .label-container,
   #active-connection-container {
     flex-direction: column;
