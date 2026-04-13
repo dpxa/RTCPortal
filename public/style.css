@@ -608,6 +608,8 @@ footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 8px 12px;
   background-color: var(--card-bg);
   border: 1px solid var(--input-border);
@@ -624,6 +626,8 @@ footer {
   font-weight: bold;
   color: var(--primary-color);
   font-size: 1rem;
+  white-space: nowrap;
+  margin-left: 10px;
 }
 
 #success-rate-display {
