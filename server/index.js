@@ -7,7 +7,12 @@ const rateLimit = require("express-rate-limit");
 const apiRoutes = require("./routes/api");
 const connectionStats = require("./utils/connectionStats");
 const { handleSocketConnection } = require("./socket/handlers");
-const { HTTP_STATUS } = require("./config/constants");
+const {
+  HTTP_STATUS,
+  ROUTES,
+  RATE_LIMIT,
+  API_ENDPOINTS,
+} = require("./config/constants");
 
 const environment = process.env.NODE_ENV || "development";
 const isProd = environment === "production";
@@ -49,18 +54,18 @@ app.use(
 app.set("connectionStats", connectionStats);
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: "Too many requests from this IP, please try again later." },
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.MAX_API_REQUESTS,
+  message: { error: RATE_LIMIT.MESSAGES.API_LIMIT },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const turnLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: RATE_LIMIT.WINDOW_MS,
+  max: RATE_LIMIT.MAX_TURN_REQUESTS,
   message: {
-    error: "Too many TURN credential requests, please try again later.",
+    error: RATE_LIMIT.MESSAGES.TURN_LIMIT,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -70,7 +75,7 @@ if (!isProd) {
   app.use(express.static("public"));
 }
 
-app.get("/test", (req, res) => {
+app.get(ROUTES.TEST, (req, res) => {
   console.log("Ping");
   res.status(200).send(`
     <h1>RTC Portal</h1>
@@ -78,14 +83,14 @@ app.get("/test", (req, res) => {
   `);
 });
 
-app.use("/api", apiLimiter, apiRoutes);
-app.use("/api/turn-credentials", turnLimiter);
+app.use(`${ROUTES.API}${API_ENDPOINTS.TURN_CREDENTIALS}`, turnLimiter);
+app.use(ROUTES.API, apiLimiter, apiRoutes);
 
-app.use("/api", (req, res) => {
+app.use(ROUTES.API, (req, res) => {
   res.status(404).json({ error: "API route not found" });
 });
 
-app.use("/api", (err, req, res, next) => {
+app.use(ROUTES.API, (err, req, res, next) => {
   console.error("API Error:", err);
   res.status(500).json({ error: "Internal server error" });
 });

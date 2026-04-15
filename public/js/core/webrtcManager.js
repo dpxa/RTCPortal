@@ -430,7 +430,7 @@ class WebRTCManager {
             console.log("Recovery failed, closing connection.");
             this.handleConnectionFailure(conn);
           }
-        }, 5000);
+        }, CONNECTION_RECOVERY_DELAY);
       } else if (conn.connectionState === "failed") {
         this.handleConnectionFailure(conn);
       }
@@ -441,7 +441,8 @@ class WebRTCManager {
       this.initializeControlChannel(this.pendingControlChannel);
 
       this.pendingDataChannel = conn.createDataChannel("fileChannel");
-      this.pendingDataChannel.bufferedAmountLowThreshold = 65535 * 2;
+      this.pendingDataChannel.bufferedAmountLowThreshold =
+        DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD;
       this.initializeDataChannel(this.pendingDataChannel);
     }
   }
@@ -461,7 +462,7 @@ class WebRTCManager {
   }
 
   initializeDataChannel(channel) {
-    channel.bufferedAmountLowThreshold = 65535 * 4;
+    channel.bufferedAmountLowThreshold = DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT;
     channel.binaryType = "arraybuffer";
     channel.onmessage = (evt) => {
       if (typeof evt.data !== "string") {

@@ -3,6 +3,7 @@ const {
   CORS_ORIGINS,
   METERED_API_BASE_URL,
   HTTP_STATUS,
+  API_ENDPOINTS,
 } = require("../config/constants");
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const isFromGitHubPages = (referer, origin) =>
   referer?.startsWith(CORS_ORIGINS.GITHUB_PAGES) ||
   origin?.startsWith(CORS_ORIGINS.GITHUB_PAGES);
 
-router.get("/turn-credentials", async (req, res) => {
+router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
   const referer = req.get("Referer");
   const origin = req.get("Origin");
 
@@ -64,7 +65,7 @@ router.get("/turn-credentials", async (req, res) => {
   }
 });
 
-router.get("/connection-stats", (req, res) => {
+router.get(API_ENDPOINTS.CONNECTION_STATS, (req, res) => {
   const connectionStats = req.app.get("connectionStats");
   res.status(HTTP_STATUS.OK).json(connectionStats.getStats());
 });
