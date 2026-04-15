@@ -323,7 +323,7 @@ class FileTransferManager {
     if (!this.isDataChannelOpen()) {
       setTimeout(() => {
         if (window.webrtcManager) window.webrtcManager.resetCurrentConnection();
-      }, 4000);
+      }, CONNECTION_RESET_DELAY);
       return;
     }
 
@@ -462,7 +462,8 @@ class FileTransferManager {
   async waitForWebRTCBuffer() {
     if (
       !this.isDataChannelOpen() ||
-      webrtcManager.dataChannel.bufferedAmount <= 65535 * 4
+      webrtcManager.dataChannel.bufferedAmount <=
+        DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT
     )
       return;
 
@@ -515,7 +516,7 @@ class FileTransferManager {
             reject("Transfer aborted");
             return;
           }
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, TRANSFER_PAUSE_POLL_INTERVAL));
         }
 
         if (!this.isSending || !this.isDataChannelOpen()) {
@@ -539,7 +540,9 @@ class FileTransferManager {
             reject("Transfer aborted");
             return;
           }
-          await new Promise((r) => setTimeout(r, 100));
+          await new Promise((r) =>
+            setTimeout(r, TRANSFER_PAUSE_RESUME_INTERVAL),
+          );
         }
 
         if (this.isStopped) {
@@ -611,7 +614,7 @@ class FileTransferManager {
             if (window.statsService) {
               window.statsService.fetchConnectionStats();
             }
-            await new Promise((r) => setTimeout(r, 600));
+            await new Promise((r) => setTimeout(r, TRANSFER_CLEANUP_DELAY));
             this.isSending = false;
           }
 
@@ -891,7 +894,7 @@ class FileTransferManager {
           (this.currentPauseStartReceived
             ? now - this.currentPauseStartReceived
             : 0);
-        const stats = this.calculateTransferStats( 
+        const stats = this.calculateTransferStats(
           this.totalBatchBytesReceived,
           totalSize,
           this.receivedBatchStartTime + effectivePauseTime,
@@ -1001,7 +1004,7 @@ class FileTransferManager {
 
         uiManager.resetReceivedTransferUI();
         this.totalBatchBytesReceived = 0;
-      }, 600);
+      }, TRANSFER_CLEANUP_DELAY);
     } else {
       this.insertHistoryEntry(
         this.incomingFilesContainer,
@@ -1071,7 +1074,7 @@ class FileTransferManager {
       link.click();
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
-      }, 100);
+      }, DOWNLOAD_BLOB_URL_REVOKE_DELAY);
     } catch (e) {
       console.error("Error generating zip:", e);
       uiManager.showFileWarning(

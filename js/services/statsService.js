@@ -11,7 +11,9 @@ class StatsService {
 
   async fetchConnectionStats() {
     try {
-      const response = await fetch(`${BASE_API_URL}/api/connection-stats`);
+      const response = await fetch(
+        `${BASE_API_URL}${API_ENDPOINTS.CONNECTION_STATS}`,
+      );
 
       if (!response.ok) {
         let errorMsg = `Failed to fetch stats: ${response.status} ${response.statusText}.`;

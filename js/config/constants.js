@@ -1,10 +1,13 @@
 const PROD_API_URL = "https://rtcportal.onrender.com";
-
-const environmentIsProd = !["localhost", "127.0.0.1"].includes(
-  window.location.hostname,
-);
+const LOCAL_HOSTNAMES = ["localhost", "127.0.0.1"];
+const environmentIsProd = !LOCAL_HOSTNAMES.includes(window.location.hostname);
 
 const BASE_API_URL = environmentIsProd ? PROD_API_URL : "";
+
+const API_ENDPOINTS = {
+  TURN_CREDENTIALS: "/api/turn-credentials",
+  CONNECTION_STATS: "/api/connection-stats",
+};
 
 const RTC_CONFIG = {
   iceServers: [
@@ -19,9 +22,18 @@ const RTC_CONFIG = {
 };
 
 const SLICE_SIZE = 16384;
+const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD = 65535 * 2;
+const DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT = 65535 * 4;
 
 const CONNECTION_TIMEOUT = 30000;
+const TRANSFER_CLEANUP_DELAY = 600;
+const TRANSFER_PAUSE_POLL_INTERVAL = 200;
+const TRANSFER_PAUSE_RESUME_INTERVAL = 100;
+const CONNECTION_RESET_DELAY = 4000;
+const CONNECTION_RECOVERY_DELAY = 5000;
+const DOWNLOAD_BLOB_URL_REVOKE_DELAY = 100;
 const ALERT_TIMEOUT = 4000;
+const WARNING_TIMEOUT = ALERT_TIMEOUT + 2000;
 const ID_UNDERLINE_TIMEOUT = 4000;
 const STATS_FETCH_INTERVAL = 30000;
 

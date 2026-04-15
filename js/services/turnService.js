@@ -6,7 +6,9 @@ class TurnService {
 
   async initializeTurnCredentials() {
     try {
-      const response = await fetch(`${BASE_API_URL}/api/turn-credentials`);
+      const response = await fetch(
+        `${BASE_API_URL}${API_ENDPOINTS.TURN_CREDENTIALS}`,
+      );
 
       if (!response.ok) {
         let errorMsg = `Failed to fetch TURN credentials: ${response.status}`;

@@ -389,7 +389,7 @@ class UIManager {
     });
     this.fileMsgTimer = setTimeout(
       () => this.clearFileAlert(),
-      ALERT_TIMEOUT + 2000,
+      WARNING_TIMEOUT,
     );
   }
 
