@@ -6,6 +6,11 @@ module.exports = {
 
   DEFAULT_PORT: 3000,
 
+  ROUTES: {
+    TEST: "/test",
+    API: "/api",
+  },
+
   CORS_ORIGINS: {
     GITHUB_PAGES: "https://dpxa.github.io",
     LOCALHOST: ["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -16,6 +21,16 @@ module.exports = {
   API_ENDPOINTS: {
     TURN_CREDENTIALS: "/turn-credentials",
     CONNECTION_STATS: "/connection-stats",
+  },
+
+  RATE_LIMIT: {
+    WINDOW_MS: 15 * 60 * 1000,
+    MAX_API_REQUESTS: 100,
+    MAX_TURN_REQUESTS: 20,
+    MESSAGES: {
+      API_LIMIT: "Too many requests from this IP, please try again later.",
+      TURN_LIMIT: "Too many TURN credential requests, please try again later.",
+    },
   },
 
   METERED_API_BASE_URL: "https://rtcportal.metered.live/api/v1",
