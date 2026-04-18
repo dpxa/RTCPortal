@@ -30,6 +30,7 @@ class WebRTCManager {
 
   initializeElements() {
     this.myIdDisplay = document.getElementById("my-id-display");
+    this.pinActionButtons = document.getElementById("pin-action-buttons");
     this.copyIdBtn = document.getElementById("copy-id-btn");
     this.copyLinkBtn = document.getElementById("copy-link-btn");
     this.showQrBtn = document.getElementById("show-qr-btn");
@@ -64,9 +65,7 @@ class WebRTCManager {
       this.myIdDisplay.classList.remove("inactive");
       this.myIdDisplay.classList.add("active");
       this.myIdDisplay.textContent = this.selfId;
-      this.copyIdBtn.style.display = "inline-block";
-      this.copyLinkBtn.style.display = "inline-block";
-      this.showQrBtn.style.display = "inline-block";
+      this.pinActionButtons.style.display = "flex";
 
       this.handleUrlParameters();
     });
@@ -76,9 +75,7 @@ class WebRTCManager {
       this.myIdDisplay.classList.add("inactive");
       this.myIdDisplay.classList.remove("active");
       this.myIdDisplay.textContent = "Connection Error";
-      this.copyIdBtn.style.display = "none";
-      this.copyLinkBtn.style.display = "none";
-      this.showQrBtn.style.display = "none";
+      this.pinActionButtons.style.display = "none";
       uiManager.showIdError("Failed to connect to server. Retrying...");
     });
 
@@ -87,9 +84,7 @@ class WebRTCManager {
       this.myIdDisplay.classList.add("inactive");
       this.myIdDisplay.classList.remove("active");
       this.myIdDisplay.textContent = "Disconnected";
-      this.copyIdBtn.style.display = "none";
-      this.copyLinkBtn.style.display = "none";
-      this.showQrBtn.style.display = "none";
+      this.pinActionButtons.style.display = "none";
 
       if (reason === "io server disconnect") {
         uiManager.showIdError("Disconnected by server. Reconnecting...");
