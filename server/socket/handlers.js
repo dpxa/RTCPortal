@@ -1,4 +1,5 @@
 const pinMap = new Map();
+const activePairings = new Map();
 
 const generatePin = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -27,6 +28,15 @@ const handleSocketConnection = (io, connectionStats) => {
     socket.emit("pin-assigned", { pin });
 
     socket.on("disconnect", () => {
+      const targetId = activePairings.get(socket.id);
+      if (targetId) {
+        io.to(targetId).emit("peer-disconnected", {
+          from: socket.pin || socket.id,
+        });
+        activePairings.delete(socket.id);
+        activePairings.delete(targetId);
+      }
+
       if (socket.pin) {
         pinMap.delete(socket.pin);
       }
@@ -77,6 +87,15 @@ const handleSocketConnection = (io, connectionStats) => {
 
     socket.on("answer", (payload) => {
       console.log(`Received answer from ${socket.id} to ${payload.target}`);
+
+      let targetId = payload.target;
+      if (pinMap.has(targetId)) {
+        targetId = pinMap.get(targetId);
+      }
+
+      activePairings.set(socket.id, targetId);
+      activePairings.set(targetId, socket.id);
+
       relayToTarget(io, socket, payload, "answer", (data, senderId) => ({
         sdp: data.sdp,
         callee: senderId,
@@ -89,6 +108,29 @@ const handleSocketConnection = (io, connectionStats) => {
         candidate: data.candidate,
         from: senderId,
       }));
+    });
+
+    socket.on("peer-disconnected", (payload) => {
+      console.log(
+        `Received peer-disconnected from ${socket.id} to ${payload.target}`,
+      );
+
+      let targetId = payload.target;
+      if (pinMap.has(targetId)) {
+        targetId = pinMap.get(targetId);
+      }
+      activePairings.delete(socket.id);
+      activePairings.delete(targetId);
+
+      relayToTarget(
+        io,
+        socket,
+        payload,
+        "peer-disconnected",
+        (data, senderId) => ({
+          from: senderId,
+        }),
+      );
     });
   });
 };

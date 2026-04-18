@@ -271,7 +271,7 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
@@ -399,11 +399,6 @@ input:disabled {
   display: none;
 }
 
-#outgoing-section,
-#incoming-section {
-  margin-top: 20px;
-}
-
 #chat-history-section {
   margin-top: 10px;
 }
@@ -422,11 +417,8 @@ input:disabled {
   color: var(--primary-color);
 }
 
-#outgoing-section,
-#incoming-section {
-  margin-top: 10px;
-}
-
+#outgoing-folders a,
+#incoming-folders a,
 #outgoing-files a,
 #incoming-files a {
   color: var(--primary-color);
@@ -435,6 +427,8 @@ input:disabled {
   line-height: 1.6;
 }
 
+#outgoing-folders a:hover,
+#incoming-folders a:hover,
 #outgoing-files a:hover,
 #incoming-files a:hover {
   text-shadow: 0 0 3px var(--link-shadow);
@@ -548,7 +542,7 @@ footer {
   text-align: center;
   border-top: 1px solid var(--input-border);
   box-shadow: var(--shadow-overlay);
-  margin-top: 20px;
+  margin-top: 30px;
 }
 
 .progress-container {
@@ -963,4 +957,8 @@ body.dark-mode .zip-download-btn:hover {
   .label-container > div {
     margin-top: 4px;
   }
+}
+
+#transfer-history > section > section {
+  margin-top: 10px;
 }

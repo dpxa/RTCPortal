@@ -4,6 +4,23 @@ class UIManager {
     this.newIdAlertTimer = null;
     this.fileMsgTimer = null;
 
+    this.currentSendProgress = -1;
+    this.currentReceiveProgress = -1;
+    this.nicknames = {};
+
+    this._initializeElements();
+    this._attachEventListeners();
+    this.initializeTemplates();
+    this.initializeTheme();
+
+    document.addEventListener("clear-history", () => {
+      if (this.chatHistoryList) this.chatHistoryList.innerHTML = "";
+      if (this.chatHistorySection)
+        this.chatHistorySection.style.display = "none";
+    });
+  }
+
+  _initializeElements() {
     this.statusIdMessage = document.getElementById("status-id-message");
     this.activeConnectionContainer = document.getElementById(
       "active-connection-container",
@@ -15,14 +32,27 @@ class UIManager {
       "active-connection-status",
     );
     this.endBtn = document.getElementById("end-btn");
+
     this.fileTransferSection = document.getElementById("file-transfer-section");
     this.uploadField = document.getElementById("upload-field");
     this.fileTransferBtn = document.getElementById("file-transfer-btn");
-
     this.fileStatusMessage = document.getElementById("file-status-message");
-    this.outgoingSectionDiv = document.getElementById("outgoing-section");
-    this.incomingSectionDiv = document.getElementById("incoming-section");
+
+    this.outgoingFoldersSection = document.getElementById(
+      "outgoing-folders-section",
+    );
+    this.incomingFoldersSection = document.getElementById(
+      "incoming-folders-section",
+    );
+    this.outgoingFilesSection = document.getElementById(
+      "outgoing-files-section",
+    );
+    this.incomingFilesSection = document.getElementById(
+      "incoming-files-section",
+    );
     this.transferHistoryDiv = document.getElementById("transfer-history");
+    this.outgoingFoldersContainer = document.getElementById("outgoing-folders");
+    this.incomingFoldersContainer = document.getElementById("incoming-folders");
     this.outgoingFilesContainer = document.getElementById("outgoing-files");
     this.incomingFilesContainer = document.getElementById("incoming-files");
     this.eraseHistoryContainer = document.querySelector(
@@ -36,12 +66,13 @@ class UIManager {
     this.toggleChatBtn = document.getElementById("toggle-chat-btn");
     this.chatHistorySection = document.getElementById("chat-history-section");
     this.chatHistoryList = document.getElementById("chat-history-list");
-    this.nicknames = {};
+    this.themeToggleBtn = document.getElementById("theme-toggle");
+  }
 
+  _attachEventListeners() {
     if (this.toggleChatBtn) {
       this.toggleChatBtn.addEventListener("click", () => this.toggleChat());
     }
-
     if (this.chatSendBtn) {
       this.chatSendBtn.addEventListener("click", () => this.handleSendChat());
     }
@@ -50,146 +81,85 @@ class UIManager {
         if (e.key === "Enter") this.handleSendChat();
       });
     }
-
-    this.transferStatusDivSent = null;
-    this.progressContainerSent = null;
-    this.progressBarSent = null;
-    this.progressPercentSent = null;
-
-    this.transferStatusDivReceived = null;
-    this.progressContainerReceived = null;
-    this.progressBarReceived = null;
-    this.progressPercentReceived = null;
-
-    this.currentSendProgress = -1;
-    this.currentReceiveProgress = -1;
-
-    this.initializeTemplates();
-    this.initializeTheme();
   }
 
   initializeTheme() {
-    this.themeToggleBtn = document.getElementById("theme-toggle");
+    if (!this.themeToggleBtn) return;
     this.createThemeIcon();
 
-    const apply = (isDark, savePreference = false) => {
-      if (isDark) document.body.classList.add("dark-mode");
-      else document.body.classList.remove("dark-mode");
+    const applyTheme = (isDark, savePreference = false) => {
+      document.body.classList.toggle("dark-mode", isDark);
       this.updateThemeIcon(isDark);
       if (savePreference) {
         try {
           localStorage.setItem("rtcTheme", isDark ? "dark" : "light");
-        } catch (e) {}
+        } catch (e) {
+          console.warn("Unable to save theme preference:", e);
+        }
       }
     };
 
+    this._applyInitialTheme(applyTheme);
+
+    this.themeToggleBtn.addEventListener("click", () => {
+      const isDark = !document.body.classList.contains("dark-mode");
+      applyTheme(isDark, true);
+    });
+  }
+
+  _applyInitialTheme(applyTheme) {
+    let persistedTheme = null;
     try {
-      const mq =
-        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+      persistedTheme = localStorage.getItem("rtcTheme");
+    } catch (e) {
+      console.warn("localStorage restricted:", e);
+    }
 
-      let persisted = null;
-      try {
-        persisted = localStorage.getItem("rtcTheme");
-      } catch (e) {}
+    if (persistedTheme === "dark") {
+      applyTheme(true);
+    } else if (persistedTheme === "light") {
+      applyTheme(false);
+    }
 
-      if (persisted === "dark") apply(true);
-      else if (persisted === "light") apply(false);
-      else if (mq) {
-        apply(mq.matches);
-        if (mq.addEventListener) {
-          mq.addEventListener("change", (e) => {
-            try {
-              const p = localStorage.getItem("rtcTheme");
-              if (!p) apply(e.matches);
-            } catch (err) {
-              apply(e.matches);
-            }
-          });
-        } else if (mq.addListener) {
-          mq.addListener((e) => {
-            try {
-              const p = localStorage.getItem("rtcTheme");
-              if (!p) apply(e.matches);
-            } catch (err) {
-              apply(e.matches);
-            }
-          });
-        }
+    try {
+      const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
+      if (!persistedTheme && matchMedia.matches) {
+        applyTheme(true);
       }
-    } catch (e) {}
 
-    if (this.themeToggleBtn) {
-      this.themeToggleBtn.addEventListener("click", () => {
-        const isDark = !document.body.classList.contains("dark-mode");
-        apply(isDark, true);
-      });
+      if (matchMedia.addEventListener) {
+        matchMedia.addEventListener("change", (e) => {
+          let currentPreference = null;
+          try {
+            currentPreference = localStorage.getItem("rtcTheme");
+          } catch (err) {}
+          if (!currentPreference) applyTheme(e.matches);
+        });
+      }
+    } catch (e) {
+      console.warn("Theme media matching failed:", e);
     }
   }
 
   createThemeIcon() {
     if (!this.themeToggleBtn) return;
 
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "20");
-    svg.setAttribute("height", "20");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "2");
-    svg.setAttribute("stroke-linecap", "round");
-    svg.setAttribute("stroke-linejoin", "round");
-
-    const moonPath = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "path",
-    );
-    moonPath.setAttribute(
-      "d",
-      "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
-    );
-    moonPath.classList.add("moon-icon");
-    svg.appendChild(moonPath);
-
-    const sunGroup = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "g",
-    );
-    sunGroup.classList.add("sun-icon");
-    sunGroup.style.display = "none";
-
-    const circle = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "circle",
-    );
-    circle.setAttribute("cx", "12");
-    circle.setAttribute("cy", "12");
-    circle.setAttribute("r", "5");
-    sunGroup.appendChild(circle);
-
-    const lines = [
-      { x1: "12", y1: "1", x2: "12", y2: "3" },
-      { x1: "12", y1: "21", x2: "12", y2: "23" },
-      { x1: "4.22", y1: "4.22", x2: "5.64", y2: "5.64" },
-      { x1: "18.36", y1: "18.36", x2: "19.78", y2: "19.78" },
-      { x1: "1", y1: "12", x2: "3", y2: "12" },
-      { x1: "21", y1: "12", x2: "23", y2: "12" },
-      { x1: "4.22", y1: "19.78", x2: "5.64", y2: "18.36" },
-      { x1: "18.36", y1: "5.64", x2: "19.78", y2: "4.22" },
-    ];
-
-    lines.forEach((lineData) => {
-      const line = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "line",
-      );
-      Object.entries(lineData).forEach(([key, value]) => {
-        line.setAttribute(key, value);
-      });
-      sunGroup.appendChild(line);
-    });
-
-    svg.appendChild(sunGroup);
-    this.themeToggleBtn.appendChild(svg);
+    this.themeToggleBtn.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path class="moon-icon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        <g class="sun-icon" style="display: none">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </g>
+      </svg>
+    `;
   }
 
   updateThemeIcon(isDark) {
@@ -234,23 +204,17 @@ class UIManager {
     this.activeConnectionStatus.textContent = nickname;
 
     let idSpan = document.getElementById("peer-id-display-span");
+
     if (nickname !== peerId) {
       if (!idSpan) {
         idSpan = document.createElement("span");
         idSpan.id = "peer-id-display-span";
-        idSpan.style.fontSize = "0.75rem";
-        idSpan.style.fontStyle = "italic";
-        idSpan.style.marginLeft = "-2px";
-        try {
-          const mut = getComputedStyle(
-            document.documentElement,
-          ).getPropertyValue("--muted-text");
-          idSpan.style.color = mut
-            ? mut.trim()
-            : getCssVar("--muted-text", "#999");
-        } catch (e) {
-          idSpan.style.color = getCssVar("--muted-text", "#999");
-        }
+        idSpan.style.cssText = `
+          font-size: 0.75rem; 
+          font-style: italic; 
+          margin-left: -2px; 
+          color: var(--muted-text, #999);
+        `;
       }
       idSpan.textContent = `(${peerId})`;
 
@@ -260,31 +224,23 @@ class UIManager {
       } else {
         this.activeConnectionContainer.appendChild(idSpan);
       }
-    } else {
-      if (idSpan) idSpan.remove();
+    } else if (idSpan) {
+      idSpan.remove();
     }
   }
 
   setEditButtonStyles(editBtn) {
-    editBtn.style.padding = "2px 6px";
-    editBtn.style.cursor = "pointer";
-    editBtn.style.fontSize = "0.9rem";
-    editBtn.style.background = "transparent";
-    try {
-      const pc = getComputedStyle(document.documentElement).getPropertyValue(
-        "--primary-color",
-      );
-      editBtn.style.border = `1px solid ${pc ? pc.trim() : getCssVar("--primary-color", "#4a90e2")}`;
-      editBtn.style.color = pc
-        ? pc.trim()
-        : getCssVar("--primary-color", "#4a90e2");
-    } catch (e) {
-      editBtn.style.border = `1px solid ${getCssVar("--primary-color", "#4a90e2")}`;
-      editBtn.style.color = getCssVar("--primary-color", "#4a90e2");
-    }
-    editBtn.style.borderRadius = "4px";
-    editBtn.style.boxShadow = "none";
-    editBtn.style.fontWeight = "bold";
+    editBtn.style.cssText = `
+      padding: 2px 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      background: transparent;
+      border: 1px solid var(--primary-color, #4a90e2);
+      color: var(--primary-color, #4a90e2);
+      border-radius: 4px;
+      box-shadow: none;
+      font-weight: bold;
+    `;
   }
 
   ensureEditNicknameButton() {
@@ -314,49 +270,48 @@ class UIManager {
   initializeTemplates() {
     this.sentTemplateHTML = `
       <div id="sent-container">
-        <div id="transfer-status-sent"></div>
-        <div class="progress-container" id="sent-progress-container">
+        <div class="progress-container" id="sent-progress-container" style="margin-top: 15px; margin-bottom: 10px;">
           <div class="progress-bar" style="width: 0%;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
-        <div id="sent-stats"></div>
-        <div id="sent-buttons-container" style="margin-top: 8px; display: none;">
+        <div id="sent-stats" style="margin-bottom: 8px;"></div>
+        <div id="sent-buttons-container" style="margin-bottom: 8px; display: none;">
             <button id="pause-transfer-btn">Pause</button>
             <button id="stop-transfer-btn">Stop</button>
         </div>
+        <div id="transfer-status-sent"></div>
       </div>
     `;
 
     this.receivedTemplateHTML = `
       <div id="received-container">
-        <div id="transfer-status-received"></div>
-        <div class="progress-container" id="received-progress-container">
+        <div class="progress-container" id="received-progress-container" style="margin-top: 15px; margin-bottom: 10px;">
           <div class="progress-bar" style="width: 0%;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
-         <div id="received-stats"></div>
+        <div id="received-stats" style="margin-bottom: 8px;"></div>
+        <div id="transfer-status-received" style="margin-top: 2px;"></div>
       </div>
     `;
   }
 
+  setAlertMessage(targetElement, { text, isError = false }) {
+    targetElement.textContent = text;
+    targetElement.style.cssText = isError
+      ? `display: inline-block; border: 1.5px solid red; color: red; padding: 1px 2px;`
+      : `display: inline-block; border: ""; color: ""; padding: "";`;
+  }
+
   showCopied() {
     clearTimeout(this.idMsgTimer);
-
     this.statusIdMessage.classList.add("success");
-    this.setMessage(this.statusIdMessage, {
-      text: "Copied",
-    });
+    this.setAlertMessage(this.statusIdMessage, { text: "Copied" });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
   showIdError(msg) {
     clearTimeout(this.idMsgTimer);
-    this.setMessage(this.statusIdMessage, {
-      text: msg,
-      border: "1.5px solid red",
-      color: "red",
-      padding: "1px 2px",
-    });
+    this.setAlertMessage(this.statusIdMessage, { text: msg, isError: true });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
@@ -370,22 +325,18 @@ class UIManager {
     clearTimeout(this.fileMsgTimer);
     this.uploadField.value = "";
     this.fileTransferBtn.disabled = true;
-    this.setMessage(this.fileStatusMessage, {
+    this.setAlertMessage(this.fileStatusMessage, {
       text: message,
-      border: "1.5px solid red",
-      color: "red",
-      padding: "1px 2px",
+      isError: true,
     });
     this.fileMsgTimer = setTimeout(() => this.clearFileAlert(), ALERT_TIMEOUT);
   }
 
   showFileWarning(message) {
     clearTimeout(this.fileMsgTimer);
-    this.setMessage(this.fileStatusMessage, {
+    this.setAlertMessage(this.fileStatusMessage, {
       text: message,
-      border: "1.5px solid red",
-      color: "red",
-      padding: "1px 2px",
+      isError: true,
     });
     this.fileMsgTimer = setTimeout(
       () => this.clearFileAlert(),
@@ -398,20 +349,9 @@ class UIManager {
     this.clearMessage(this.fileStatusMessage);
   }
 
-  setMessage(target, { text, border = "", color = "", padding = "" }) {
-    target.textContent = text;
-    target.style.display = "inline-block";
-    target.style.border = border;
-    target.style.color = color;
-    target.style.padding = padding;
-  }
-
-  clearMessage(target) {
-    target.textContent = "";
-    target.style.display = "none";
-    target.style.border = "";
-    target.style.color = "";
-    target.style.padding = "";
+  clearMessage(targetElement) {
+    targetElement.textContent = "";
+    targetElement.style.cssText = `display: none; border: ""; color: ""; padding: "";`;
   }
 
   ensureSentContainer() {
@@ -475,9 +415,9 @@ class UIManager {
     }
 
     if (parts.length > 0) {
-      document.title = `(${parts.join(", ")}) RTCPortal`;
+      document.title = `(${parts.join(", ")}) RTCPortal - P2P Transfer Hub`;
     } else {
-      document.title = "RTCPortal";
+      document.title = "RTCPortal - P2P Transfer Hub";
     }
   }
 
@@ -500,18 +440,22 @@ class UIManager {
     if (!statsDiv) return;
     if (speed === "" && eta === "") {
       statsDiv.style.display = "none";
-      statsDiv.textContent = "";
+      statsDiv.innerHTML = "";
       if (buttonsContainer) {
         buttonsContainer.style.display = "none";
       }
       return;
     }
     statsDiv.style.display = "block";
+
     const isCalculating =
       !speed || speed === "-" || speed === "..." || !eta || eta === "-";
-    statsDiv.textContent = isCalculating
-      ? "Calculating..."
-      : `${speed} - ETA: ${eta}`;
+
+    if (isCalculating) {
+      statsDiv.innerHTML = `<span class="transfer-speed">Calculating...</span>`;
+    } else {
+      statsDiv.innerHTML = `<span class="transfer-speed">${speed}</span> &nbsp;&nbsp; <span class="transfer-eta">ETA: ${eta}</span>`;
+    }
   }
 
   updateSentStats(speed, eta) {
@@ -707,36 +651,7 @@ class UIManager {
       eraseHistoryBtn.className = "erase-history-btn";
       eraseHistoryBtn.textContent = "Clear History";
       eraseHistoryBtn.addEventListener("click", () => {
-        const outContainer = document.getElementById("outgoing-files");
-        const inContainer = document.getElementById("incoming-files");
-
-        if (outContainer) {
-          Array.from(outContainer.querySelectorAll("a")).forEach((link) =>
-            URL.revokeObjectURL(link.href),
-          );
-          outContainer.innerHTML = "";
-        }
-        if (inContainer) {
-          Array.from(inContainer.querySelectorAll("a")).forEach((link) =>
-            URL.revokeObjectURL(link.href),
-          );
-          inContainer.innerHTML = "";
-        }
-
-        const chatHistoryList = document.getElementById("chat-history-list");
-        if (chatHistoryList) chatHistoryList.innerHTML = "";
-        const chatSection = document.getElementById("chat-history-section");
-        if (chatSection) chatSection.style.display = "none";
-
-        const transferHistory = document.getElementById("transfer-history");
-        if (transferHistory) transferHistory.style.display = "none";
-
-        const outSection = document.getElementById("outgoing-section");
-        if (outSection) outSection.style.display = "none";
-        const inSection = document.getElementById("incoming-section");
-        if (inSection) inSection.style.display = "none";
-
-        eraseHistoryBtn.remove();
+        document.dispatchEvent(new Event("clear-history"));
       });
 
       const container = document.querySelector(".erase-history-container");

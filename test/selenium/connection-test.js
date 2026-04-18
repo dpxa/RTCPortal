@@ -40,7 +40,7 @@ async function runConnectionTest() {
     await driver2.manage().setTimeouts({ pageLoad: 30000, implicit: 5000 });
 
     const url = process.env.TEST_URL || `http://localhost:${DEFAULT_PORT}`;
-    const expectedTitle = "RTCPortal - P2P File Sharing";
+    const expectedTitle = "RTCPortal - P2P Transfer Hub";
 
     console.log("Setup Peer 1 (Initiator)");
     await driver1.get(url);
@@ -211,7 +211,7 @@ async function runConnectionTest() {
     console.log(`File received on Peer 2`);
 
     const incomingSection = await driver2.findElement(
-      By.id("incoming-section"),
+      By.id("incoming-files-section"),
     );
     const incomingText = await incomingSection.getText();
 
