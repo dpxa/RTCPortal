@@ -14,23 +14,25 @@ const RTC_CONFIG = {
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun.cloudflare.com:3478" },
+    { urls: "stun:global.stun.twilio.com:3478" },
   ],
   iceCandidatePoolSize: 2,
+  sdpSemantics: "unified-plan",
   iceTransportPolicy: "all",
   bundlePolicy: "max-bundle",
   rtcpMuxPolicy: "require",
 };
 
-const SLICE_SIZE = 16384;
-const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD = 65535 * 2;
-const DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT = 65535 * 4;
+const SLICE_SIZE = 65536;
+const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD = 1048576;
+const DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT = 4194304;
 
 const CONNECTION_TIMEOUT = 30000;
 const TRANSFER_CLEANUP_DELAY = 600;
 const TRANSFER_PAUSE_POLL_INTERVAL = 200;
 const TRANSFER_PAUSE_RESUME_INTERVAL = 100;
 const CONNECTION_RESET_DELAY = 4000;
-const CONNECTION_RECOVERY_DELAY = 5000;
+const CONNECTION_RECOVERY_DELAY = 30000;
 const DOWNLOAD_BLOB_URL_REVOKE_DELAY = 100;
 const ALERT_TIMEOUT = 4000;
 const WARNING_TIMEOUT = ALERT_TIMEOUT + 2000;

@@ -51,6 +51,7 @@ class WebRTCManager {
     this.endBtn.addEventListener("click", () => this.handleEndConnection());
 
     window.addEventListener("beforeunload", () => this.cleanup());
+    window.addEventListener("pagehide", () => this.cleanup());
   }
 
   initializeSocketEvents() {
@@ -129,6 +130,16 @@ class WebRTCManager {
       await this.handleAnswer(data);
     });
 
+    this.socket.on("peer-disconnected", (data) => {
+      if (
+        this.activePeerId === data.from ||
+        (this.pendingPeerConnection && !this.activePeerId)
+      ) {
+        console.log(`Peer ${data.from} disconnected.`);
+        this.handleEndConnection();
+      }
+    });
+
     this.socket.on("candidate", (data) => {
       this.handleCandidate(data);
     });
@@ -162,6 +173,12 @@ class WebRTCManager {
   }
 
   toggleQrCode() {
+    if (typeof QRCode === "undefined") {
+      uiManager.showIdError("QR Code library failed to load");
+      console.warn("QRCode library is missing (blocked by network).");
+      return;
+    }
+
     if (this.qrCodeWrapper.style.display === "none") {
       this.qrCodeWrapper.style.display = "block";
       this.showQrBtn.textContent = "Hide QR";
@@ -437,10 +454,14 @@ class WebRTCManager {
     };
 
     if (isInitiator) {
-      this.pendingControlChannel = conn.createDataChannel("controlChannel");
+      this.pendingControlChannel = conn.createDataChannel("controlChannel", {
+        ordered: true,
+      });
       this.initializeControlChannel(this.pendingControlChannel);
 
-      this.pendingDataChannel = conn.createDataChannel("fileChannel");
+      this.pendingDataChannel = conn.createDataChannel("fileChannel", {
+        ordered: true,
+      });
       this.pendingDataChannel.bufferedAmountLowThreshold =
         DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD;
       this.initializeDataChannel(this.pendingDataChannel);
@@ -598,7 +619,10 @@ class WebRTCManager {
       this.controlChannel.close();
       this.controlChannel = null;
     }
-    this.activePeerId = null;
+    if (this.activePeerId) {
+      this.socket.emit("peer-disconnected", { target: this.activePeerId });
+      this.activePeerId = null;
+    }
     uiManager.updateToIdle();
   }
 

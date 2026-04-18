@@ -5,6 +5,13 @@ class TurnService {
   }
 
   async initializeTurnCredentials() {
+    if (!environmentIsProd) {
+      console.log(
+        "Local environment: Using default STUN servers only. (Skipped TURN fetch)",
+      );
+      return;
+    }
+
     try {
       const response = await fetch(
         `${BASE_API_URL}${API_ENDPOINTS.TURN_CREDENTIALS}`,
@@ -28,19 +35,7 @@ class TurnService {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      if (
-        error.message &&
-        (error.message.includes("403") || error.message.includes("Forbidden"))
-      ) {
-        console.warn(
-          "Using default STUN servers only (TURN credentials access restricted/forbidden).",
-        );
-      } else {
-        console.error(
-          "Using default STUN servers only.",
-          error.message || error,
-        );
-      }
+      console.warn("Could not retrieve premium TURN servers. Using default STUN servers only.");
     }
   }
 

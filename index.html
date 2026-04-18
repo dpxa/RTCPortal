@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RTCPortal - P2P File Sharing</title>
+    <title>RTCPortal - P2P Transfer Hub</title>
     <meta
       name="description"
       content="Secure peer-to-peer file sharing using WebRTC. No cloud storage needed - files transfer directly between users."
@@ -140,7 +140,9 @@
                 ></span>
               </div>
               <div id="drop-zone" class="drop-zone">
-                <p class="drop-zone-text">Drag & Drop files and folders here</p>
+                <p class="drop-zone-text">
+                  Drag & Drop files and folders here (or Ctrl+V)
+                </p>
                 <div class="upload-actions">
                   <button id="browse-files-btn">Select Files</button>
                   <button id="browse-folder-btn">Select Folder</button>
@@ -197,12 +199,22 @@
                 <div class="spacer"></div>
               </div>
 
-              <section id="incoming-section" style="display: none">
+              <section id="incoming-folders-section" style="display: none">
+                <h3>Received Folders</h3>
+                <div id="incoming-folders"></div>
+              </section>
+
+              <section id="incoming-files-section" style="display: none">
                 <h3>Received Files</h3>
                 <div id="incoming-files"></div>
               </section>
 
-              <section id="outgoing-section" style="display: none">
+              <section id="outgoing-folders-section" style="display: none">
+                <h3>Sent Folders</h3>
+                <div id="outgoing-folders"></div>
+              </section>
+
+              <section id="outgoing-files-section" style="display: none">
                 <h3>Sent Files</h3>
                 <div id="outgoing-files"></div>
               </section>
