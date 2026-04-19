@@ -29,6 +29,10 @@ class FileTransferManager {
     this.opfsWritable = null;
     this.opfsReady = false;
 
+    this.pendingBatchForHistory = null;
+    this.hasReceivedBatchConfirmation = false;
+    this.sentCleanupTimer = null;
+
     this.initializeElements();
     this.initializeEventListeners();
 
@@ -466,6 +470,9 @@ class FileTransferManager {
 
     uiManager.clearFileAlert();
     this.fileTransferBtn.disabled = true;
+    this.hasReceivedBatchConfirmation = false;
+
+    await yieldToMain();
 
     const totalBatchSize = this.selectedFiles.reduce(
       (acc, f) => acc + f.size,
@@ -473,6 +480,8 @@ class FileTransferManager {
     );
     let totalBytesSent = 0;
     const batchStartTime = Date.now();
+
+    let lastLoopYieldAndUI = Date.now();
 
     for (let i = 0; i < this.selectedFiles.length; i++) {
       if (this.isStopped) break;
@@ -498,7 +507,13 @@ class FileTransferManager {
         this.selectedFiles.length,
         currentFileName,
       );
-      uiManager.transferStatusDivSent.textContent = this.currentSendStatus;
+
+      const nowMs = Date.now();
+      if (i === 0 || nowMs - lastLoopYieldAndUI > 50) {
+        uiManager.transferStatusDivSent.textContent = this.currentSendStatus;
+        await yieldToMain();
+        lastLoopYieldAndUI = Date.now();
+      }
 
       webrtcManager.dataChannel.send(
         JSON.stringify({
@@ -535,14 +550,17 @@ class FileTransferManager {
 
     const wasStopped = this.isStopped;
 
-    this.fileTransferBtn.disabled = false;
-
     this.isStopped = false;
     this.isPaused = false;
 
     if (this.selectedFiles.length > 0 && !wasStopped) {
+      this.fileTransferBtn.disabled = true;
       uiManager.updateSentProgressBarValue(100);
-      uiManager.resetSentTransferUI();
+      uiManager.updateSentStats("", "");
+
+      if (uiManager.sentButtonsContainer) {
+        uiManager.sentButtonsContainer.style.display = "none";
+      }
 
       const batchForHistory = this.selectedFiles.map((f) => ({
         name: f.customRelativePath || f.webkitRelativePath || f.name,
@@ -550,8 +568,35 @@ class FileTransferManager {
         isDirectoryMarker: f.isDirectoryMarker || false,
         lastModified: f.lastModified || Date.now(),
       }));
-      this.createBatchHistoryUI(batchForHistory, "to", this.rootDirectoryName);
+
+      if (this.hasReceivedBatchConfirmation) {
+        this.finalizeSentBatchForHistory(
+          batchForHistory,
+          "to",
+          this.rootDirectoryName,
+        );
+      } else {
+        if (uiManager.transferStatusDivSent) {
+          uiManager.transferStatusDivSent.textContent =
+            "Waiting for receiver confirmation...";
+        }
+        this.pendingBatchForHistory = {
+          batch: batchForHistory,
+          direction: "to",
+          rootDirectoryName: this.rootDirectoryName,
+        };
+      }
+    } else {
+      this.updateTransferButtonState();
     }
+  }
+
+  finalizeSentBatchForHistory(batch, direction, rootDirectoryName) {
+    this.createBatchHistoryUI(batch, direction, rootDirectoryName);
+    uiManager.resetSentTransferUI();
+    this.hasReceivedBatchConfirmation = false;
+    this.pendingBatchForHistory = null;
+    this.updateTransferButtonState();
   }
 
   togglePause() {
@@ -707,7 +752,10 @@ class FileTransferManager {
         }
 
         const now = Date.now();
-        if (now - lastUIUpdate > 100 || offset === fileObj.size) {
+        if (
+          now - lastUIUpdate > 50 ||
+          (offset === fileObj.size && currentIdx === totalCount)
+        ) {
           uiManager.ensureSentContainer();
 
           const currentTotalSent = totalBytesSentStart + offset;
@@ -740,22 +788,25 @@ class FileTransferManager {
         if (offset < fileObj.size) {
           readChunk(offset);
         } else {
-          uiManager.transferStatusDivSent.textContent = this.formatBatchMessage(
-            "Sent",
-            currentIdx,
-            totalCount,
-            fileObj.name,
-          );
+          if (currentIdx === totalCount || Date.now() - lastUIUpdate > 100) {
+            uiManager.transferStatusDivSent.textContent =
+              this.formatBatchMessage(
+                "Sent",
+                currentIdx,
+                totalCount,
+                fileObj.name,
+              );
+          }
 
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
 
-          if (window.webrtcManager && window.webrtcManager.socket) {
-            window.webrtcManager.socket.emit("transfer-complete", {
-              fileSize: fileObj.size,
-            });
-          }
-
           if (currentIdx === totalCount) {
+            if (window.webrtcManager && window.webrtcManager.socket) {
+              window.webrtcManager.socket.emit("transfer-complete", {
+                fileSize: totalBatchSize,
+              });
+            }
+
             uiManager.updateSentStats("", "");
             if (window.statsService) {
               window.statsService.fetchConnectionStats();
@@ -801,7 +852,7 @@ class FileTransferManager {
     isSending = true,
   ) {
     const elapsed = (now - startTime) / 1000;
-    if (elapsed <= 1.5) return { speedStr: "-", etaStr: "-" };
+    if (elapsed <= 0.1) return null;
 
     const ctxKey = isSending ? "_sendSpeedCtx" : "_recvSpeedCtx";
     let ctx = this[ctxKey];
@@ -933,6 +984,17 @@ class FileTransferManager {
         case "done":
           await this.finalizeIncomingFile();
           this.isReceiving = false;
+          break;
+        case "batch-received":
+          if (this.pendingBatchForHistory) {
+            this.finalizeSentBatchForHistory(
+              this.pendingBatchForHistory.batch,
+              this.pendingBatchForHistory.direction,
+              this.pendingBatchForHistory.rootDirectoryName,
+            );
+          } else {
+            this.hasReceivedBatchConfirmation = true;
+          }
           break;
         case "cancel-transfer":
           this.handleTransferCancellation();
@@ -1188,6 +1250,17 @@ class FileTransferManager {
 
     if (isLastInBatch) {
       uiManager.updateReceivedStats("", "");
+
+      if (
+        window.webrtcManager &&
+        window.webrtcManager.dataChannel &&
+        window.webrtcManager.dataChannel.readyState === "open"
+      ) {
+        window.webrtcManager.dataChannel.send(
+          JSON.stringify({ type: "batch-received" }),
+        );
+      }
+
       if (window.statsService) {
         window.statsService.fetchConnectionStats();
       }
@@ -1422,6 +1495,8 @@ class FileTransferManager {
     this.isSending = false;
     this.isPaused = false;
     this.isAutoThrottled = false;
+    this.pendingBatchForHistory = null;
+    this.hasReceivedBatchConfirmation = false;
 
     if (this.sentCleanupTimer) {
       clearTimeout(this.sentCleanupTimer);
