@@ -289,8 +289,8 @@ class UIManager {
           <div class="progress-bar" style="width: 0%;"></div>
           <span class="progress-percentage" style="display:none;">0%</span>
         </div>
-        <div id="received-stats" style="margin-bottom: 8px;"></div>
-        <div id="transfer-status-received" style="margin-top: 2px;"></div>
+        <div id="received-stats" style="margin-bottom: 4px;"></div>
+        <div id="transfer-status-received" style="margin-top: 0px;"></div>
       </div>
     `;
   }
