@@ -9,7 +9,7 @@
     "test:connection": "npm run test:prod"
   },
   "dependencies": {
-    "selenium-webdriver": "^4.15.0"
+    "selenium-webdriver": "^4.27.0"
   },
   "keywords": [
     "selenium",
