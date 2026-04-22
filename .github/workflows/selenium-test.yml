@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'public/**'
-      - 'server/**'
-      - 'test/**'
-      - 'package.json'
+      - "public/**"
+      - "server/**"
+      - "test/**"
+      - "package.json"
   workflow_dispatch:
 
 concurrency:
@@ -32,10 +32,10 @@ jobs:
           cache-dependency-path: "test/package.json"
 
       - name: Install Chrome
-        uses: browser-actions/setup-chrome@latest
+        uses: browser-actions/setup-chrome@v2.1.1
 
       - name: Install ChromeDriver
-        uses: nanasess/setup-chromedriver@master
+        uses: nanasess/setup-chromedriver@v2.4.0
 
       - name: Install Test Dependencies
         working-directory: ./test
