@@ -27,7 +27,7 @@ const handleSocketConnection = (io, connectionStats) => {
     pinMap.set(pin, socket.id);
     socket.pin = pin;
 
-    console.log(`Socket connected: ${socket.id} (PIN: ${pin})`);
+    console.log(`Socket connected: PIN ${pin}`);
 
     socket.emit("pin-assigned", { pin });
 
@@ -69,7 +69,7 @@ const handleSocketConnection = (io, connectionStats) => {
         return;
       }
 
-      console.log(`Received offer from ${socket.id} to ${payload.target}`);
+      console.log(`Received offer from PIN ${socket.pin} to ${payload.target}`);
 
       const targetId = resolveTargetSocketId(payload.target);
       if (!targetId) {
@@ -100,7 +100,9 @@ const handleSocketConnection = (io, connectionStats) => {
         return;
       }
 
-      console.log(`Received answer from ${socket.id} to ${payload.target}`);
+      console.log(
+        `Received answer from PIN ${socket.pin} to ${payload.target}`,
+      );
 
       const targetId = resolveTargetSocketId(payload.target);
       if (!targetId) {
@@ -121,7 +123,9 @@ const handleSocketConnection = (io, connectionStats) => {
         return;
       }
 
-      console.log(`Received candidate from ${socket.id} to ${payload.target}`);
+      console.log(
+        `Received candidate from PIN ${socket.pin} to ${payload.target}`,
+      );
       relayToTarget(io, socket, payload, "candidate", (data, senderId) => ({
         candidate: data.candidate,
         from: senderId,
@@ -134,7 +138,7 @@ const handleSocketConnection = (io, connectionStats) => {
       }
 
       console.log(
-        `Received peer-disconnected from ${socket.id} to ${payload.target}`,
+        `Received peer-disconnected from PIN ${socket.pin} to ${payload.target}`,
       );
 
       const targetId = resolveTargetSocketId(payload.target);

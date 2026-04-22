@@ -9,6 +9,7 @@ on:
       - 'server/**'
       - 'test/**'
       - 'package.json'
+  workflow_dispatch:
 
 concurrency:
   group: selenium-test
