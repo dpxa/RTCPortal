@@ -23,36 +23,21 @@ class WebRTCManager {
 
     this.candidateQueue = [];
 
-    this.initializeElements();
-    this.initializeEventListeners();
+    this.bindUIHandlers();
     this.initializeSocketEvents();
   }
 
-  initializeElements() {
-    this.myIdDisplay = document.getElementById("my-id-display");
-    this.pinActionButtons = document.getElementById("pin-action-buttons");
-    this.copyIdBtn = document.getElementById("copy-id-btn");
-    this.copyLinkBtn = document.getElementById("copy-link-btn");
-    this.showQrBtn = document.getElementById("show-qr-btn");
-    this.qrCodeWrapper = document.getElementById("qr-code-wrapper");
-    this.qrCodeContainer = document.getElementById("qr-code-container");
-    this.partnerIdField = document.getElementById("partner-id-field");
-    this.connectBtn = document.getElementById("connect-btn");
-    this.endBtn = document.getElementById("end-btn");
-  }
+  bindUIHandlers() {
+    uiManager.bindWebRTCHandlers({
+      onCopyId: () => this.copyId(),
+      onCopyLink: () => this.copyLink(),
+      onToggleQr: () => this.toggleQrCode(),
+      onPartnerIdInput: () => this.updateConnectButton(),
+      onConnect: () => this.initiateConnection(),
+      onDisconnect: () => this.handleEndConnection(),
+    });
 
-  initializeEventListeners() {
-    this.copyIdBtn.addEventListener("click", () => this.copyId());
-    this.copyLinkBtn.addEventListener("click", () => this.copyLink());
-    this.showQrBtn.addEventListener("click", () => this.toggleQrCode());
-    this.partnerIdField.addEventListener("input", () =>
-      this.updateConnectButton(),
-    );
-    this.connectBtn.addEventListener("click", () => this.initiateConnection());
-    this.endBtn.addEventListener("click", () => this.handleEndConnection());
-
-    window.addEventListener("beforeunload", () => this.cleanup());
-    window.addEventListener("pagehide", () => this.cleanup());
+    uiManager.registerPageExitHandler(() => this.cleanup());
   }
 
   initializeSocketEvents() {
@@ -62,29 +47,20 @@ class WebRTCManager {
 
     this.socket.on("pin-assigned", (data) => {
       this.selfId = data.pin;
-      this.myIdDisplay.classList.remove("inactive");
-      this.myIdDisplay.classList.add("active");
-      this.myIdDisplay.textContent = this.selfId;
-      this.pinActionButtons.style.display = "flex";
+      uiManager.setLocalPinAssigned(this.selfId);
 
       this.handleUrlParameters();
     });
 
     this.socket.on("connect_error", (error) => {
       console.error("Socket connection error:", error.message || error);
-      this.myIdDisplay.classList.add("inactive");
-      this.myIdDisplay.classList.remove("active");
-      this.myIdDisplay.textContent = "Connection Error";
-      this.pinActionButtons.style.display = "none";
+      uiManager.setLocalPinStatus("Connection Error");
       uiManager.showIdError("Failed to connect to server. Retrying...");
     });
 
     this.socket.on("disconnect", (reason) => {
       console.warn("Socket disconnected:", reason);
-      this.myIdDisplay.classList.add("inactive");
-      this.myIdDisplay.classList.remove("active");
-      this.myIdDisplay.textContent = "Disconnected";
-      this.pinActionButtons.style.display = "none";
+      uiManager.setLocalPinStatus("Disconnected");
 
       if (reason === "io server disconnect") {
         uiManager.showIdError("Disconnected by server. Reconnecting...");
@@ -118,11 +94,19 @@ class WebRTCManager {
     });
 
     this.socket.on("offer", async (data) => {
-      await this.handleOffer(data);
+      try {
+        await this.handleOffer(data);
+      } catch (error) {
+        console.error("Offer handling failed:", error);
+      }
     });
 
     this.socket.on("answer", async (data) => {
-      await this.handleAnswer(data);
+      try {
+        await this.handleAnswer(data);
+      } catch (error) {
+        console.error("Answer handling failed:", error);
+      }
     });
 
     this.socket.on("peer-disconnected", (data) => {
@@ -168,29 +152,14 @@ class WebRTCManager {
   }
 
   toggleQrCode() {
-    if (typeof QRCode === "undefined") {
-      uiManager.showIdError("QR Code library failed to load");
-      console.warn("QRCode library is missing (blocked by network).");
+    if (!this.selfId) {
+      uiManager.showIdError("No ID to share yet.");
       return;
     }
 
-    if (this.qrCodeWrapper.style.display === "none") {
-      this.qrCodeWrapper.style.display = "block";
-      this.showQrBtn.textContent = "Hide QR";
-
-      this.qrCodeContainer.innerHTML = "";
-      const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
-      new QRCode(this.qrCodeContainer, {
-        text: url,
-        width: 128,
-        height: 128,
-        colorDark: getCssVar("--qr-color-dark", "#000000"),
-        colorLight: getCssVar("--qr-color-light", "#ffffff"),
-        correctLevel: QRCode.CorrectLevel.H,
-      });
-    } else {
-      this.qrCodeWrapper.style.display = "none";
-      this.showQrBtn.textContent = "QR Code";
+    const shown = uiManager.toggleQrCodeForId(this.selfId);
+    if (!shown && typeof QRCode === "undefined") {
+      console.warn("QRCode library is missing (blocked by network).");
     }
   }
 
@@ -199,22 +168,21 @@ class WebRTCManager {
     const peerId = urlParams.get("peer");
 
     if (peerId && peerId !== this.selfId) {
-      this.partnerIdField.value = peerId;
+      uiManager.setPartnerIdValue(peerId);
       this.updateConnectButton();
       this.initiateConnection();
 
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }
 
   updateConnectButton() {
-    this.connectBtn.disabled = this.partnerIdField.value.trim() === "";
+    uiManager.setConnectButtonEnabled(uiManager.getPartnerIdValue() !== "");
   }
 
   async initiateConnection() {
-    const peerId = this.partnerIdField.value.trim();
-    this.partnerIdField.value = "";
-    this.connectBtn.disabled = true;
+    const peerId = uiManager.consumePartnerIdValue();
+    uiManager.setConnectButtonEnabled(false);
 
     if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
       uiManager.showIdError("Invalid peer PIN/ID!");

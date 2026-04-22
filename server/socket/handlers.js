@@ -5,11 +5,15 @@ const generatePin = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+const resolveTargetSocketId = (target) => {
+  if (!target) return null;
+  return pinMap.has(target) ? pinMap.get(target) : target;
+};
+
 const relayToTarget = (io, socket, payload, event, dataBuilder) => {
-  let targetId = payload.target;
-  if (pinMap.has(targetId)) {
-    targetId = pinMap.get(targetId);
-  }
+  const targetId = resolveTargetSocketId(payload?.target);
+  if (!targetId) return;
+
   io.to(targetId).emit(event, dataBuilder(payload, socket.pin || socket.id));
 };
 
@@ -61,11 +65,17 @@ const handleSocketConnection = (io, connectionStats) => {
     });
 
     socket.on("offer", (payload) => {
+      if (!payload || !payload.target || !payload.sdp) {
+        return;
+      }
+
       console.log(`Received offer from ${socket.id} to ${payload.target}`);
 
-      let targetId = payload.target;
-      if (pinMap.has(targetId)) {
-        targetId = pinMap.get(targetId);
+      const targetId = resolveTargetSocketId(payload.target);
+      if (!targetId) {
+        connectionStats.decrementAttempts();
+        socket.emit("peer-not-found", { target: payload.target });
+        return;
       }
 
       if (targetId === socket.id) {
@@ -86,11 +96,15 @@ const handleSocketConnection = (io, connectionStats) => {
     });
 
     socket.on("answer", (payload) => {
+      if (!payload || !payload.target || !payload.sdp) {
+        return;
+      }
+
       console.log(`Received answer from ${socket.id} to ${payload.target}`);
 
-      let targetId = payload.target;
-      if (pinMap.has(targetId)) {
-        targetId = pinMap.get(targetId);
+      const targetId = resolveTargetSocketId(payload.target);
+      if (!targetId) {
+        return;
       }
 
       activePairings.set(socket.id, targetId);
@@ -103,6 +117,10 @@ const handleSocketConnection = (io, connectionStats) => {
     });
 
     socket.on("candidate", (payload) => {
+      if (!payload || !payload.target || !payload.candidate) {
+        return;
+      }
+
       console.log(`Received candidate from ${socket.id} to ${payload.target}`);
       relayToTarget(io, socket, payload, "candidate", (data, senderId) => ({
         candidate: data.candidate,
@@ -111,14 +129,19 @@ const handleSocketConnection = (io, connectionStats) => {
     });
 
     socket.on("peer-disconnected", (payload) => {
+      if (!payload || !payload.target) {
+        return;
+      }
+
       console.log(
         `Received peer-disconnected from ${socket.id} to ${payload.target}`,
       );
 
-      let targetId = payload.target;
-      if (pinMap.has(targetId)) {
-        targetId = pinMap.get(targetId);
+      const targetId = resolveTargetSocketId(payload.target);
+      if (!targetId) {
+        return;
       }
+
       activePairings.delete(socket.id);
       activePairings.delete(targetId);
 
