@@ -1,4 +1,3 @@
-// blank test commit
 const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
@@ -20,6 +19,7 @@ const isProd = environment === "production";
 const config = require(`./config/${environment}`);
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = socketIO(server, {
   transports: config.transports,
@@ -98,9 +98,12 @@ app.use(ROUTES.API, (err, req, res, next) => {
 
 handleSocketConnection(io, connectionStats);
 
-const PORT = config.port;
-server.listen(PORT, () => {
+const PORT = parseInt(process.env.PORT, 10) || config.port;
+const HOST = process.env.HOST || "0.0.0.0";
+server.listen(PORT, HOST, () => {
   if (!isProd) {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(
+      `Server bound to ${HOST}:${PORT}. Connect in browser with http://localhost:${PORT}`,
+    );
   }
 });
