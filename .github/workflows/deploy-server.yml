@@ -25,4 +25,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: deploy
           publish_dir: ./server
-          keep_files: true
+          keep_files: false
