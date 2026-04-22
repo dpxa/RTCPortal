@@ -33,8 +33,7 @@ class FileTransferManager {
     this.hasReceivedBatchConfirmation = false;
     this.sentCleanupTimer = null;
 
-    this.initializeElements();
-    this.initializeEventListeners();
+    this.configureUIBindings();
 
     this.sweepOrphanedOpfsFiles();
   }
@@ -52,223 +51,122 @@ class FileTransferManager {
     }
   }
 
-  initializeElements() {
-    this.uploadField = document.getElementById("upload-field");
-    this.folderUploadField = document.getElementById("folder-upload-field");
-    this.dropZone = document.getElementById("drop-zone");
-    this.browseFilesBtn = document.getElementById("browse-files-btn");
-    this.browseFolderBtn = document.getElementById("browse-folder-btn");
-    this.fileNameDisplay = document.getElementById("file-name-display");
-
-    this.fileTransferBtn = document.getElementById("file-transfer-btn");
-    this.fileStatusMessage = document.getElementById("file-status-message");
-
-    this.outgoingFoldersSection = document.getElementById(
-      "outgoing-folders-section",
-    );
-    this.incomingFoldersSection = document.getElementById(
-      "incoming-folders-section",
-    );
-    this.outgoingFilesSection = document.getElementById(
-      "outgoing-files-section",
-    );
-    this.incomingFilesSection = document.getElementById(
-      "incoming-files-section",
-    );
-
-    this.transferHistoryDiv = document.getElementById("transfer-history");
-    this.outgoingFoldersContainer = document.getElementById("outgoing-folders");
-    this.incomingFoldersContainer = document.getElementById("incoming-folders");
-    this.outgoingFilesContainer = document.getElementById("outgoing-files");
-    this.incomingFilesContainer = document.getElementById("incoming-files");
-    this.eraseHistoryContainer = document.querySelector(
-      ".erase-history-container",
-    );
-  }
-
-  initializeEventListeners() {
-    if (this.browseFilesBtn) {
-      this.browseFilesBtn.addEventListener("click", () =>
-        this.uploadField.click(),
-      );
-    }
-    if (this.browseFolderBtn) {
-      this.browseFolderBtn.addEventListener("click", async () => {
-        if (window.showDirectoryPicker) {
-          try {
-            const dirHandle = await window.showDirectoryPicker();
-            const files = await this.traverseDirHandle(dirHandle, "");
-            this.handleFileSelection(files, dirHandle.name);
-          } catch (e) {
-            if (e.name !== "AbortError") {
-              this.folderUploadField.click();
-            }
-          }
-        } else {
-          this.folderUploadField.click();
-        }
-      });
-    }
-
-    this.uploadField.addEventListener("change", () =>
-      this.handleFileSelection(this.uploadField.files),
-    );
-    if (this.folderUploadField) {
-      this.folderUploadField.addEventListener("change", () => {
-        let rootFolderName = null;
-        if (this.folderUploadField.files.length > 0) {
-          const firstPath = this.folderUploadField.files[0].webkitRelativePath;
-          if (firstPath && firstPath.includes("/")) {
-            rootFolderName = firstPath.split("/")[0];
-          }
-        }
-        this.handleFileSelection(this.folderUploadField.files, rootFolderName);
-      });
-    }
-
-    if (this.dropZone) {
-      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
-        this.dropZone.addEventListener(eventName, this.preventDefaults, false);
-      });
-
-      ["dragenter", "dragover"].forEach((eventName) => {
-        this.dropZone.addEventListener(
-          eventName,
-          () => this.dropZone.classList.add("highlight"),
-          false,
-        );
-      });
-
-      ["dragleave", "drop"].forEach((eventName) => {
-        this.dropZone.addEventListener(
-          eventName,
-          () => this.dropZone.classList.remove("highlight"),
-          false,
-        );
-      });
-
-      this.dropZone.addEventListener("drop", (e) => this.handleDrop(e), false);
-    }
-
-    this.fileTransferBtn.addEventListener("click", () => this.sendFile());
-
-    const handleUnloadAndHide = () => {
-      this.cleanupAllTransfers();
-      this.revokeAllBlobUrls();
-    };
-    window.addEventListener("beforeunload", handleUnloadAndHide);
-    window.addEventListener("pagehide", handleUnloadAndHide);
-
-    document.addEventListener("clear-history", () => {
-      this.revokeAllBlobUrls();
-
-      if (this.outgoingFilesContainer)
-        this.outgoingFilesContainer.innerHTML = "";
-      if (this.incomingFilesContainer)
-        this.incomingFilesContainer.innerHTML = "";
-      if (this.outgoingFoldersContainer)
-        this.outgoingFoldersContainer.innerHTML = "";
-      if (this.incomingFoldersContainer)
-        this.incomingFoldersContainer.innerHTML = "";
-
-      if (this.transferHistoryDiv)
-        this.transferHistoryDiv.style.display = "none";
-      if (this.outgoingFilesSection)
-        this.outgoingFilesSection.style.display = "none";
-      if (this.incomingFilesSection)
-        this.incomingFilesSection.style.display = "none";
-      if (this.outgoingFoldersSection)
-        this.outgoingFoldersSection.style.display = "none";
-      if (this.incomingFoldersSection)
-        this.incomingFoldersSection.style.display = "none";
-
-      const eraseHistoryBtn = document.getElementById("erase-history-btn");
-      if (eraseHistoryBtn) eraseHistoryBtn.remove();
+  configureUIBindings() {
+    uiManager.bindFileTransferHandlers({
+      onFilesSelected: (files, rootFolderName) =>
+        this.handleFileSelection(files, rootFolderName),
+      onDirectoryHandleSelected: async (dirHandle) => {
+        if (!dirHandle) return;
+        const files = await this.traverseDirHandle(dirHandle, "");
+        this.handleFileSelection(files, dirHandle.name);
+      },
+      onDrop: (event) => this.handleDrop(event),
+      onSendTransfer: () => this.sendFile(),
+      onPaste: (event) => this.handlePaste(event),
+      onTogglePause: () => this.togglePause(),
+      onStopTransfer: () => this.stopTransfer(),
     });
 
-    document.addEventListener("paste", async (e) => {
-      if (
-        document.activeElement &&
-        (document.activeElement.tagName === "INPUT" ||
-          document.activeElement.tagName === "TEXTAREA")
-      ) {
-        return;
-      }
+    uiManager.registerHistoryClearHandler(() => this.handleClearHistory());
+    uiManager.registerPageExitHandler(() => this.handlePageExit());
+  }
 
-      const items = e.clipboardData?.items;
-      if (!items) return;
+  handlePageExit() {
+    this.cleanupAllTransfers();
+    this.revokeAllBlobUrls();
+  }
 
-      const filesPromises = [];
-      let rootFolderName = null;
-      let dirCount = 0;
+  async handlePaste(event) {
+    if (uiManager.isTextInputFocused()) {
+      return;
+    }
 
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.webkitGetAsEntry) {
-          const entry = item.webkitGetAsEntry();
-          if (entry) {
-            if (entry.isDirectory) {
-              dirCount++;
-              rootFolderName = entry.name;
-            }
-            filesPromises.push(this.traverseFileTree(entry));
-            continue;
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    const filesPromises = [];
+    let rootFolderName = null;
+    let directoryCount = 0;
+
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+
+      if (item.webkitGetAsEntry) {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          if (entry.isDirectory) {
+            directoryCount++;
+            rootFolderName = entry.name;
           }
-        }
-
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) filesPromises.push(Promise.resolve([file]));
+          filesPromises.push(this.traverseFileTree(entry));
+          continue;
         }
       }
 
-      if (dirCount !== 1) {
-        rootFolderName = null;
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) filesPromises.push(Promise.resolve([file]));
       }
+    }
 
+    if (directoryCount !== 1) {
+      rootFolderName = null;
+    }
+
+    try {
       const fileArrays = await Promise.all(filesPromises);
-      const files = fileArrays.flat().filter((f) => f);
+      const files = fileArrays.flat().filter((file) => file);
 
       if (files.length > 0) {
         this.handleFileSelection(files, rootFolderName);
       }
-    });
+    } catch (error) {
+      console.error("Paste handling failed:", error);
+      uiManager.showFileWarning("Could not parse pasted files.");
+    }
   }
 
-  preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
+  async handleClearHistory() {
+    try {
+      await this.revokeAllBlobUrls();
+      uiManager.clearTransferHistoryUI();
+    } catch (error) {
+      console.error("Failed to clear history state:", error);
+    }
   }
 
   async handleDrop(e) {
-    const dt = e.dataTransfer;
-    const items = dt.items;
+    try {
+      const dt = e.dataTransfer;
+      const items = dt.items;
 
-    let rootFolderName = null;
+      let rootFolderName = null;
 
-    if (items) {
-      const filesPromises = [];
-      let entryCount = 0;
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.webkitGetAsEntry) {
-          const entry = item.webkitGetAsEntry();
-          if (entry) {
-            entryCount++;
-            if (entry.isDirectory && items.length === 1) {
-              rootFolderName = entry.name;
+      if (items) {
+        const filesPromises = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.webkitGetAsEntry) {
+            const entry = item.webkitGetAsEntry();
+            if (entry) {
+              if (entry.isDirectory && items.length === 1) {
+                rootFolderName = entry.name;
+              }
+              filesPromises.push(this.traverseFileTree(entry));
             }
-            filesPromises.push(this.traverseFileTree(entry));
+          } else if (item.kind === "file") {
+            filesPromises.push(Promise.resolve([item.getAsFile()]));
           }
-        } else if (item.kind === "file") {
-          filesPromises.push(Promise.resolve([item.getAsFile()]));
         }
+        const fileArrays = await Promise.all(filesPromises);
+        const files = fileArrays.flat();
+        this.handleFileSelection(files, rootFolderName);
+      } else {
+        this.handleFileSelection(dt.files);
       }
-      const fileArrays = await Promise.all(filesPromises);
-      const files = fileArrays.flat();
-      this.handleFileSelection(files, rootFolderName);
-    } else {
-      this.handleFileSelection(dt.files);
+    } catch (error) {
+      console.error("Drop handling failed:", error);
+      uiManager.showFileWarning("Could not process dropped files.");
     }
   }
 
@@ -313,28 +211,35 @@ class FileTransferManager {
 
   async traverseDirHandle(dirHandle, path = "") {
     const files = [];
-    let hasEntries = false;
-    for await (const entry of dirHandle.values()) {
-      hasEntries = true;
-      if (entry.kind === "file") {
-        const file = await entry.getFile();
-        file.customRelativePath = path + dirHandle.name + "/" + file.name;
-        files.push(file);
-      } else if (entry.kind === "directory") {
-        const subFiles = await this.traverseDirHandle(
-          entry,
-          path + dirHandle.name + "/",
-        );
-        files.push(...subFiles);
+
+    try {
+      let hasEntries = false;
+      for await (const entry of dirHandle.values()) {
+        hasEntries = true;
+        if (entry.kind === "file") {
+          const file = await entry.getFile();
+          file.customRelativePath = path + dirHandle.name + "/" + file.name;
+          files.push(file);
+        } else if (entry.kind === "directory") {
+          const subFiles = await this.traverseDirHandle(
+            entry,
+            path + dirHandle.name + "/",
+          );
+          files.push(...subFiles);
+        }
       }
+
+      if (!hasEntries) {
+        const folderPath = path + dirHandle.name + "/";
+        const dummyFile = new File([], "");
+        dummyFile.customRelativePath = folderPath;
+        dummyFile.isDirectoryMarker = true;
+        files.push(dummyFile);
+      }
+    } catch (error) {
+      console.error("Directory traversal failed:", error);
     }
-    if (!hasEntries) {
-      const folderPath = path + dirHandle.name + "/";
-      const dummyFile = new File([], "");
-      dummyFile.customRelativePath = folderPath;
-      dummyFile.isDirectoryMarker = true;
-      files.push(dummyFile);
-    }
+
     return files;
   }
 
@@ -347,10 +252,11 @@ class FileTransferManager {
   }
 
   updateTransferButtonState() {
-    this.fileTransferBtn.disabled =
-      this.selectedFiles.length === 0 ||
-      !this.isDataChannelOpen() ||
-      this.isSending;
+    const isEnabled =
+      this.selectedFiles.length > 0 &&
+      this.isDataChannelOpen() &&
+      !this.isSending;
+    uiManager.setFileTransferButtonEnabled(isEnabled);
   }
 
   formatBatchMessage(action, index, total, name) {
@@ -364,23 +270,6 @@ class FileTransferManager {
       ? uiManager.getNickname(peerId)
       : peerId;
     return peerName === peerId ? peerName : `${peerName} (${peerId})`;
-  }
-
-  createMetaSpan(text) {
-    const metaSpan = document.createElement("span");
-    metaSpan.textContent = text;
-    metaSpan.style.fontSize = "0.75rem";
-    metaSpan.style.fontStyle = "italic";
-    try {
-      const mt = getComputedStyle(document.documentElement).getPropertyValue(
-        "--meta-text",
-      );
-      metaSpan.style.color = mt ? mt.trim() : getCssVar("--meta-text", "#888");
-    } catch (e) {
-      metaSpan.style.color = getCssVar("--meta-text", "#888");
-    }
-    metaSpan.style.marginLeft = "8px";
-    return metaSpan;
   }
 
   async revokeAllBlobUrls() {
@@ -405,14 +294,13 @@ class FileTransferManager {
   clearFileSelectionUI() {
     this.selectedFiles = [];
     this.rootDirectoryName = null;
-    if (this.fileNameDisplay) this.fileNameDisplay.textContent = "";
-    if (this.fileTransferBtn) this.fileTransferBtn.disabled = true;
+    uiManager.setFileSelectionSummary("");
+    uiManager.setFileTransferButtonEnabled(false);
     this.resetInputFields();
   }
 
   resetInputFields() {
-    if (this.uploadField) this.uploadField.value = "";
-    if (this.folderUploadField) this.folderUploadField.value = "";
+    uiManager.clearFileInputs();
   }
 
   handleFileSelection(files, rootFolderName = null) {
@@ -441,153 +329,159 @@ class FileTransferManager {
   }
 
   updateFileNameDisplay(totalSize) {
-    if (!this.fileNameDisplay) return;
+    let summary = "";
 
     if (this.rootDirectoryName) {
       const fileCount = this.selectedFiles.filter(
         (f) => !f.isDirectoryMarker,
       ).length;
-      this.fileNameDisplay.textContent = `Selected Folder: ${this.rootDirectoryName} (${fileCount} file${fileCount !== 1 ? "s" : ""}, ${this.displayFileSize(totalSize)})`;
+      summary = `Selected Folder: ${this.rootDirectoryName} (${fileCount} file${fileCount !== 1 ? "s" : ""}, ${this.displayFileSize(totalSize)})`;
     } else if (this.selectedFiles.length === 1) {
-      this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles[0].name} (${this.displayFileSize(this.selectedFiles[0].size)})`;
+      summary = `Selected: ${this.selectedFiles[0].name} (${this.displayFileSize(this.selectedFiles[0].size)})`;
     } else {
-      this.fileNameDisplay.textContent = `Selected: ${this.selectedFiles.length} files (${this.displayFileSize(totalSize)})`;
+      summary = `Selected: ${this.selectedFiles.length} files (${this.displayFileSize(totalSize)})`;
     }
+
+    uiManager.setFileSelectionSummary(summary);
   }
 
   async sendFile() {
-    if (!this.isDataChannelOpen()) {
-      setTimeout(() => {
-        if (window.webrtcManager) window.webrtcManager.resetCurrentConnection();
-      }, CONNECTION_RESET_DELAY);
-      return;
-    }
-
-    if (this.selectedFiles.length === 0) {
-      uiManager.showFileAlert("No file selected.");
-      return;
-    }
-
-    uiManager.clearFileAlert();
-    this.fileTransferBtn.disabled = true;
-    this.hasReceivedBatchConfirmation = false;
-
-    await yieldToMain();
-
-    const totalBatchSize = this.selectedFiles.reduce(
-      (acc, f) => acc + f.size,
-      0,
-    );
-    let totalBytesSent = 0;
-    const batchStartTime = Date.now();
-
-    let lastLoopYieldAndUI = Date.now();
-
-    for (let i = 0; i < this.selectedFiles.length; i++) {
-      if (this.isStopped) break;
-
-      const fileToSend = this.selectedFiles[i];
-
-      uiManager.ensureSentContainer();
-
-      if (i === 0) {
-        this._sendSpeedCtx = null;
-        uiManager.resetSentProgressOnly();
-        uiManager.updateSentStats("-", "-");
+    try {
+      if (!this.isDataChannelOpen()) {
+        setTimeout(() => {
+          if (window.webrtcManager)
+            window.webrtcManager.resetCurrentConnection();
+        }, CONNECTION_RESET_DELAY);
+        return;
       }
 
-      const currentFileName =
-        fileToSend.customRelativePath ||
-        fileToSend.webkitRelativePath ||
-        fileToSend.name;
-
-      this.currentSendStatus = this.formatBatchMessage(
-        "Sending",
-        i + 1,
-        this.selectedFiles.length,
-        currentFileName,
-      );
-
-      const nowMs = Date.now();
-      if (i === 0 || nowMs - lastLoopYieldAndUI > 50) {
-        uiManager.transferStatusDivSent.textContent = this.currentSendStatus;
-        await yieldToMain();
-        lastLoopYieldAndUI = Date.now();
+      if (this.selectedFiles.length === 0) {
+        uiManager.showFileAlert("No file selected.");
+        return;
       }
 
-      webrtcManager.dataChannel.send(
-        JSON.stringify({
-          type: "metadata",
-          fileName: currentFileName,
-          fileSize: fileToSend.size,
-          lastModified: fileToSend.lastModified || Date.now(),
-          batchIndex: i + 1,
-          batchTotal: this.selectedFiles.length,
-          totalBatchSize: totalBatchSize,
-          isDirectoryMarker: fileToSend.isDirectoryMarker || false,
-          rootDirectoryName: this.rootDirectoryName || null,
-        }),
-      );
+      uiManager.clearFileAlert();
+      uiManager.setFileTransferButtonEnabled(false);
+      this.hasReceivedBatchConfirmation = false;
 
-      try {
-        await this.sendFileSlicesPromise(
-          fileToSend,
+      await yieldToMain();
+
+      const totalBatchSize = this.selectedFiles.reduce(
+        (acc, f) => acc + f.size,
+        0,
+      );
+      let totalBytesSent = 0;
+      const batchStartTime = Date.now();
+
+      let lastLoopYieldAndUI = Date.now();
+
+      for (let i = 0; i < this.selectedFiles.length; i++) {
+        if (this.isStopped) break;
+
+        const fileToSend = this.selectedFiles[i];
+
+        uiManager.ensureSentContainer();
+
+        if (i === 0) {
+          this._sendSpeedCtx = null;
+          this.lastSentUIUpdate = 0;
+          uiManager.resetSentProgressOnly();
+          uiManager.updateSentStats("-", "-");
+        }
+
+        const currentFileName =
+          fileToSend.customRelativePath ||
+          fileToSend.webkitRelativePath ||
+          fileToSend.name;
+
+        this.currentSendStatus = this.formatBatchMessage(
+          "Sending",
           i + 1,
           this.selectedFiles.length,
-          totalBatchSize,
-          totalBytesSent,
-          batchStartTime,
+          currentFileName,
         );
-      } catch (err) {
-        console.warn("Transfer aborted or failed:", err);
-        break;
-      }
 
-      if (this.isStopped) break;
+        uiManager.setSentStatus(this.currentSendStatus);
 
-      totalBytesSent += fileToSend.size;
-    }
-
-    const wasStopped = this.isStopped;
-
-    this.isStopped = false;
-    this.isPaused = false;
-
-    if (this.selectedFiles.length > 0 && !wasStopped) {
-      this.fileTransferBtn.disabled = true;
-      uiManager.updateSentProgressBarValue(100);
-      uiManager.updateSentStats("", "");
-
-      if (uiManager.sentButtonsContainer) {
-        uiManager.sentButtonsContainer.style.display = "none";
-      }
-
-      const batchForHistory = this.selectedFiles.map((f) => ({
-        name: f.customRelativePath || f.webkitRelativePath || f.name,
-        size: f.size,
-        isDirectoryMarker: f.isDirectoryMarker || false,
-        lastModified: f.lastModified || Date.now(),
-      }));
-
-      if (this.hasReceivedBatchConfirmation) {
-        this.finalizeSentBatchForHistory(
-          batchForHistory,
-          "to",
-          this.rootDirectoryName,
-        );
-      } else {
-        if (uiManager.transferStatusDivSent) {
-          uiManager.transferStatusDivSent.textContent =
-            "Waiting for receiver confirmation...";
+        const nowMs = Date.now();
+        if (i === 0 || nowMs - lastLoopYieldAndUI > 25) {
+          await yieldToMain();
+          lastLoopYieldAndUI = Date.now();
         }
-        this.pendingBatchForHistory = {
-          batch: batchForHistory,
-          direction: "to",
-          rootDirectoryName: this.rootDirectoryName,
-        };
+
+        webrtcManager.dataChannel.send(
+          JSON.stringify({
+            type: "metadata",
+            fileName: currentFileName,
+            fileSize: fileToSend.size,
+            lastModified: fileToSend.lastModified || Date.now(),
+            batchIndex: i + 1,
+            batchTotal: this.selectedFiles.length,
+            totalBatchSize: totalBatchSize,
+            isDirectoryMarker: fileToSend.isDirectoryMarker || false,
+            rootDirectoryName: this.rootDirectoryName || null,
+          }),
+        );
+
+        try {
+          await this.sendFileSlicesPromise(
+            fileToSend,
+            i + 1,
+            this.selectedFiles.length,
+            totalBatchSize,
+            totalBytesSent,
+            batchStartTime,
+          );
+        } catch (err) {
+          console.warn("Transfer aborted or failed:", err);
+          break;
+        }
+
+        if (this.isStopped) break;
+
+        totalBytesSent += fileToSend.size;
       }
-    } else {
-      this.updateTransferButtonState();
+
+      const wasStopped = this.isStopped;
+
+      this.isStopped = false;
+      this.isPaused = false;
+
+      if (this.selectedFiles.length > 0 && !wasStopped) {
+        uiManager.setFileTransferButtonEnabled(false);
+        uiManager.updateSentProgressBarValue(100);
+        uiManager.updateSentStats("", "");
+
+        uiManager.setSentButtonsVisible(false);
+
+        const batchForHistory = this.selectedFiles.map((f) => ({
+          name: f.customRelativePath || f.webkitRelativePath || f.name,
+          size: f.size,
+          isDirectoryMarker: f.isDirectoryMarker || false,
+          lastModified: f.lastModified || Date.now(),
+        }));
+
+        if (this.hasReceivedBatchConfirmation) {
+          this.finalizeSentBatchForHistory(
+            batchForHistory,
+            "to",
+            this.rootDirectoryName,
+          );
+        } else {
+          uiManager.setSentStatus("Waiting for receiver confirmation...");
+          this.pendingBatchForHistory = {
+            batch: batchForHistory,
+            direction: "to",
+            rootDirectoryName: this.rootDirectoryName,
+          };
+        }
+      } else {
+        this.updateTransferButtonState();
+      }
+    } catch (error) {
+      console.error("Unexpected send pipeline failure:", error);
+      uiManager.showFileWarning("Transfer failed unexpectedly.");
+      this.cleanupSentTransfer();
     }
   }
 
@@ -611,9 +505,8 @@ class FileTransferManager {
         );
       }
 
-      if (uiManager.pauseTransferBtn)
-        uiManager.pauseTransferBtn.textContent = "Resume";
-      uiManager.transferStatusDivSent.textContent = "Transfer Paused";
+      uiManager.setPauseButtonLabel("Resume");
+      uiManager.setSentStatus("Transfer Paused");
     } else {
       if (this.currentPauseStartSent) {
         this.totalPausedTimeSent =
@@ -621,16 +514,17 @@ class FileTransferManager {
           (Date.now() - this.currentPauseStartSent);
         this.currentPauseStartSent = 0;
       }
+
+      this._sendSpeedCtx = null;
+
       if (this.isDataChannelOpen()) {
         webrtcManager.dataChannel.send(
           JSON.stringify({ type: "resume-transfer" }),
         );
       }
 
-      if (uiManager.pauseTransferBtn)
-        uiManager.pauseTransferBtn.textContent = "Pause";
-      uiManager.transferStatusDivSent.textContent =
-        this.currentSendStatus || "Sending...";
+      uiManager.setPauseButtonLabel("Pause");
+      uiManager.setSentStatus(this.currentSendStatus || "Sending...");
     }
   }
 
@@ -645,7 +539,7 @@ class FileTransferManager {
     }
 
     this.isSending = false;
-    this.fileTransferBtn.disabled = false;
+    uiManager.setFileTransferButtonEnabled(true);
 
     uiManager.updateSentStats("-", "-");
 
@@ -685,7 +579,6 @@ class FileTransferManager {
     if (this.isStopped) return Promise.resolve();
 
     this.isSending = true;
-    let lastUIUpdate = 0;
 
     return new Promise((resolve, reject) => {
       let offset = 0;
@@ -710,7 +603,10 @@ class FileTransferManager {
             return;
           }
           await new Promise((r) =>
-            setTimeout(r, document.hidden ? 100 : TRANSFER_PAUSE_POLL_INTERVAL),
+            setTimeout(
+              r,
+              appUtils.isPageHidden() ? 100 : TRANSFER_PAUSE_POLL_INTERVAL,
+            ),
           );
         }
 
@@ -736,7 +632,10 @@ class FileTransferManager {
             return;
           }
           await new Promise((r) =>
-            setTimeout(r, document.hidden ? 10 : TRANSFER_PAUSE_POLL_INTERVAL),
+            setTimeout(
+              r,
+              appUtils.isPageHidden() ? 10 : TRANSFER_PAUSE_POLL_INTERVAL,
+            ),
           );
         }
 
@@ -753,17 +652,18 @@ class FileTransferManager {
 
         const now = Date.now();
         if (
-          now - lastUIUpdate > 50 ||
+          !this.lastSentUIUpdate ||
+          now - this.lastSentUIUpdate > 50 ||
           (offset === fileObj.size && currentIdx === totalCount)
         ) {
           uiManager.ensureSentContainer();
 
           const currentTotalSent = totalBytesSentStart + offset;
           const totalSize = Number(totalBatchSize) || Number(fileObj.size) || 0;
-          const progressValue =
-            totalSize > 0
-              ? Math.floor((currentTotalSent / totalSize) * 100)
-              : 100;
+          const progressValue = this.calculateProgressPercent(
+            currentTotalSent,
+            totalSize,
+          );
           uiManager.updateSentProgressBarValue(progressValue);
 
           const effectivePauseTime =
@@ -782,20 +682,27 @@ class FileTransferManager {
           if (stats) {
             uiManager.updateSentStats(stats.speedStr, stats.etaStr);
           }
-          lastUIUpdate = now;
+          this.lastSentUIUpdate = Date.now();
+
+          await yieldToMain();
         }
 
         if (offset < fileObj.size) {
           readChunk(offset);
         } else {
-          if (currentIdx === totalCount || Date.now() - lastUIUpdate > 100) {
-            uiManager.transferStatusDivSent.textContent =
+          if (
+            currentIdx === totalCount ||
+            Date.now() - this.lastSentUIUpdate > 100
+          ) {
+            uiManager.setSentStatus(
               this.formatBatchMessage(
                 "Sent",
                 currentIdx,
                 totalCount,
                 fileObj.name,
-              );
+              ),
+            );
+            this.lastSentUIUpdate = Date.now();
           }
 
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
@@ -812,7 +719,10 @@ class FileTransferManager {
               window.statsService.fetchConnectionStats();
             }
             await new Promise((r) =>
-              setTimeout(r, document.hidden ? 100 : TRANSFER_CLEANUP_DELAY),
+              setTimeout(
+                r,
+                appUtils.isPageHidden() ? 100 : TRANSFER_CLEANUP_DELAY,
+              ),
             );
             this.isSending = false;
           }
@@ -844,6 +754,27 @@ class FileTransferManager {
     return `${m}m ${s}s`;
   }
 
+  calculateProgressPercent(bytesTransferred, totalBytes) {
+    const safeTotal = Math.max(0, Number(totalBytes) || 0);
+    const safeTransferred = Math.max(0, Number(bytesTransferred) || 0);
+
+    if (safeTotal <= 0) {
+      return safeTransferred > 0 ? 100 : 0;
+    }
+
+    if (safeTransferred <= 0) {
+      return 0;
+    }
+
+    if (safeTransferred >= safeTotal) {
+      return 100;
+    }
+
+    const rawPercent = (safeTransferred / safeTotal) * 100;
+    const clampedPercent = Math.min(100, Math.max(0, rawPercent));
+    return Math.floor(clampedPercent);
+  }
+
   calculateTransferStats(
     bytesTransferred,
     totalBytes,
@@ -851,44 +782,60 @@ class FileTransferManager {
     now = Date.now(),
     isSending = true,
   ) {
-    const elapsed = (now - startTime) / 1000;
-    if (elapsed <= 0.1) return null;
+    const safeBytesTransferred = Math.max(0, Number(bytesTransferred) || 0);
+    const safeTotalBytes = Math.max(0, Number(totalBytes) || 0);
+    const effectiveNow = Number(now) || Date.now();
+
+    const elapsed = (effectiveNow - startTime) / 1000;
 
     const ctxKey = isSending ? "_sendSpeedCtx" : "_recvSpeedCtx";
     let ctx = this[ctxKey];
 
     if (!ctx || ctx.startTime !== startTime) {
       ctx = {
-        startTime: startTime,
-        lastTime: now,
-        lastBytes: bytesTransferred,
+        startTime,
+        lastTime: effectiveNow,
+        lastBytes: safeBytesTransferred,
         currentSpeed: 0,
       };
       this[ctxKey] = ctx;
+      return null;
     }
 
-    const deltaT = (now - ctx.lastTime) / 1000;
+    if (elapsed < 0.5) return null;
 
-    if (deltaT >= 0.5) {
-      const deltaB = bytesTransferred - ctx.lastBytes;
+    const deltaT = (effectiveNow - ctx.lastTime) / 1000;
+
+    if (deltaT >= 0.2 || (elapsed >= 0.5 && ctx.currentSpeed === 0)) {
+      const deltaB = Math.max(0, safeBytesTransferred - ctx.lastBytes);
       const instantSpeed = deltaT > 0 ? deltaB / deltaT : 0;
 
-      if (ctx.currentSpeed === 0) {
+      if (ctx.currentSpeed <= 0) {
         ctx.currentSpeed = instantSpeed;
       } else {
-        ctx.currentSpeed = ctx.currentSpeed * 0.4 + instantSpeed * 0.6;
+        ctx.currentSpeed = ctx.currentSpeed * 0.65 + instantSpeed * 0.35;
       }
 
-      ctx.lastTime = now;
-      ctx.lastBytes = bytesTransferred;
+      ctx.lastTime = effectiveNow;
+      ctx.lastBytes = safeBytesTransferred;
     }
 
-    let speed =
-      ctx.currentSpeed > 0 ? ctx.currentSpeed : bytesTransferred / elapsed;
-    const eta = speed > 0 ? (totalBytes - bytesTransferred) / speed : 0;
+    if (ctx.currentSpeed <= 0 && elapsed > 1.0) {
+      const overallSpeed = safeBytesTransferred / elapsed;
+      if (overallSpeed > 0) {
+        ctx.currentSpeed = overallSpeed;
+      }
+    }
+
+    if (ctx.currentSpeed <= 0) {
+      return null;
+    }
+
+    const remainingBytes = Math.max(0, safeTotalBytes - safeBytesTransferred);
+    const eta = remainingBytes / ctx.currentSpeed;
 
     return {
-      speedStr: this.displayFileSize(speed) + "/s",
+      speedStr: this.displayFileSize(ctx.currentSpeed) + "/s",
       etaStr: this.formatTime(eta),
     };
   }
@@ -926,7 +873,11 @@ class FileTransferManager {
         (this.receiveBufferSize || 0) - (data.byteLength || data.length || 0),
       );
 
-      await this._processIncomingBufferItem(data);
+      try {
+        await this._processIncomingBufferItem(data);
+      } catch (error) {
+        console.error("Receive buffer item processing failed:", error);
+      }
 
       processCount++;
       if (processCount % 10 === 0) {
@@ -1009,7 +960,7 @@ class FileTransferManager {
 
   handleTransferPause() {
     this.currentPauseStartReceived = Date.now();
-    uiManager.transferStatusDivReceived.textContent = "Transfer Paused";
+    uiManager.setReceivedStatus("Transfer Paused");
   }
 
   handleTransferResume() {
@@ -1019,6 +970,8 @@ class FileTransferManager {
         (Date.now() - this.currentPauseStartReceived);
       this.currentPauseStartReceived = 0;
     }
+
+    this._recvSpeedCtx = null;
   }
 
   handleTransferCancellation() {
@@ -1065,11 +1018,13 @@ class FileTransferManager {
     this.opfsReady = false;
 
     uiManager.ensureReceivedContainer();
-    uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
-      "Receiving",
-      info.batchIndex,
-      info.batchTotal,
-      info.fileName,
+    uiManager.setReceivedStatus(
+      this.formatBatchMessage(
+        "Receiving",
+        info.batchIndex,
+        info.batchTotal,
+        info.fileName,
+      ),
     );
 
     if (!info.isDirectoryMarker) {
@@ -1104,8 +1059,6 @@ class FileTransferManager {
   async processIncomingChunk(arrayBuffer) {
     if (!this.receivedFileDetails) return;
 
-    const details = this.receivedFileDetails;
-
     if (this.opfsReady && this.opfsWritable) {
       try {
         await this.opfsWritable.write(arrayBuffer);
@@ -1120,18 +1073,15 @@ class FileTransferManager {
     this.receivedBytes += arrayBuffer.byteLength;
     this.totalBatchBytesReceived += arrayBuffer.byteLength;
 
-    if (
-      !uiManager.transferStatusDivReceived ||
-      !uiManager.transferStatusDivReceived.isConnected
-    ) {
-      uiManager.ensureReceivedContainer();
-      uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
+    uiManager.ensureReceivedContainer();
+    uiManager.setReceivedStatus(
+      this.formatBatchMessage(
         "Receiving",
         this.receivedFileDetails.batchIndex,
         this.receivedFileDetails.batchTotal,
         this.receivedFileDetails.fileName,
-      );
-    }
+      ),
+    );
 
     const now = Date.now();
     if (
@@ -1147,13 +1097,14 @@ class FileTransferManager {
         this.receivedFileDetails.batchTotal;
 
       if (isFileComplete && isLastBatchFile) {
-        uiManager.transferStatusDivReceived.textContent =
+        uiManager.setReceivedStatus(
           this.formatBatchMessage(
             "Received",
             this.receivedFileDetails.batchIndex,
             this.receivedFileDetails.batchTotal,
             this.receivedFileDetails.fileName,
-          );
+          ),
+        );
         uiManager.updateReceivedStats("", "");
       } else {
         const effectivePauseTime =
@@ -1173,11 +1124,10 @@ class FileTransferManager {
         }
       }
 
-      const totalSizeToUse = Number(totalSize) || 0;
-      const progressValue =
-        totalSizeToUse > 0
-          ? Math.floor((this.totalBatchBytesReceived / totalSizeToUse) * 100)
-          : 100;
+      const progressValue = this.calculateProgressPercent(
+        this.totalBatchBytesReceived,
+        totalSize,
+      );
       uiManager.updateReceivedProgressBarValue(progressValue);
       this.lastReceivedUIUpdate = now;
     }
@@ -1237,18 +1187,27 @@ class FileTransferManager {
     });
 
     if (currentDetails.batchIndex === currentDetails.batchTotal) {
-      uiManager.transferStatusDivReceived.textContent = this.formatBatchMessage(
-        "Received",
-        currentDetails.batchIndex,
-        currentDetails.batchTotal,
-        currentDetails.fileName,
+      uiManager.setReceivedStatus(
+        this.formatBatchMessage(
+          "Received",
+          currentDetails.batchIndex,
+          currentDetails.batchTotal,
+          currentDetails.fileName,
+        ),
       );
     }
 
     const isLastInBatch =
       currentDetails.batchIndex === currentDetails.batchTotal;
 
+    const batchProgressValue = this.calculateProgressPercent(
+      this.totalBatchBytesReceived,
+      currentDetails.totalBatchSize,
+    );
+    uiManager.updateReceivedProgressBarValue(batchProgressValue);
+
     if (isLastInBatch) {
+      uiManager.updateReceivedProgressBarValue(100);
       uiManager.updateReceivedStats("", "");
 
       if (
@@ -1272,7 +1231,6 @@ class FileTransferManager {
         );
 
         this.receivedBatch = [];
-        this.toggleClearHistoryOption();
 
         uiManager.resetReceivedTransferUI();
         this.totalBatchBytesReceived = 0;
@@ -1285,123 +1243,39 @@ class FileTransferManager {
   }
 
   createBatchHistoryUI(batch, direction, rootDirectoryName) {
-    const isFolderItem =
-      !!rootDirectoryName ||
-      batch.some((f) => f.isDirectoryMarker || f.name.includes("/"));
-
-    const wrapperDiv = document.createElement("div");
-    wrapperDiv.style.padding = "0";
-    wrapperDiv.style.wordBreak = "break-all";
-
-    let displayName = "Files";
-    if (rootDirectoryName) {
-      displayName = rootDirectoryName;
-    } else if (isFolderItem && batch.length > 0) {
-      displayName = batch[0].name.split("/")[0];
-    } else if (batch.length === 1) {
-      displayName = batch[0].name;
-    } else {
-      displayName = `${batch.length} files`;
-    }
-
-    const totalSize = batch.reduce((acc, f) => acc + (f.size || 0), 0);
-
-    const isSingleFile = batch.length === 1 && !isFolderItem;
-
-    if (direction === "from" && !isSingleFile) {
-      const btnContainer = document.createElement("div");
-      btnContainer.className = "batch-zip-container";
-
-      const btn = document.createElement("button");
-      btn.className = "zip-download-btn";
-      const zipIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 5px; margin-bottom: 2px;"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`;
-
-      if (isFolderItem) {
-        btn.innerHTML = `${zipIcon} Download ${displayName}`;
-      } else {
-        btn.innerHTML = `${zipIcon} Download ${batch.length} files (ZIP)`;
-      }
-
-      btn.addEventListener("click", () => {
-        const originalText = btn.innerHTML;
-        btn.innerHTML = `${zipIcon} Zipping...`;
-        btn.disabled = true;
-        this.downloadSpecificBatch(batch, displayName).finally(() => {
-          btn.innerHTML = originalText;
-          btn.disabled = false;
-        });
-      });
-
-      batch.forEach((f) => {
-        if (f.opfsHandle) {
-          this.activeOpfsHandles.add(f.opfsHandle);
+    if (direction === "from") {
+      batch.forEach((file) => {
+        if (file.opfsHandle) {
+          this.activeOpfsHandles.add(file.opfsHandle);
         }
       });
-      btnContainer.appendChild(btn);
-      wrapperDiv.appendChild(btnContainer);
-    } else if (direction === "from" && isSingleFile) {
-      const f = batch[0];
-      if (f.opfsHandle) {
-        this.activeOpfsHandles.add(f.opfsHandle);
-      }
     }
 
-    const entryDiv = document.createElement("div");
-    entryDiv.style.padding = "4px 0";
-    entryDiv.style.display = "flex";
-    entryDiv.style.flexWrap = "wrap";
-    entryDiv.style.alignItems = "baseline";
-    entryDiv.style.gap = "8px";
+    const isFolderItem =
+      !!rootDirectoryName ||
+      batch.some((file) => file.isDirectoryMarker || file.name.includes("/"));
+    const isSingleFile = batch.length === 1 && !isFolderItem;
 
-    const label =
-      direction === "from" && isSingleFile && batch[0].blob
-        ? document.createElement("a")
-        : document.createElement("span");
+    let singleFileDownload = null;
     if (direction === "from" && isSingleFile && batch[0].blob) {
       const blobUrl = URL.createObjectURL(batch[0].blob);
-      label.href = blobUrl;
-      label.download = batch[0].name;
       this.activeBlobUrls.add(blobUrl);
-    }
-    label.textContent = displayName;
-    label.style.fontWeight = "bold";
-    entryDiv.appendChild(label);
-
-    const peerDisplay = this.getPeerDisplay(webrtcManager.activePeerId);
-    let metaText = `(${this.displayFileSize(totalSize)}) ${direction === "from" ? "Received from" : "Sent to"}: ${peerDisplay}, at ${new Date().toLocaleTimeString()}`;
-    const metaSpan = this.createMetaSpan(metaText);
-    metaSpan.style.marginLeft = "0";
-
-    entryDiv.appendChild(metaSpan);
-
-    wrapperDiv.appendChild(entryDiv);
-
-    const targetContainer =
-      direction === "from"
-        ? isFolderItem
-          ? this.incomingFoldersContainer
-          : this.incomingFilesContainer
-        : isFolderItem
-          ? this.outgoingFoldersContainer
-          : this.outgoingFilesContainer;
-
-    const targetSection =
-      direction === "from"
-        ? isFolderItem
-          ? this.incomingFoldersSection
-          : this.incomingFilesSection
-        : isFolderItem
-          ? this.outgoingFoldersSection
-          : this.outgoingFilesSection;
-
-    if (targetContainer.firstChild) {
-      targetContainer.insertBefore(wrapperDiv, targetContainer.firstChild);
-    } else {
-      targetSection.style.display = "block";
-      targetContainer.appendChild(wrapperDiv);
+      singleFileDownload = {
+        url: blobUrl,
+        fileName: batch[0].name,
+      };
     }
 
-    this.toggleClearHistoryOption();
+    uiManager.renderTransferHistoryBatch({
+      batch,
+      direction,
+      rootDirectoryName,
+      peerDisplay: this.getPeerDisplay(webrtcManager.activePeerId),
+      singleFileDownload,
+      onZipDownload: async (_button, displayName) => {
+        await this.downloadSpecificBatch(batch, displayName);
+      },
+    });
   }
 
   async downloadSpecificBatch(files, defaultName) {
@@ -1452,10 +1326,10 @@ class FileTransferManager {
       });
       const blobUrl = URL.createObjectURL(content);
       this.activeBlobUrls.add(blobUrl);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = `${defaultName.replace(/[^a-zA-Z0-9.\-_ ]/g, "_")}.zip`;
-      link.click();
+      uiManager.triggerDownload(
+        blobUrl,
+        `${defaultName.replace(/[^a-zA-Z0-9.\-_ ]/g, "_")}.zip`,
+      );
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
         this.activeBlobUrls.delete(blobUrl);
@@ -1469,26 +1343,7 @@ class FileTransferManager {
   }
 
   displayFileSize(numBytes) {
-    if (numBytes === 0) return "0 Bytes";
-    const units = ["Bytes", "KB", "MB", "GB", "TB"];
-    const order = Math.floor(Math.log(numBytes) / Math.log(1024));
-    return `${(numBytes / Math.pow(1024, order)).toFixed(2)} ${units[order]}`;
-  }
-
-  toggleClearHistoryOption() {
-    let eraseHistoryBtn = document.getElementById("erase-history-btn");
-    if (!eraseHistoryBtn) {
-      eraseHistoryBtn = document.createElement("button");
-      eraseHistoryBtn.id = "erase-history-btn";
-      eraseHistoryBtn.className = "erase-history-btn";
-      eraseHistoryBtn.textContent = "Clear History";
-      eraseHistoryBtn.addEventListener("click", () => {
-        document.dispatchEvent(new Event("clear-history"));
-      });
-      this.eraseHistoryContainer.appendChild(eraseHistoryBtn);
-    }
-    this.transferHistoryDiv.style.display = "block";
-    eraseHistoryBtn.style.display = "inline-block";
+    return appUtils.formatBytes(numBytes);
   }
 
   cleanupSentTransfer() {
@@ -1505,8 +1360,8 @@ class FileTransferManager {
 
     this._sendSpeedCtx = null;
     uiManager.resetSentTransferUI();
-    this.uploadField.value = "";
-    this.fileTransferBtn.disabled = true;
+    uiManager.clearFileInputs();
+    uiManager.setFileTransferButtonEnabled(false);
 
     this.totalPausedTimeSent = 0;
     this.currentPauseStartSent = 0;
@@ -1565,19 +1420,22 @@ class FileTransferManager {
 
   clearFileSelection() {
     this.selectedFiles = [];
-    if (this.uploadField) this.uploadField.value = "";
-    if (this.folderUploadField) this.folderUploadField.value = "";
-    if (this.fileNameDisplay) this.fileNameDisplay.textContent = "";
-    if (this.fileTransferBtn) this.fileTransferBtn.disabled = true;
+    uiManager.clearFileInputs();
+    uiManager.setFileSelectionSummary("");
+    uiManager.setFileTransferButtonEnabled(false);
     this.isStopped = false;
     this.isPaused = false;
     uiManager.resetSentTransferUI();
   }
 
   async cleanupAllTransfers() {
-    this.cleanupSentTransfer();
-    await this.cleanupReceivedTransfer();
-    uiManager.clearFileAlert();
+    try {
+      this.cleanupSentTransfer();
+      await this.cleanupReceivedTransfer();
+      uiManager.clearFileAlert();
+    } catch (error) {
+      console.error("Cleanup failed:", error);
+    }
   }
 }
 
