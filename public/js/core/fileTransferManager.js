@@ -384,6 +384,7 @@ class FileTransferManager {
 
         if (i === 0) {
           this._sendSpeedCtx = null;
+          this.lastSentUIUpdate = 0;
           uiManager.resetSentProgressOnly();
           uiManager.updateSentStats("-", "-");
         }
@@ -400,9 +401,10 @@ class FileTransferManager {
           currentFileName,
         );
 
+        uiManager.setSentStatus(this.currentSendStatus);
+
         const nowMs = Date.now();
-        if (i === 0 || nowMs - lastLoopYieldAndUI > 50) {
-          uiManager.setSentStatus(this.currentSendStatus);
+        if (i === 0 || nowMs - lastLoopYieldAndUI > 25) {
           await yieldToMain();
           lastLoopYieldAndUI = Date.now();
         }
@@ -512,6 +514,9 @@ class FileTransferManager {
           (Date.now() - this.currentPauseStartSent);
         this.currentPauseStartSent = 0;
       }
+
+      this._sendSpeedCtx = null;
+
       if (this.isDataChannelOpen()) {
         webrtcManager.dataChannel.send(
           JSON.stringify({ type: "resume-transfer" }),
@@ -574,7 +579,6 @@ class FileTransferManager {
     if (this.isStopped) return Promise.resolve();
 
     this.isSending = true;
-    let lastUIUpdate = 0;
 
     return new Promise((resolve, reject) => {
       let offset = 0;
@@ -648,17 +652,18 @@ class FileTransferManager {
 
         const now = Date.now();
         if (
-          now - lastUIUpdate > 50 ||
+          !this.lastSentUIUpdate ||
+          now - this.lastSentUIUpdate > 50 ||
           (offset === fileObj.size && currentIdx === totalCount)
         ) {
           uiManager.ensureSentContainer();
 
           const currentTotalSent = totalBytesSentStart + offset;
           const totalSize = Number(totalBatchSize) || Number(fileObj.size) || 0;
-          const progressValue =
-            totalSize > 0
-              ? Math.floor((currentTotalSent / totalSize) * 100)
-              : 100;
+          const progressValue = this.calculateProgressPercent(
+            currentTotalSent,
+            totalSize,
+          );
           uiManager.updateSentProgressBarValue(progressValue);
 
           const effectivePauseTime =
@@ -677,13 +682,18 @@ class FileTransferManager {
           if (stats) {
             uiManager.updateSentStats(stats.speedStr, stats.etaStr);
           }
-          lastUIUpdate = now;
+          this.lastSentUIUpdate = Date.now();
+
+          await yieldToMain();
         }
 
         if (offset < fileObj.size) {
           readChunk(offset);
         } else {
-          if (currentIdx === totalCount || Date.now() - lastUIUpdate > 100) {
+          if (
+            currentIdx === totalCount ||
+            Date.now() - this.lastSentUIUpdate > 100
+          ) {
             uiManager.setSentStatus(
               this.formatBatchMessage(
                 "Sent",
@@ -692,6 +702,7 @@ class FileTransferManager {
                 fileObj.name,
               ),
             );
+            this.lastSentUIUpdate = Date.now();
           }
 
           webrtcManager.dataChannel.send(JSON.stringify({ type: "done" }));
@@ -743,6 +754,27 @@ class FileTransferManager {
     return `${m}m ${s}s`;
   }
 
+  calculateProgressPercent(bytesTransferred, totalBytes) {
+    const safeTotal = Math.max(0, Number(totalBytes) || 0);
+    const safeTransferred = Math.max(0, Number(bytesTransferred) || 0);
+
+    if (safeTotal <= 0) {
+      return safeTransferred > 0 ? 100 : 0;
+    }
+
+    if (safeTransferred <= 0) {
+      return 0;
+    }
+
+    if (safeTransferred >= safeTotal) {
+      return 100;
+    }
+
+    const rawPercent = (safeTransferred / safeTotal) * 100;
+    const clampedPercent = Math.min(100, Math.max(0, rawPercent));
+    return Math.floor(clampedPercent);
+  }
+
   calculateTransferStats(
     bytesTransferred,
     totalBytes,
@@ -750,44 +782,60 @@ class FileTransferManager {
     now = Date.now(),
     isSending = true,
   ) {
-    const elapsed = (now - startTime) / 1000;
-    if (elapsed <= 0.1) return null;
+    const safeBytesTransferred = Math.max(0, Number(bytesTransferred) || 0);
+    const safeTotalBytes = Math.max(0, Number(totalBytes) || 0);
+    const effectiveNow = Number(now) || Date.now();
+
+    const elapsed = (effectiveNow - startTime) / 1000;
 
     const ctxKey = isSending ? "_sendSpeedCtx" : "_recvSpeedCtx";
     let ctx = this[ctxKey];
 
     if (!ctx || ctx.startTime !== startTime) {
       ctx = {
-        startTime: startTime,
-        lastTime: now,
-        lastBytes: bytesTransferred,
+        startTime,
+        lastTime: effectiveNow,
+        lastBytes: safeBytesTransferred,
         currentSpeed: 0,
       };
       this[ctxKey] = ctx;
+      return null;
     }
 
-    const deltaT = (now - ctx.lastTime) / 1000;
+    if (elapsed < 0.5) return null;
 
-    if (deltaT >= 0.5) {
-      const deltaB = bytesTransferred - ctx.lastBytes;
+    const deltaT = (effectiveNow - ctx.lastTime) / 1000;
+
+    if (deltaT >= 0.2 || (elapsed >= 0.5 && ctx.currentSpeed === 0)) {
+      const deltaB = Math.max(0, safeBytesTransferred - ctx.lastBytes);
       const instantSpeed = deltaT > 0 ? deltaB / deltaT : 0;
 
-      if (ctx.currentSpeed === 0) {
+      if (ctx.currentSpeed <= 0) {
         ctx.currentSpeed = instantSpeed;
       } else {
-        ctx.currentSpeed = ctx.currentSpeed * 0.4 + instantSpeed * 0.6;
+        ctx.currentSpeed = ctx.currentSpeed * 0.65 + instantSpeed * 0.35;
       }
 
-      ctx.lastTime = now;
-      ctx.lastBytes = bytesTransferred;
+      ctx.lastTime = effectiveNow;
+      ctx.lastBytes = safeBytesTransferred;
     }
 
-    let speed =
-      ctx.currentSpeed > 0 ? ctx.currentSpeed : bytesTransferred / elapsed;
-    const eta = speed > 0 ? (totalBytes - bytesTransferred) / speed : 0;
+    if (ctx.currentSpeed <= 0 && elapsed > 1.0) {
+      const overallSpeed = safeBytesTransferred / elapsed;
+      if (overallSpeed > 0) {
+        ctx.currentSpeed = overallSpeed;
+      }
+    }
+
+    if (ctx.currentSpeed <= 0) {
+      return null;
+    }
+
+    const remainingBytes = Math.max(0, safeTotalBytes - safeBytesTransferred);
+    const eta = remainingBytes / ctx.currentSpeed;
 
     return {
-      speedStr: this.displayFileSize(speed) + "/s",
+      speedStr: this.displayFileSize(ctx.currentSpeed) + "/s",
       etaStr: this.formatTime(eta),
     };
   }
@@ -922,6 +970,8 @@ class FileTransferManager {
         (Date.now() - this.currentPauseStartReceived);
       this.currentPauseStartReceived = 0;
     }
+
+    this._recvSpeedCtx = null;
   }
 
   handleTransferCancellation() {
@@ -1074,11 +1124,10 @@ class FileTransferManager {
         }
       }
 
-      const totalSizeToUse = Number(totalSize) || 0;
-      const progressValue =
-        totalSizeToUse > 0
-          ? Math.floor((this.totalBatchBytesReceived / totalSizeToUse) * 100)
-          : 100;
+      const progressValue = this.calculateProgressPercent(
+        this.totalBatchBytesReceived,
+        totalSize,
+      );
       uiManager.updateReceivedProgressBarValue(progressValue);
       this.lastReceivedUIUpdate = now;
     }
@@ -1151,7 +1200,14 @@ class FileTransferManager {
     const isLastInBatch =
       currentDetails.batchIndex === currentDetails.batchTotal;
 
+    const batchProgressValue = this.calculateProgressPercent(
+      this.totalBatchBytesReceived,
+      currentDetails.totalBatchSize,
+    );
+    uiManager.updateReceivedProgressBarValue(batchProgressValue);
+
     if (isLastInBatch) {
+      uiManager.updateReceivedProgressBarValue(100);
       uiManager.updateReceivedStats("", "");
 
       if (

@@ -770,15 +770,15 @@ class UIManager {
   _updateDocumentTitle() {
     const titleFragments = [];
 
-    if (this.currentSendProgress >= 0 && this.currentSendProgress <= 100) {
-      titleFragments.push(`${this.currentSendProgress}% S`);
+    const sendProgress = Math.round(this.currentSendProgress);
+    const receiveProgress = Math.round(this.currentReceiveProgress);
+
+    if (sendProgress >= 0 && sendProgress <= 100) {
+      titleFragments.push(`${sendProgress}% S`);
     }
 
-    if (
-      this.currentReceiveProgress >= 0 &&
-      this.currentReceiveProgress <= 100
-    ) {
-      titleFragments.push(`${this.currentReceiveProgress}% R`);
+    if (receiveProgress >= 0 && receiveProgress <= 100) {
+      titleFragments.push(`${receiveProgress}% R`);
     }
 
     if (titleFragments.length > 0) {
@@ -789,17 +789,29 @@ class UIManager {
     document.title = "RTCPortal - P2P Transfer Hub";
   }
 
+  _normalizeProgressValue(value) {
+    const numericValue = Number(value);
+    if (!isFinite(numericValue)) return 0;
+    return Math.max(0, Math.min(100, numericValue));
+  }
+
   _updateProgressBar(barElement, percentElement, value) {
-    if (barElement) barElement.style.width = `${value}%`;
-    if (percentElement) percentElement.textContent = `${value}%`;
+    const normalizedValue = this._normalizeProgressValue(value);
+    const progressPercent = Math.round(normalizedValue);
+    if (barElement) {
+      barElement.style.width = `${progressPercent}%`;
+    }
+    if (percentElement) {
+      percentElement.textContent = `${progressPercent}%`;
+    }
   }
 
   updateSentProgressBarValue(value) {
-    this.currentSendProgress = value;
+    this.currentSendProgress = this._normalizeProgressValue(value);
     this._updateProgressBar(
       this.progressBarSent,
       this.progressPercentSent,
-      value,
+      this.currentSendProgress,
     );
     this._updateDocumentTitle();
   }
@@ -901,11 +913,11 @@ class UIManager {
   }
 
   updateReceivedProgressBarValue(value) {
-    this.currentReceiveProgress = value;
+    this.currentReceiveProgress = this._normalizeProgressValue(value);
     this._updateProgressBar(
       this.progressBarReceived,
       this.progressPercentReceived,
-      value,
+      this.currentReceiveProgress,
     );
     this._updateDocumentTitle();
   }
