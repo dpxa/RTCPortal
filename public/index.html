@@ -67,10 +67,7 @@
                 >
                   Waiting for PIN...
                 </span>
-                <div
-                  id="pin-action-buttons"
-                  style="display: none; gap: 5px; flex-wrap: wrap"
-                >
+                <div id="pin-action-buttons" class="pin-action-buttons" hidden>
                   <button id="copy-id-btn" class="copy-button">Copy PIN</button>
                   <button id="copy-link-btn" class="copy-button">
                     Copy Link
@@ -85,25 +82,8 @@
                 </div>
                 <span id="status-id-message" class="message"></span>
               </div>
-              <div
-                id="qr-code-wrapper"
-                style="
-                  display: none;
-                  text-align: center;
-                  margin-bottom: 4px;
-                  margin-top: 0;
-                "
-              >
-                <div
-                  id="qr-code-container"
-                  style="
-                    display: inline-block;
-                    padding: 5px;
-                    background: white;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                  "
-                ></div>
+              <div id="qr-code-wrapper" class="qr-code-wrapper" hidden>
+                <div id="qr-code-container" class="qr-code-container"></div>
               </div>
               <input
                 type="text"
@@ -112,16 +92,14 @@
                 aria-label="Enter peer PIN to connect"
               />
               <button id="connect-btn" disabled>Connect</button>
-              <button id="end-btn" class="end-btn" style="display: none">
-                Disconnect
-              </button>
-              <div id="active-connection-container" style="display: none">
+              <button id="end-btn" class="end-btn" hidden>Disconnect</button>
+              <div id="active-connection-container" hidden>
                 <span id="active-connection-label">Connected to:</span>
                 <span id="active-connection-status"></span>
               </div>
             </section>
 
-            <section id="file-transfer-section" style="display: none">
+            <section id="file-transfer-section" hidden>
               <h2>Send</h2>
               <div class="label-container">
                 <span
@@ -142,14 +120,14 @@
                 <input
                   type="file"
                   id="upload-field"
-                  style="display: none"
+                  hidden
                   aria-label="Select files to upload"
                   multiple
                 />
                 <input
                   type="file"
                   id="folder-upload-field"
-                  style="display: none"
+                  hidden
                   aria-label="Select folder to upload"
                   webkitdirectory
                   directory
@@ -158,12 +136,10 @@
                 <div id="file-name-display"></div>
               </div>
               <button id="file-transfer-btn" disabled>Send</button>
-              <button id="toggle-chat-btn" style="display: none">
-                Open Chat
-              </button>
+              <button id="toggle-chat-btn" hidden>Open Chat</button>
             </section>
 
-            <section id="chat-section" style="display: none">
+            <section id="chat-section" hidden>
               <h2>Chat</h2>
               <div id="chat-box" class="chat-box">
                 <div class="chat-placeholder">No messages yet...</div>
@@ -181,7 +157,7 @@
             </section>
           </div>
 
-          <div class="column" id="transfer-history" style="display: none">
+          <div class="column" id="transfer-history" hidden>
             <section>
               <div class="file-history-header">
                 <div class="erase-history-container"></div>
@@ -191,32 +167,31 @@
                 <div class="spacer"></div>
               </div>
 
-              <section id="incoming-folders-section" style="display: none">
+              <section id="incoming-folders-section" hidden>
                 <h3>Received Folders</h3>
                 <div id="incoming-folders"></div>
               </section>
 
-              <section id="incoming-files-section" style="display: none">
+              <section id="incoming-files-section" hidden>
                 <h3>Received Files</h3>
                 <div id="incoming-files"></div>
               </section>
 
-              <section id="outgoing-folders-section" style="display: none">
+              <section id="outgoing-folders-section" hidden>
                 <h3>Sent Folders</h3>
                 <div id="outgoing-folders"></div>
               </section>
 
-              <section id="outgoing-files-section" style="display: none">
+              <section id="outgoing-files-section" hidden>
                 <h3>Sent Files</h3>
                 <div id="outgoing-files"></div>
               </section>
 
-              <section id="chat-history-section" style="display: none">
+              <section id="chat-history-section" hidden>
                 <h3>Chat History</h3>
                 <div
                   id="chat-history-list"
-                  class="chat-box"
-                  style="height: auto; max-height: 300px; overflow-y: auto"
+                  class="chat-box chat-history-list"
                 ></div>
               </section>
             </section>
@@ -275,6 +250,7 @@
     </div>
 
     <script src="js/config/constants.js"></script>
+    <script src="js/utils/commonUtils.js"></script>
     <script src="js/ui/uiManager.js"></script>
     <script src="js/services/turnService.js"></script>
     <script src="js/services/statsService.js"></script>

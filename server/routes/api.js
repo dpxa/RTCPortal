@@ -24,20 +24,19 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
     );
   }
 
-  const fetch = (await import("node-fetch")).default;
-  const apiKey = process.env.METERED_API_KEY;
-
-  if (!apiKey) {
-    return sendError(
-      res,
-      HTTP_STATUS.INTERNAL_SERVER_ERROR,
-      "API key not configured on the server.",
-    );
-  }
-
-  const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${apiKey}`;
-
   try {
+    const fetch = (await import("node-fetch")).default;
+    const apiKey = process.env.METERED_API_KEY;
+
+    if (!apiKey) {
+      return sendError(
+        res,
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        "API key not configured on the server.",
+      );
+    }
+
+    const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${apiKey}`;
     const response = await fetch(meteredApiUrl);
 
     if (!response.ok) {

@@ -77,6 +77,10 @@
   overflow-wrap: anywhere;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   min-height: 100vh;
@@ -219,6 +223,11 @@ input[type="text"] {
   border-color: var(--primary-dark);
 }
 
+.drop-zone.highlight {
+  background-color: var(--drop-zone-hover-bg);
+  border-color: var(--primary-dark);
+}
+
 .drop-zone-text {
   font-size: 0.9rem;
   color: var(--text-color);
@@ -322,6 +331,16 @@ input:disabled {
   font-size: 0.7rem;
 }
 
+.message.visible {
+  display: inline-block;
+}
+
+.message.error {
+  border: 1.5px solid var(--danger);
+  color: var(--danger);
+  padding: 1px 2px;
+}
+
 .message.success {
   color: var(--text-color);
   padding: 2px 4px 2px 0;
@@ -396,6 +415,113 @@ input:disabled {
 .erase-history-btn {
   font-size: 0.8rem;
   padding: 4px 8px;
+  display: inline-block;
+}
+
+.pin-action-buttons {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.qr-code-wrapper {
+  text-align: center;
+  margin-bottom: 4px;
+  margin-top: 0;
+}
+
+.qr-code-container {
+  display: inline-block;
+  padding: 5px;
+  background: var(--white-color);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+}
+
+.chat-history-list {
+  height: auto;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.peer-id-display {
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-left: -2px;
+  color: var(--muted-text);
+}
+
+.edit-nickname-btn {
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-weight: bold;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.transfer-status-text {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.connection-status-emphasis {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 3px;
+}
+
+.history-session-block {
+  border-bottom: 1px dashed var(--input-border);
+  padding-bottom: 10px;
+  margin-bottom: 5px;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-session-timestamp {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--muted-text);
+  margin-bottom: 8px;
+}
+
+.history-entry-wrapper {
+  padding: 0;
+  word-break: break-all;
+}
+
+.history-entry-row {
+  padding: 4px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.history-entry-label {
+  font-weight: bold;
+}
+
+.history-entry-meta {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--meta-text);
+  margin-left: 0;
+}
+
+.history-entry-meta.indented {
+  margin-left: 8px;
+}
+
+.theme-toggle .sun-icon.icon-hidden,
+.theme-toggle .moon-icon.icon-hidden {
   display: none;
 }
 
@@ -546,7 +672,6 @@ footer {
 }
 
 .progress-container {
-  display: none;
   height: 20px;
   background: var(--muted-bg);
   border-radius: 10px;
@@ -671,6 +796,12 @@ footer {
   background-color: var(--peer-message-bg);
   color: var(--text-color);
   border-bottom-left-radius: 4px;
+}
+
+.chat-message-time {
+  font-size: 0.7em;
+  opacity: 0.7;
+  margin-left: 8px;
 }
 
 .chat-input-container {
@@ -879,17 +1010,47 @@ body.dark-mode .zip-download-btn:hover {
   font-size: 0.85rem;
   color: var(--accent);
   font-family: var(--font-family);
+  margin-bottom: 8px;
 }
 
 #received-stats {
   font-size: 0.85rem;
   color: var(--primary-color);
   font-family: var(--font-family);
+  margin-bottom: 4px;
 }
 
 #sent-buttons-container {
   margin-top: 8px;
-  display: none;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+#sent-progress-container,
+#received-progress-container {
+  margin-top: 15px;
+  margin-bottom: 10px;
+}
+
+#transfer-status-sent {
+  margin-top: 0;
+}
+
+#transfer-status-received {
+  margin-top: 0;
+}
+
+.stats-value.stats-good {
+  color: var(--accent);
+}
+
+.stats-value.stats-warn {
+  color: var(--pause-color);
+}
+
+.stats-value.stats-bad {
+  color: var(--danger);
 }
 
 #sent-buttons-container #pause-transfer-btn {

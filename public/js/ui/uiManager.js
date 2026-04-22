@@ -8,19 +8,29 @@ class UIManager {
     this.currentReceiveProgress = -1;
     this.nicknames = {};
 
+    this.webRtcHandlers = {};
+    this.fileTransferHandlers = {};
+    this.historyClearHandlers = new Set();
+    this.pageExitHandlers = new Set();
+
     this._initializeElements();
     this._attachEventListeners();
     this.initializeTemplates();
     this.initializeTheme();
-
-    document.addEventListener("clear-history", () => {
-      if (this.chatHistoryList) this.chatHistoryList.innerHTML = "";
-      if (this.chatHistorySection)
-        this.chatHistorySection.style.display = "none";
-    });
+    this.setConnectButtonEnabled(this.getPartnerIdValue() !== "");
   }
 
   _initializeElements() {
+    this.myIdDisplay = document.getElementById("my-id-display");
+    this.pinActionButtons = document.getElementById("pin-action-buttons");
+    this.copyIdBtn = document.getElementById("copy-id-btn");
+    this.copyLinkBtn = document.getElementById("copy-link-btn");
+    this.showQrBtn = document.getElementById("show-qr-btn");
+    this.qrCodeWrapper = document.getElementById("qr-code-wrapper");
+    this.qrCodeContainer = document.getElementById("qr-code-container");
+    this.partnerIdField = document.getElementById("partner-id-field");
+    this.connectBtn = document.getElementById("connect-btn");
+
     this.statusIdMessage = document.getElementById("status-id-message");
     this.activeConnectionContainer = document.getElementById(
       "active-connection-container",
@@ -35,6 +45,11 @@ class UIManager {
 
     this.fileTransferSection = document.getElementById("file-transfer-section");
     this.uploadField = document.getElementById("upload-field");
+    this.folderUploadField = document.getElementById("folder-upload-field");
+    this.dropZone = document.getElementById("drop-zone");
+    this.browseFilesBtn = document.getElementById("browse-files-btn");
+    this.browseFolderBtn = document.getElementById("browse-folder-btn");
+    this.fileNameDisplay = document.getElementById("file-name-display");
     this.fileTransferBtn = document.getElementById("file-transfer-btn");
     this.fileStatusMessage = document.getElementById("file-status-message");
 
@@ -66,6 +81,12 @@ class UIManager {
     this.toggleChatBtn = document.getElementById("toggle-chat-btn");
     this.chatHistorySection = document.getElementById("chat-history-section");
     this.chatHistoryList = document.getElementById("chat-history-list");
+
+    this.successRateDisplay = document.getElementById("success-rate-display");
+    this.uptimeDisplay = document.getElementById("uptime-display");
+    this.totalDataDisplay = document.getElementById("total-data-display");
+    this.totalFilesDisplay = document.getElementById("total-files-display");
+
     this.themeToggleBtn = document.getElementById("theme-toggle");
   }
 
@@ -77,25 +98,229 @@ class UIManager {
       this.chatSendBtn.addEventListener("click", () => this.handleSendChat());
     }
     if (this.chatInput) {
-      this.chatInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") this.handleSendChat();
+      this.chatInput.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+          this.handleSendChat();
+        }
       });
+    }
+
+    if (this.copyIdBtn) {
+      this.copyIdBtn.addEventListener("click", () => {
+        this._safeCall(this.webRtcHandlers.onCopyId);
+      });
+    }
+    if (this.copyLinkBtn) {
+      this.copyLinkBtn.addEventListener("click", () => {
+        this._safeCall(this.webRtcHandlers.onCopyLink);
+      });
+    }
+    if (this.showQrBtn) {
+      this.showQrBtn.addEventListener("click", () => {
+        this._safeCall(this.webRtcHandlers.onToggleQr);
+      });
+    }
+    if (this.partnerIdField) {
+      this.partnerIdField.addEventListener("input", () => {
+        this.setConnectButtonEnabled(this.getPartnerIdValue() !== "");
+        this._safeCall(
+          this.webRtcHandlers.onPartnerIdInput,
+          this.getPartnerIdValue(),
+        );
+      });
+    }
+    if (this.connectBtn) {
+      this.connectBtn.addEventListener("click", () => {
+        this._safeCall(this.webRtcHandlers.onConnect);
+      });
+    }
+    if (this.endBtn) {
+      this.endBtn.addEventListener("click", () => {
+        this._safeCall(this.webRtcHandlers.onDisconnect);
+      });
+    }
+
+    if (this.browseFilesBtn && this.uploadField) {
+      this.browseFilesBtn.addEventListener("click", () => {
+        this.uploadField.click();
+      });
+    }
+
+    if (this.browseFolderBtn && this.folderUploadField) {
+      this.browseFolderBtn.addEventListener("click", () => {
+        this._safeCall(this._handleFolderBrowseClick.bind(this));
+      });
+    }
+
+    if (this.uploadField) {
+      this.uploadField.addEventListener("change", () => {
+        this._safeCall(
+          this.fileTransferHandlers.onFilesSelected,
+          this.uploadField.files,
+          null,
+        );
+      });
+    }
+
+    if (this.folderUploadField) {
+      this.folderUploadField.addEventListener("change", () => {
+        let rootFolderName = null;
+        if (this.folderUploadField.files.length > 0) {
+          const firstPath = this.folderUploadField.files[0].webkitRelativePath;
+          if (firstPath && firstPath.includes("/")) {
+            rootFolderName = firstPath.split("/")[0];
+          }
+        }
+
+        this._safeCall(
+          this.fileTransferHandlers.onFilesSelected,
+          this.folderUploadField.files,
+          rootFolderName,
+        );
+      });
+    }
+
+    if (this.dropZone) {
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+        this.dropZone.addEventListener(eventName, this.preventDefaults, false);
+      });
+
+      ["dragenter", "dragover"].forEach((eventName) => {
+        this.dropZone.addEventListener(
+          eventName,
+          () => this.dropZone.classList.add("highlight"),
+          false,
+        );
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        this.dropZone.addEventListener(
+          eventName,
+          () => this.dropZone.classList.remove("highlight"),
+          false,
+        );
+      });
+
+      this.dropZone.addEventListener("drop", (event) => {
+        this._safeCall(this.fileTransferHandlers.onDrop, event);
+      });
+    }
+
+    if (this.fileTransferBtn) {
+      this.fileTransferBtn.addEventListener("click", () => {
+        this._safeCall(this.fileTransferHandlers.onSendTransfer);
+      });
+    }
+
+    document.addEventListener("paste", (event) => {
+      this._safeCall(this.fileTransferHandlers.onPaste, event);
+    });
+
+    document.addEventListener("clear-history", () => {
+      this._clearChatHistoryUI();
+      for (const handler of this.historyClearHandlers) {
+        this._safeCall(handler);
+      }
+      this.setClearHistoryVisible(false);
+    });
+
+    const handlePageExit = () => {
+      for (const handler of this.pageExitHandlers) {
+        this._safeCall(handler);
+      }
+    };
+
+    window.addEventListener("beforeunload", handlePageExit);
+    window.addEventListener("pagehide", handlePageExit);
+  }
+
+  async _handleFolderBrowseClick() {
+    if (!this.folderUploadField) return;
+
+    if (window.showDirectoryPicker) {
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        this._safeCall(
+          this.fileTransferHandlers.onDirectoryHandleSelected,
+          dirHandle,
+        );
+      } catch (error) {
+        if (error && error.name !== "AbortError") {
+          this.folderUploadField.click();
+        }
+      }
+      return;
+    }
+
+    this.folderUploadField.click();
+  }
+
+  _safeCall(handler, ...args) {
+    if (typeof handler !== "function") return;
+
+    try {
+      const result = handler(...args);
+      if (result && typeof result.then === "function") {
+        result.catch((error) => {
+          console.error("UI callback failed:", error);
+        });
+      }
+    } catch (error) {
+      console.error("UI callback failed:", error);
+    }
+  }
+
+  _setHidden(element, shouldHide) {
+    if (element) {
+      element.hidden = Boolean(shouldHide);
+    }
+  }
+
+  _isVisible(element) {
+    return !!element && !element.hidden;
+  }
+
+  bindWebRTCHandlers(handlers) {
+    this.webRtcHandlers = {
+      ...this.webRtcHandlers,
+      ...handlers,
+    };
+  }
+
+  bindFileTransferHandlers(handlers) {
+    this.fileTransferHandlers = {
+      ...this.fileTransferHandlers,
+      ...handlers,
+    };
+  }
+
+  registerHistoryClearHandler(handler) {
+    if (typeof handler === "function") {
+      this.historyClearHandlers.add(handler);
+    }
+  }
+
+  registerPageExitHandler(handler) {
+    if (typeof handler === "function") {
+      this.pageExitHandlers.add(handler);
     }
   }
 
   initializeTheme() {
     if (!this.themeToggleBtn) return;
+
     this.createThemeIcon();
 
     const applyTheme = (isDark, savePreference = false) => {
       document.body.classList.toggle("dark-mode", isDark);
       this.updateThemeIcon(isDark);
-      if (savePreference) {
-        try {
-          localStorage.setItem("rtcTheme", isDark ? "dark" : "light");
-        } catch (e) {
-          console.warn("Unable to save theme preference:", e);
-        }
+
+      if (!savePreference) return;
+
+      try {
+        localStorage.setItem("rtcTheme", isDark ? "dark" : "light");
+      } catch (error) {
+        console.warn("Unable to save theme preference:", error);
       }
     };
 
@@ -111,8 +336,8 @@ class UIManager {
     let persistedTheme = null;
     try {
       persistedTheme = localStorage.getItem("rtcTheme");
-    } catch (e) {
-      console.warn("localStorage restricted:", e);
+    } catch (error) {
+      console.warn("localStorage restricted:", error);
     }
 
     if (persistedTheme === "dark") {
@@ -122,22 +347,25 @@ class UIManager {
     }
 
     try {
-      const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
-      if (!persistedTheme && matchMedia.matches) {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      if (!persistedTheme && mediaQuery.matches) {
         applyTheme(true);
       }
 
-      if (matchMedia.addEventListener) {
-        matchMedia.addEventListener("change", (e) => {
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener("change", (event) => {
           let currentPreference = null;
           try {
             currentPreference = localStorage.getItem("rtcTheme");
-          } catch (err) {}
-          if (!currentPreference) applyTheme(e.matches);
+          } catch (error) {}
+
+          if (!currentPreference) {
+            applyTheme(event.matches);
+          }
         });
       }
-    } catch (e) {
-      console.warn("Theme media matching failed:", e);
+    } catch (error) {
+      console.warn("Theme media matching failed:", error);
     }
   }
 
@@ -147,7 +375,7 @@ class UIManager {
     this.themeToggleBtn.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path class="moon-icon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        <g class="sun-icon" style="display: none">
+        <g class="sun-icon icon-hidden">
           <circle cx="12" cy="12" r="5"></circle>
           <line x1="12" y1="1" x2="12" y2="3"></line>
           <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -168,15 +396,10 @@ class UIManager {
     const moonIcon = this.themeToggleBtn.querySelector(".moon-icon");
     const sunIcon = this.themeToggleBtn.querySelector(".sun-icon");
 
-    if (moonIcon && sunIcon) {
-      if (isDark) {
-        moonIcon.style.display = "none";
-        sunIcon.style.display = "block";
-      } else {
-        moonIcon.style.display = "block";
-        sunIcon.style.display = "none";
-      }
-    }
+    if (!moonIcon || !sunIcon) return;
+
+    moonIcon.classList.toggle("icon-hidden", isDark);
+    sunIcon.classList.toggle("icon-hidden", !isDark);
   }
 
   getNickname(peerId) {
@@ -186,6 +409,7 @@ class UIManager {
 
   setNickname(peerId, name) {
     if (!peerId) return;
+
     if (name && name.trim() !== "") {
       this.nicknames[peerId] = name.trim();
     } else {
@@ -193,13 +417,15 @@ class UIManager {
     }
 
     const currentPeerId =
-      this.activeConnectionStatus.getAttribute("data-peer-id");
+      this.activeConnectionStatus?.getAttribute("data-peer-id");
     if (currentPeerId === peerId) {
       this.updatePeerIdentityDisplay(peerId);
     }
   }
 
   updatePeerIdentityDisplay(peerId) {
+    if (!this.activeConnectionStatus || !this.activeConnectionContainer) return;
+
     const nickname = this.getNickname(peerId);
     this.activeConnectionStatus.textContent = nickname;
 
@@ -209,13 +435,9 @@ class UIManager {
       if (!idSpan) {
         idSpan = document.createElement("span");
         idSpan.id = "peer-id-display-span";
-        idSpan.style.cssText = `
-          font-size: 0.75rem; 
-          font-style: italic; 
-          margin-left: -2px; 
-          color: var(--muted-text, #999);
-        `;
+        idSpan.className = "peer-id-display";
       }
+
       idSpan.textContent = `(${peerId})`;
 
       const editBtn = document.getElementById("edit-nickname-btn");
@@ -229,102 +451,108 @@ class UIManager {
     }
   }
 
-  setEditButtonStyles(editBtn) {
-    editBtn.style.cssText = `
-      padding: 2px 6px;
-      cursor: pointer;
-      font-size: 0.9rem;
-      background: transparent;
-      border: 1px solid var(--primary-color, #4a90e2);
-      color: var(--primary-color, #4a90e2);
-      border-radius: 4px;
-      box-shadow: none;
-      font-weight: bold;
-    `;
-  }
-
   ensureEditNicknameButton() {
+    if (!this.activeConnectionContainer) return null;
+
     let editBtn = document.getElementById("edit-nickname-btn");
     if (!editBtn) {
       editBtn = document.createElement("button");
       editBtn.id = "edit-nickname-btn";
-      editBtn.textContent = "✎";
+      editBtn.className = "edit-nickname-btn";
+      editBtn.textContent = "Edit";
       editBtn.title = "Edit Nickname";
-      this.setEditButtonStyles(editBtn);
       editBtn.addEventListener("click", () => {
-        const pid = this.activeConnectionStatus.getAttribute("data-peer-id");
-        const currentName = this.getNickname(pid);
+        const peerId =
+          this.activeConnectionStatus?.getAttribute("data-peer-id");
+        if (!peerId) return;
+
+        const currentName = this.getNickname(peerId);
         const newName = prompt(
           "Enter nickname for this peer:",
-          currentName === pid ? "" : currentName,
+          currentName === peerId ? "" : currentName,
         );
+
         if (newName !== null) {
-          this.setNickname(pid, newName);
+          this.setNickname(peerId, newName);
         }
       });
       this.activeConnectionContainer.appendChild(editBtn);
     }
+
     return editBtn;
   }
 
   initializeTemplates() {
     this.sentTemplateHTML = `
       <div id="sent-container">
-        <div class="progress-container" id="sent-progress-container" style="margin-top: 15px; margin-bottom: 10px;">
-          <div class="progress-bar" style="width: 0%;"></div>
-          <span class="progress-percentage" style="display:none;">0%</span>
+        <div class="progress-container" id="sent-progress-container" hidden>
+          <div class="progress-bar"></div>
+          <span class="progress-percentage" hidden>0%</span>
         </div>
-        <div id="sent-stats" style="margin-bottom: 8px;"></div>
-        <div id="sent-buttons-container" style="margin-bottom: 8px; display: none;">
-            <button id="pause-transfer-btn">Pause</button>
-            <button id="stop-transfer-btn">Stop</button>
+        <div id="sent-stats" hidden></div>
+        <div id="sent-buttons-container" hidden>
+          <button id="pause-transfer-btn">Pause</button>
+          <button id="stop-transfer-btn">Stop</button>
         </div>
-        <div id="transfer-status-sent"></div>
+        <div id="transfer-status-sent" class="transfer-status-text"></div>
       </div>
     `;
 
     this.receivedTemplateHTML = `
       <div id="received-container">
-        <div class="progress-container" id="received-progress-container" style="margin-top: 15px; margin-bottom: 10px;">
-          <div class="progress-bar" style="width: 0%;"></div>
-          <span class="progress-percentage" style="display:none;">0%</span>
+        <div class="progress-container" id="received-progress-container" hidden>
+          <div class="progress-bar"></div>
+          <span class="progress-percentage" hidden>0%</span>
         </div>
-        <div id="received-stats" style="margin-bottom: 4px;"></div>
-        <div id="transfer-status-received" style="margin-top: 0px;"></div>
+        <div id="received-stats" hidden></div>
+        <div id="transfer-status-received" class="transfer-status-text"></div>
       </div>
     `;
   }
 
-  setAlertMessage(targetElement, { text, isError = false }) {
+  setAlertMessage(targetElement, { text, isError = false, isSuccess = false }) {
+    if (!targetElement) return;
+
+    targetElement.classList.remove("error", "success", "visible");
+
+    if (!text) {
+      targetElement.textContent = "";
+      return;
+    }
+
     targetElement.textContent = text;
-    targetElement.style.cssText = isError
-      ? `display: inline-block; border: 1.5px solid red; color: red; padding: 1px 2px;`
-      : `display: inline-block; border: ""; color: ""; padding: "";`;
+    targetElement.classList.add("visible");
+    if (isError) targetElement.classList.add("error");
+    if (isSuccess) targetElement.classList.add("success");
   }
 
   showCopied() {
     clearTimeout(this.idMsgTimer);
-    this.statusIdMessage.classList.add("success");
-    this.setAlertMessage(this.statusIdMessage, { text: "Copied" });
+    this.setAlertMessage(this.statusIdMessage, {
+      text: "Copied",
+      isSuccess: true,
+    });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
-  showIdError(msg) {
+  showIdError(message) {
     clearTimeout(this.idMsgTimer);
-    this.setAlertMessage(this.statusIdMessage, { text: msg, isError: true });
+    this.setAlertMessage(this.statusIdMessage, {
+      text: message,
+      isError: true,
+    });
     this.idMsgTimer = setTimeout(() => this.clearAlert(), ALERT_TIMEOUT);
   }
 
   clearAlert() {
     clearTimeout(this.idMsgTimer);
-    this.statusIdMessage.classList.remove("success");
     this.clearMessage(this.statusIdMessage);
   }
 
   showFileAlert(message) {
     clearTimeout(this.fileMsgTimer);
-    this.uploadField.value = "";
-    this.fileTransferBtn.disabled = true;
+    this.clearFileInputs();
+    this.setFileTransferButtonEnabled(false);
     this.setAlertMessage(this.fileStatusMessage, {
       text: message,
       isError: true,
@@ -350,31 +578,168 @@ class UIManager {
   }
 
   clearMessage(targetElement) {
+    if (!targetElement) return;
     targetElement.textContent = "";
-    targetElement.style.cssText = `display: none; border: ""; color: ""; padding: "";`;
+    targetElement.classList.remove("error", "success", "visible");
+  }
+
+  setConnectButtonEnabled(isEnabled) {
+    if (this.connectBtn) {
+      this.connectBtn.disabled = !isEnabled;
+    }
+  }
+
+  getPartnerIdValue() {
+    if (!this.partnerIdField) return "";
+    return this.partnerIdField.value.trim();
+  }
+
+  setPartnerIdValue(value) {
+    if (!this.partnerIdField) return;
+    this.partnerIdField.value = value || "";
+    this.setConnectButtonEnabled(this.getPartnerIdValue() !== "");
+  }
+
+  consumePartnerIdValue() {
+    const value = this.getPartnerIdValue();
+    this.setPartnerIdValue("");
+    return value;
+  }
+
+  isQrVisible() {
+    return this._isVisible(this.qrCodeWrapper);
+  }
+
+  showQrCodeForId(selfId) {
+    if (typeof QRCode === "undefined") {
+      this.showIdError("QR Code library failed to load");
+      return false;
+    }
+
+    if (
+      !selfId ||
+      !this.qrCodeContainer ||
+      !this.qrCodeWrapper ||
+      !this.showQrBtn
+    ) {
+      return false;
+    }
+
+    const url = `${window.location.origin}${window.location.pathname}?peer=${selfId}`;
+
+    this._setHidden(this.qrCodeWrapper, false);
+    this.showQrBtn.textContent = "Hide QR";
+    this.qrCodeContainer.innerHTML = "";
+
+    new QRCode(this.qrCodeContainer, {
+      text: url,
+      width: 128,
+      height: 128,
+      colorDark: getCssVar("--qr-color-dark", "#000000"),
+      colorLight: getCssVar("--qr-color-light", "#ffffff"),
+      correctLevel: QRCode.CorrectLevel.H,
+    });
+
+    return true;
+  }
+
+  hideQrCode() {
+    this._setHidden(this.qrCodeWrapper, true);
+    if (this.showQrBtn) {
+      this.showQrBtn.textContent = "QR Code";
+    }
+  }
+
+  toggleQrCodeForId(selfId) {
+    if (this.isQrVisible()) {
+      this.hideQrCode();
+      return false;
+    }
+
+    return this.showQrCodeForId(selfId);
+  }
+
+  setLocalPinAssigned(pin) {
+    if (!this.myIdDisplay) return;
+
+    this.myIdDisplay.classList.remove("inactive");
+    this.myIdDisplay.classList.add("active");
+    this.myIdDisplay.textContent = pin;
+    this._setHidden(this.pinActionButtons, false);
+  }
+
+  setLocalPinStatus(text) {
+    if (!this.myIdDisplay) return;
+
+    this.myIdDisplay.classList.remove("active");
+    this.myIdDisplay.classList.add("inactive");
+    this.myIdDisplay.textContent = text;
+    this._setHidden(this.pinActionButtons, true);
+    this.hideQrCode();
+  }
+
+  setFileSelectionSummary(text) {
+    if (this.fileNameDisplay) {
+      this.fileNameDisplay.textContent = text || "";
+    }
+  }
+
+  clearFileInputs() {
+    if (this.uploadField) this.uploadField.value = "";
+    if (this.folderUploadField) this.folderUploadField.value = "";
+  }
+
+  setFileTransferButtonEnabled(isEnabled) {
+    if (this.fileTransferBtn) {
+      this.fileTransferBtn.disabled = !isEnabled;
+    }
+  }
+
+  setSentButtonsVisible(isVisible) {
+    if (this.sentButtonsContainer) {
+      this._setHidden(this.sentButtonsContainer, !isVisible);
+    }
+  }
+
+  setPauseButtonLabel(label) {
+    if (this.pauseTransferBtn) {
+      this.pauseTransferBtn.textContent = label;
+    }
+  }
+
+  setSentStatus(text) {
+    if (this.transferStatusDivSent) {
+      this.transferStatusDivSent.textContent = text || "";
+    }
+  }
+
+  setReceivedStatus(text) {
+    if (this.transferStatusDivReceived) {
+      this.transferStatusDivReceived.textContent = text || "";
+    }
   }
 
   ensureSentContainer() {
+    if (!this.fileTransferSection) return;
+
     let container = document.getElementById("sent-container");
     const isNew = !container;
+
     if (isNew) {
-      const temp = document.createElement("div");
-      temp.innerHTML = this.sentTemplateHTML;
-      container = temp.firstElementChild;
+      const templateWrapper = document.createElement("div");
+      templateWrapper.innerHTML = this.sentTemplateHTML;
+      container = templateWrapper.firstElementChild;
       this.fileTransferSection.appendChild(container);
 
       this.transferStatusDivSent = container.querySelector(
         "#transfer-status-sent",
       );
-      this.transferStatusDivSent.style.wordBreak = "break-all";
-      this.transferStatusDivSent.style.overflowWrap = "anywhere";
-      this.transferStatusDivSent.style.whiteSpace = "pre-wrap";
       this.progressContainerSent = container.querySelector(
         "#sent-progress-container",
       );
       this.progressBarSent =
-        this.progressContainerSent.querySelector(".progress-bar");
-      this.progressPercentSent = this.progressContainerSent.querySelector(
+        this.progressContainerSent?.querySelector(".progress-bar");
+      this.progressPercentSent = this.progressContainerSent?.querySelector(
         ".progress-percentage",
       );
       this.sentStatsDiv = container.querySelector("#sent-stats");
@@ -386,44 +751,47 @@ class UIManager {
 
       if (this.pauseTransferBtn) {
         this.pauseTransferBtn.addEventListener("click", () => {
-          window.fileTransferManager.togglePause();
+          this._safeCall(this.fileTransferHandlers.onTogglePause);
         });
       }
 
       if (this.stopTransferBtn) {
         this.stopTransferBtn.addEventListener("click", () => {
-          window.fileTransferManager.stopTransfer();
+          this._safeCall(this.fileTransferHandlers.onStopTransfer);
         });
       }
     }
 
-    this.progressContainerSent.style.display = "block";
-    this.sentButtonsContainer.style.display = "block";
-    this.progressPercentSent.style.display = "inline-block";
+    this._setHidden(this.progressContainerSent, false);
+    this._setHidden(this.sentButtonsContainer, false);
+    this._setHidden(this.progressPercentSent, false);
   }
 
   _updateDocumentTitle() {
-    let parts = [];
+    const titleFragments = [];
+
     if (this.currentSendProgress >= 0 && this.currentSendProgress <= 100) {
-      parts.push(`${this.currentSendProgress}% S`);
+      titleFragments.push(`${this.currentSendProgress}% S`);
     }
+
     if (
       this.currentReceiveProgress >= 0 &&
       this.currentReceiveProgress <= 100
     ) {
-      parts.push(`${this.currentReceiveProgress}% R`);
+      titleFragments.push(`${this.currentReceiveProgress}% R`);
     }
 
-    if (parts.length > 0) {
-      document.title = `(${parts.join(", ")}) RTCPortal - P2P Transfer Hub`;
-    } else {
-      document.title = "RTCPortal - P2P Transfer Hub";
+    if (titleFragments.length > 0) {
+      document.title = `(${titleFragments.join(", ")}) RTCPortal - P2P Transfer Hub`;
+      return;
     }
+
+    document.title = "RTCPortal - P2P Transfer Hub";
   }
 
-  _updateProgressBar(barElem, percentElem, value) {
-    if (barElem) barElem.style.width = `${value}%`;
-    if (percentElem) percentElem.textContent = `${value}%`;
+  _updateProgressBar(barElement, percentElement, value) {
+    if (barElement) barElement.style.width = `${value}%`;
+    if (percentElement) percentElement.textContent = `${value}%`;
   }
 
   updateSentProgressBarValue(value) {
@@ -438,24 +806,24 @@ class UIManager {
 
   _updateStatsBlock(statsDiv, buttonsContainer, speed, eta) {
     if (!statsDiv) return;
+
     if (speed === "" && eta === "") {
-      statsDiv.style.display = "none";
-      statsDiv.innerHTML = "";
+      statsDiv.hidden = true;
+      statsDiv.textContent = "";
       if (buttonsContainer) {
-        buttonsContainer.style.display = "none";
+        buttonsContainer.hidden = true;
       }
       return;
     }
-    statsDiv.style.display = "block";
+
+    statsDiv.hidden = false;
 
     const isCalculating =
       !speed || speed === "-" || speed === "..." || !eta || eta === "-";
 
-    if (isCalculating) {
-      statsDiv.innerHTML = `<span class="transfer-speed">Calculating...</span>`;
-    } else {
-      statsDiv.innerHTML = `<span class="transfer-speed">${speed}</span> &nbsp;&nbsp; <span class="transfer-eta">ETA: ${eta}</span>`;
-    }
+    statsDiv.textContent = isCalculating
+      ? "Calculating..."
+      : `${speed}  ETA: ${eta}`;
   }
 
   updateSentStats(speed, eta) {
@@ -484,6 +852,7 @@ class UIManager {
     this._removeContainerAndReset("sent");
     this.currentSendProgress = -1;
     this._updateDocumentTitle();
+
     this.transferStatusDivSent = null;
     this.progressContainerSent = null;
     this.progressBarSent = null;
@@ -505,31 +874,30 @@ class UIManager {
   }
 
   ensureReceivedContainer() {
+    if (!this.fileTransferSection) return;
+
     let container = document.getElementById("received-container");
     if (!container) {
-      const temp = document.createElement("div");
-      temp.innerHTML = this.receivedTemplateHTML;
-      container = temp.firstElementChild;
+      const templateWrapper = document.createElement("div");
+      templateWrapper.innerHTML = this.receivedTemplateHTML;
+      container = templateWrapper.firstElementChild;
       this.fileTransferSection.appendChild(container);
 
       this.transferStatusDivReceived = container.querySelector(
         "#transfer-status-received",
       );
-      this.transferStatusDivReceived.style.wordBreak = "break-all";
-      this.transferStatusDivReceived.style.overflowWrap = "anywhere";
-      this.transferStatusDivReceived.style.whiteSpace = "pre-wrap";
       this.progressContainerReceived = container.querySelector(
         "#received-progress-container",
       );
       this.progressBarReceived =
-        this.progressContainerReceived.querySelector(".progress-bar");
+        this.progressContainerReceived?.querySelector(".progress-bar");
       this.progressPercentReceived =
-        this.progressContainerReceived.querySelector(".progress-percentage");
+        this.progressContainerReceived?.querySelector(".progress-percentage");
       this.receivedStatsDiv = container.querySelector("#received-stats");
     }
 
-    this.progressContainerReceived.style.display = "block";
-    this.progressPercentReceived.style.display = "inline-block";
+    this._setHidden(this.progressContainerReceived, false);
+    this._setHidden(this.progressPercentReceived, false);
   }
 
   updateReceivedProgressBarValue(value) {
@@ -550,6 +918,7 @@ class UIManager {
     this._removeContainerAndReset("received");
     this.currentReceiveProgress = -1;
     this._updateDocumentTitle();
+
     this.transferStatusDivReceived = null;
     this.progressContainerReceived = null;
     this.progressBarReceived = null;
@@ -558,26 +927,28 @@ class UIManager {
   }
 
   handleSendChat() {
-    const text = this.chatInput.value.trim();
-    if (text && window.webrtcManager) {
-      window.webrtcManager.sendChat(text);
-      this.chatInput.value = "";
-    }
+    const text = this.chatInput?.value.trim();
+    if (!text || !window.webrtcManager) return;
+
+    window.webrtcManager.sendChat(text);
+    this.chatInput.value = "";
   }
 
   toggleChat() {
     if (!this.chatSection) return;
 
-    if (this.chatSection.style.display === "none") {
-      this.chatSection.style.display = "block";
-      if (this.toggleChatBtn) {
-        this.toggleChatBtn.textContent = "Close Chat";
+    const showChat = !this._isVisible(this.chatSection);
+    this._setHidden(this.chatSection, !showChat);
+
+    if (this.toggleChatBtn) {
+      this.toggleChatBtn.textContent = showChat ? "Close Chat" : "Open Chat";
+      if (showChat) {
         this.toggleChatBtn.classList.remove("has-unread");
       }
+    }
+
+    if (showChat && this.chatBox) {
       this.chatBox.scrollTop = this.chatBox.scrollHeight;
-    } else {
-      this.chatSection.style.display = "none";
-      if (this.toggleChatBtn) this.toggleChatBtn.textContent = "Open Chat";
     }
   }
 
@@ -588,13 +959,10 @@ class UIManager {
     if (messages.length === 0) return;
 
     const historyBlock = document.createElement("div");
-    historyBlock.style.borderBottom = `1px dashed ${getCssVar("--input-border", "#ccc")}`;
-    historyBlock.style.paddingBottom = "10px";
-    historyBlock.style.marginBottom = "5px";
-    historyBlock.style.display = "flex";
-    historyBlock.style.flexDirection = "column";
+    historyBlock.className = "history-session-block";
 
     const timestamp = document.createElement("div");
+    timestamp.className = "history-session-timestamp";
 
     let peerLabel = "";
     if (peerDisplayName) {
@@ -608,33 +976,17 @@ class UIManager {
     }
 
     timestamp.textContent = `Session ended at ${new Date().toLocaleTimeString()}${peerLabel}`;
-    timestamp.style.fontSize = "0.75rem";
-    timestamp.style.fontStyle = "italic";
-    try {
-      const mut = getComputedStyle(document.documentElement).getPropertyValue(
-        "--muted-text",
-      );
-      timestamp.style.color = mut
-        ? mut.trim()
-        : getCssVar("--muted-text", "#999");
-    } catch (e) {
-      timestamp.style.color = getCssVar("--muted-text", "#999");
-    }
-    timestamp.style.marginBottom = "8px";
     historyBlock.appendChild(timestamp);
 
-    messages.forEach((msg) => {
-      const clone = msg.cloneNode(true);
+    messages.forEach((message) => {
+      const clone = message.cloneNode(true);
       historyBlock.appendChild(clone);
     });
 
     this.chatHistoryList.prepend(historyBlock);
 
-    if (this.transferHistoryDiv)
-      this.transferHistoryDiv.style.display = "block";
-    if (this.chatHistorySection)
-      this.chatHistorySection.style.display = "block";
-
+    this._setHidden(this.transferHistoryDiv, false);
+    this._setHidden(this.chatHistorySection, false);
     this.chatHistoryList.scrollTop = 0;
 
     this.ensureClearHistoryButton();
@@ -645,6 +997,7 @@ class UIManager {
 
   ensureClearHistoryButton() {
     let eraseHistoryBtn = document.getElementById("erase-history-btn");
+
     if (!eraseHistoryBtn) {
       eraseHistoryBtn = document.createElement("button");
       eraseHistoryBtn.id = "erase-history-btn";
@@ -654,38 +1007,77 @@ class UIManager {
         document.dispatchEvent(new Event("clear-history"));
       });
 
-      const container = document.querySelector(".erase-history-container");
-      if (container) container.appendChild(eraseHistoryBtn);
+      if (this.eraseHistoryContainer) {
+        this.eraseHistoryContainer.appendChild(eraseHistoryBtn);
+      }
     }
 
-    if (eraseHistoryBtn) eraseHistoryBtn.style.display = "inline-block";
-    const transferHistory = document.getElementById("transfer-history");
-    if (transferHistory) transferHistory.style.display = "block";
+    this.setClearHistoryVisible(true);
+    this._setHidden(this.transferHistoryDiv, false);
+  }
+
+  setClearHistoryVisible(isVisible) {
+    const eraseHistoryBtn = document.getElementById("erase-history-btn");
+    if (!eraseHistoryBtn) return;
+
+    eraseHistoryBtn.hidden = !isVisible;
+  }
+
+  _clearChatHistoryUI() {
+    if (this.chatHistoryList) {
+      this.chatHistoryList.innerHTML = "";
+    }
+
+    this._setHidden(this.chatHistorySection, true);
+  }
+
+  clearTransferHistoryUI() {
+    if (this.outgoingFilesContainer) this.outgoingFilesContainer.innerHTML = "";
+    if (this.incomingFilesContainer) this.incomingFilesContainer.innerHTML = "";
+    if (this.outgoingFoldersContainer)
+      this.outgoingFoldersContainer.innerHTML = "";
+    if (this.incomingFoldersContainer)
+      this.incomingFoldersContainer.innerHTML = "";
+
+    this._setHidden(this.transferHistoryDiv, true);
+    this._setHidden(this.outgoingFilesSection, true);
+    this._setHidden(this.incomingFilesSection, true);
+    this._setHidden(this.outgoingFoldersSection, true);
+    this._setHidden(this.incomingFoldersSection, true);
   }
 
   updateToIdle() {
-    const peerName = this.activeConnectionStatus
-      ? this.activeConnectionStatus.textContent
-      : null;
-    const peerId = this.activeConnectionStatus
-      ? this.activeConnectionStatus.getAttribute("data-peer-id")
-      : null;
+    const peerName = this.activeConnectionStatus?.textContent || null;
+    const peerId =
+      this.activeConnectionStatus?.getAttribute("data-peer-id") || null;
     this.archiveChat(peerName, peerId);
 
     const editBtn = document.getElementById("edit-nickname-btn");
-    if (editBtn) editBtn.style.display = "none";
+    if (editBtn) {
+      editBtn.hidden = true;
+    }
 
     this.clearFileAlert();
-    this.uploadField.value = "";
-    this.fileTransferBtn.disabled = true;
-    this.activeConnectionContainer.style.display = "none";
-    this.activeConnectionStatus.textContent = "";
-    this.endBtn.style.display = "none";
-    this.fileTransferSection.style.display = "none";
-    if (this.chatSection) this.chatSection.style.display = "none";
+    this.clearFileInputs();
+    this.setFileTransferButtonEnabled(false);
+
+    this._setHidden(this.activeConnectionContainer, true);
+    if (this.activeConnectionStatus) {
+      this.activeConnectionStatus.textContent = "";
+      this.activeConnectionStatus.removeAttribute("data-peer-id");
+      this.activeConnectionStatus.classList.remove(
+        "connection-status-emphasis",
+      );
+    }
+
+    this._setHidden(this.endBtn, true);
+    this._setHidden(this.fileTransferSection, true);
+    this._setHidden(this.chatSection, true);
+
     if (this.toggleChatBtn) {
-      this.toggleChatBtn.style.display = "none";
+      this._setHidden(this.toggleChatBtn, true);
       this.toggleChatBtn.classList.remove("has-unread");
+      this.toggleChatBtn.textContent = "Open Chat";
     }
 
     this.resetSentTransferUI();
@@ -696,136 +1088,131 @@ class UIManager {
     this.resetSentTransferUI();
     this.resetReceivedTransferUI();
 
-    this.activeConnectionContainer.style.display = "flex";
-    this.activeConnectionLabel.textContent = "Waiting for peer...";
-    this.activeConnectionStatus.textContent = "";
+    this._setHidden(this.activeConnectionContainer, false);
+    if (this.activeConnectionLabel) {
+      this.activeConnectionLabel.textContent = "Waiting for peer...";
+    }
+    if (this.activeConnectionStatus) {
+      this.activeConnectionStatus.textContent = "";
+      this.activeConnectionStatus.removeAttribute("data-peer-id");
+      this.activeConnectionStatus.classList.remove(
+        "connection-status-emphasis",
+      );
+    }
 
     const editBtn = document.getElementById("edit-nickname-btn");
-    if (editBtn) editBtn.style.display = "none";
+    if (editBtn) {
+      editBtn.hidden = true;
+    }
 
-    this.activeConnectionStatus.style.textDecoration = "";
-    this.activeConnectionStatus.style.textDecorationColor = "";
-    this.activeConnectionStatus.style.textDecorationThickness = "";
-    this.endBtn.textContent = "Cancel";
-    this.endBtn.style.display = "inline-block";
+    if (this.endBtn) {
+      this.endBtn.textContent = "Cancel";
+      this._setHidden(this.endBtn, false);
+    }
   }
 
   updateToConnectedAfterAbort(peerId) {
     this.resetSentTransferUI();
     this.resetReceivedTransferUI();
 
-    this.activeConnectionContainer.style.display = "flex";
-    this.activeConnectionLabel.textContent = "Connected to:";
+    this._setHidden(this.activeConnectionContainer, false);
+    if (this.activeConnectionLabel) {
+      this.activeConnectionLabel.textContent = "Connected to:";
+    }
 
-    this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
+    if (this.activeConnectionStatus) {
+      this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
+      this.activeConnectionStatus.classList.remove(
+        "connection-status-emphasis",
+      );
+    }
+
     this.updatePeerIdentityDisplay(peerId);
 
-    this.endBtn.textContent = "Disconnect";
-    this.endBtn.style.display = "inline-block";
+    if (this.endBtn) {
+      this.endBtn.textContent = "Disconnect";
+      this._setHidden(this.endBtn, false);
+    }
+
     const editBtn = this.ensureEditNicknameButton();
-    editBtn.style.display = "inline-block";
+    if (editBtn) {
+      editBtn.hidden = false;
+    }
 
-    this.updatePeerIdentityDisplay(peerId);
-
-    this.fileTransferSection.style.display = "block";
+    this._setHidden(this.fileTransferSection, false);
 
     if (this.toggleChatBtn) {
-      this.toggleChatBtn.style.display = "inline-block";
-      const isChatVisible =
-        this.chatSection && this.chatSection.style.display !== "none";
-      this.toggleChatBtn.textContent = isChatVisible
+      this._setHidden(this.toggleChatBtn, false);
+      this.toggleChatBtn.classList.remove("has-unread");
+      this.toggleChatBtn.textContent = this._isVisible(this.chatSection)
         ? "Close Chat"
         : "Open Chat";
-      this.toggleChatBtn.classList.remove("has-unread");
     }
   }
 
   updateToConnected(peerId) {
     clearTimeout(this.newIdAlertTimer);
 
-    this.uploadField.value = "";
-    this.fileTransferBtn.disabled = true;
+    this.clearFileInputs();
+    this.setFileTransferButtonEnabled(false);
 
     if (
       this.progressContainerSent &&
-      this.progressContainerSent.style.display !== "none"
+      this._isVisible(this.progressContainerSent)
     ) {
       this.resetSentTransferUI();
     }
     if (
       this.progressContainerReceived &&
-      this.progressContainerReceived.style.display !== "none"
+      this._isVisible(this.progressContainerReceived)
     ) {
       this.resetReceivedTransferUI();
     }
 
-    if (this.activeConnectionContainer.style.display !== "flex") {
-      this.activeConnectionContainer.style.display = "flex";
+    this._setHidden(this.activeConnectionContainer, false);
+
+    if (this.activeConnectionLabel) {
+      this.activeConnectionLabel.textContent = "Connected to:";
     }
 
-    this.activeConnectionLabel.textContent = "Connected to:";
-
-    this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
-    this.activeConnectionStatus.textContent = this.getNickname(peerId);
-
-    this.activeConnectionStatus.style.textDecoration = "underline";
-    try {
-      const ac = getComputedStyle(document.documentElement).getPropertyValue(
-        "--accent",
-      );
-      this.activeConnectionStatus.style.textDecorationColor = ac
-        ? ac.trim()
-        : getCssVar("--accent", "#27ae60");
-    } catch (e) {
-      this.activeConnectionStatus.style.textDecorationColor = getCssVar(
-        "--accent",
-        "#27ae60",
-      );
-    }
-    this.activeConnectionStatus.style.textDecorationThickness = "3px";
-
-    this.endBtn.textContent = "Disconnect";
-    if (this.endBtn.style.display !== "inline-block") {
-      this.endBtn.style.display = "inline-block";
-    }
-    const editBtn = this.ensureEditNicknameButton();
-    if (editBtn.style.display !== "inline-block") {
-      editBtn.style.display = "inline-block";
+    if (this.activeConnectionStatus) {
+      this.activeConnectionStatus.setAttribute("data-peer-id", peerId);
+      this.activeConnectionStatus.classList.add("connection-status-emphasis");
     }
 
     this.updatePeerIdentityDisplay(peerId);
 
-    if (this.fileTransferSection.style.display !== "block") {
-      this.fileTransferSection.style.display = "block";
+    if (this.endBtn) {
+      this.endBtn.textContent = "Disconnect";
+      this._setHidden(this.endBtn, false);
     }
 
+    const editBtn = this.ensureEditNicknameButton();
+    if (editBtn) {
+      editBtn.hidden = false;
+    }
+
+    this._setHidden(this.fileTransferSection, false);
+
     if (this.toggleChatBtn) {
-      if (this.toggleChatBtn.style.display !== "inline-block") {
-        this.toggleChatBtn.style.display = "inline-block";
-      }
-      const isChatVisible =
-        this.chatSection && this.chatSection.style.display !== "none";
-      this.toggleChatBtn.textContent = isChatVisible
+      this._setHidden(this.toggleChatBtn, false);
+      this.toggleChatBtn.classList.remove("has-unread");
+      this.toggleChatBtn.textContent = this._isVisible(this.chatSection)
         ? "Close Chat"
         : "Open Chat";
-      this.toggleChatBtn.classList.remove("has-unread");
     }
 
     this.newIdAlertTimer = setTimeout(() => {
-      this.activeConnectionStatus.style.textDecoration = "";
-      this.activeConnectionStatus.style.textDecorationColor = "";
-      this.activeConnectionStatus.style.textDecorationThickness = "";
+      this.activeConnectionStatus?.classList.remove(
+        "connection-status-emphasis",
+      );
     }, ID_UNDERLINE_TIMEOUT);
   }
 
   appendChatMessage(text, isSelf) {
     if (!this.chatBox) return;
 
-    if (
-      !isSelf &&
-      this.chatSection &&
-      this.chatSection.style.display === "none"
-    ) {
+    if (!isSelf && this.chatSection && !this._isVisible(this.chatSection)) {
       if (this.toggleChatBtn) {
         this.toggleChatBtn.classList.add("has-unread");
       }
@@ -836,25 +1223,220 @@ class UIManager {
       placeholder.remove();
     }
 
-    const msgDiv = document.createElement("div");
-    msgDiv.classList.add("chat-message");
-    msgDiv.classList.add(isSelf ? "self" : "peer");
-
-    msgDiv.textContent = text;
+    const messageDiv = document.createElement("div");
+    messageDiv.classList.add("chat-message", isSelf ? "self" : "peer");
+    messageDiv.textContent = text;
 
     const timeSpan = document.createElement("span");
-    timeSpan.style.fontSize = "0.7em";
-    timeSpan.style.opacity = "0.7";
-    timeSpan.style.marginLeft = "8px";
-    const now = new Date();
-    timeSpan.textContent = now.toLocaleTimeString([], {
+    timeSpan.className = "chat-message-time";
+    timeSpan.textContent = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
-    msgDiv.appendChild(timeSpan);
 
-    this.chatBox.appendChild(msgDiv);
+    messageDiv.appendChild(timeSpan);
+
+    this.chatBox.appendChild(messageDiv);
     this.chatBox.scrollTop = this.chatBox.scrollHeight;
+  }
+
+  renderTransferHistoryBatch(payload) {
+    const {
+      batch,
+      direction,
+      rootDirectoryName,
+      peerDisplay,
+      onZipDownload,
+      singleFileDownload,
+    } = payload;
+
+    if (!Array.isArray(batch) || batch.length === 0) return;
+
+    const isFolderItem =
+      Boolean(rootDirectoryName) ||
+      batch.some(
+        (file) => file.isDirectoryMarker || String(file.name).includes("/"),
+      );
+
+    let displayName = "Files";
+    if (rootDirectoryName) {
+      displayName = rootDirectoryName;
+    } else if (isFolderItem) {
+      displayName = String(batch[0].name || "").split("/")[0] || "Folder";
+    } else if (batch.length === 1) {
+      displayName = String(batch[0].name || "File");
+    } else {
+      displayName = `${batch.length} files`;
+    }
+
+    const totalSize = batch.reduce(
+      (total, file) => total + (Number(file.size) || 0),
+      0,
+    );
+    const isSingleFile = batch.length === 1 && !isFolderItem;
+
+    const wrapperDiv = document.createElement("div");
+    wrapperDiv.className = "history-entry-wrapper";
+
+    if (
+      direction === "from" &&
+      !isSingleFile &&
+      typeof onZipDownload === "function"
+    ) {
+      const buttonContainer = document.createElement("div");
+      buttonContainer.className = "batch-zip-container";
+
+      const downloadButton = document.createElement("button");
+      downloadButton.className = "zip-download-btn";
+      downloadButton.textContent = isFolderItem
+        ? `Download ${displayName}`
+        : `Download ${batch.length} files (ZIP)`;
+
+      downloadButton.addEventListener("click", async () => {
+        const defaultText = downloadButton.textContent;
+        downloadButton.textContent = "Zipping...";
+        downloadButton.disabled = true;
+
+        try {
+          await onZipDownload(downloadButton, displayName);
+        } finally {
+          downloadButton.textContent = defaultText;
+          downloadButton.disabled = false;
+        }
+      });
+
+      buttonContainer.appendChild(downloadButton);
+      wrapperDiv.appendChild(buttonContainer);
+    }
+
+    const entryDiv = document.createElement("div");
+    entryDiv.className = "history-entry-row";
+
+    const shouldRenderAnchor =
+      direction === "from" && isSingleFile && singleFileDownload?.url;
+
+    const label = document.createElement(shouldRenderAnchor ? "a" : "span");
+    label.className = "history-entry-label";
+
+    if (shouldRenderAnchor) {
+      label.href = singleFileDownload.url;
+      label.download = singleFileDownload.fileName;
+    }
+
+    label.textContent = displayName;
+    entryDiv.appendChild(label);
+
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "history-entry-meta";
+    metaSpan.textContent = `(${appUtils.formatBytes(totalSize)}) ${
+      direction === "from" ? "Received from" : "Sent to"
+    }: ${peerDisplay}, at ${new Date().toLocaleTimeString()}`;
+    entryDiv.appendChild(metaSpan);
+
+    wrapperDiv.appendChild(entryDiv);
+
+    const targetContainer =
+      direction === "from"
+        ? isFolderItem
+          ? this.incomingFoldersContainer
+          : this.incomingFilesContainer
+        : isFolderItem
+          ? this.outgoingFoldersContainer
+          : this.outgoingFilesContainer;
+
+    const targetSection =
+      direction === "from"
+        ? isFolderItem
+          ? this.incomingFoldersSection
+          : this.incomingFilesSection
+        : isFolderItem
+          ? this.outgoingFoldersSection
+          : this.outgoingFilesSection;
+
+    if (!targetContainer || !targetSection) return;
+
+    this._setHidden(targetSection, false);
+
+    if (targetContainer.firstChild) {
+      targetContainer.insertBefore(wrapperDiv, targetContainer.firstChild);
+    } else {
+      targetContainer.appendChild(wrapperDiv);
+    }
+
+    this._setHidden(this.transferHistoryDiv, false);
+    this.ensureClearHistoryButton();
+  }
+
+  isTextInputFocused() {
+    if (!document.activeElement) return false;
+    const tag = document.activeElement.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA";
+  }
+
+  updateConnectionStats(stats) {
+    if (!stats) return;
+
+    if (this.successRateDisplay) {
+      this.successRateDisplay.textContent = `${stats.successRate}%`;
+      this.successRateDisplay.classList.remove(
+        "stats-good",
+        "stats-warn",
+        "stats-bad",
+      );
+
+      if (stats.successRate >= 80) {
+        this.successRateDisplay.classList.add("stats-good");
+      } else if (stats.successRate >= 60) {
+        this.successRateDisplay.classList.add("stats-warn");
+      } else {
+        this.successRateDisplay.classList.add("stats-bad");
+      }
+    }
+
+    if (this.uptimeDisplay) {
+      this.uptimeDisplay.textContent = appUtils.formatUptime(stats.uptimeMs);
+    }
+
+    if (this.totalDataDisplay) {
+      this.totalDataDisplay.textContent = appUtils.formatBytes(
+        stats.totalBytesTransferred || 0,
+      );
+    }
+
+    if (this.totalFilesDisplay) {
+      this.totalFilesDisplay.textContent = (
+        stats.totalFilesTransferred || 0
+      ).toLocaleString();
+    }
+  }
+
+  showConnectionStatsError() {
+    if (this.successRateDisplay) {
+      this.successRateDisplay.textContent = "Error";
+      this.successRateDisplay.classList.remove(
+        "stats-good",
+        "stats-warn",
+        "stats-bad",
+      );
+    }
+
+    if (this.uptimeDisplay) this.uptimeDisplay.textContent = "Error";
+    if (this.totalDataDisplay) this.totalDataDisplay.textContent = "Error";
+    if (this.totalFilesDisplay) this.totalFilesDisplay.textContent = "Error";
+  }
+
+  triggerDownload(url, fileName) {
+    if (!url || !fileName) return;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+  }
+
+  preventDefaults(event) {
+    event.preventDefault();
+    event.stopPropagation();
   }
 }
 
