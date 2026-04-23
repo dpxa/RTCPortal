@@ -1257,6 +1257,7 @@ class UIManager {
       batch,
       direction,
       rootDirectoryName,
+      statusSuffix,
       peerDisplay,
       onZipDownload,
       singleFileDownload,
@@ -1335,7 +1336,9 @@ class UIManager {
       label.download = singleFileDownload.fileName;
     }
 
-    label.textContent = displayName;
+    label.textContent = statusSuffix
+      ? `${displayName} - ${statusSuffix}`
+      : displayName;
     entryDiv.appendChild(label);
 
     const metaSpan = document.createElement("span");
