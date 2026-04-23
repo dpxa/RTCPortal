@@ -32,6 +32,7 @@ class FileTransferManager {
     this.pendingBatchForHistory = null;
     this.hasReceivedBatchConfirmation = false;
     this.sentCleanupTimer = null;
+    this.sentBatchProgress = [];
 
     this.configureUIBindings();
 
@@ -370,6 +371,7 @@ class FileTransferManager {
         (acc, f) => acc + f.size,
         0,
       );
+      this.sentBatchProgress = [];
       let totalBytesSent = 0;
       const batchStartTime = Date.now();
 
@@ -439,6 +441,9 @@ class FileTransferManager {
 
         if (this.isStopped) break;
 
+        this.sentBatchProgress.push(
+          this._buildTransferHistoryEntry(fileToSend),
+        );
         totalBytesSent += fileToSend.size;
       }
 
@@ -454,12 +459,9 @@ class FileTransferManager {
 
         uiManager.setSentButtonsVisible(false);
 
-        const batchForHistory = this.selectedFiles.map((f) => ({
-          name: f.customRelativePath || f.webkitRelativePath || f.name,
-          size: f.size,
-          isDirectoryMarker: f.isDirectoryMarker || false,
-          lastModified: f.lastModified || Date.now(),
-        }));
+        const batchForHistory = this.selectedFiles.map((f) =>
+          this._buildTransferHistoryEntry(f),
+        );
 
         if (this.hasReceivedBatchConfirmation) {
           this.finalizeSentBatchForHistory(
@@ -490,7 +492,34 @@ class FileTransferManager {
     uiManager.resetSentTransferUI();
     this.hasReceivedBatchConfirmation = false;
     this.pendingBatchForHistory = null;
+    this.sentBatchProgress = [];
     this.updateTransferButtonState();
+  }
+
+  _buildTransferHistoryEntry(file) {
+    return {
+      name: file.customRelativePath || file.webkitRelativePath || file.name,
+      size: file.size,
+      isDirectoryMarker: file.isDirectoryMarker || false,
+      lastModified: file.lastModified || Date.now(),
+    };
+  }
+
+  _renderIncompleteSentHistoryIfNeeded(statusSuffix = "Incomplete") {
+    if (
+      !Array.isArray(this.sentBatchProgress) ||
+      this.sentBatchProgress.length === 0
+    ) {
+      return;
+    }
+
+    this.createBatchHistoryUI(
+      [...this.sentBatchProgress],
+      "to",
+      this.rootDirectoryName,
+      { statusSuffix },
+    );
+    this.sentBatchProgress = [];
   }
 
   togglePause() {
@@ -540,6 +569,8 @@ class FileTransferManager {
 
     this.isSending = false;
     uiManager.setFileTransferButtonEnabled(true);
+
+    this._renderIncompleteSentHistoryIfNeeded("Incomplete");
 
     uiManager.updateSentStats("-", "-");
 
@@ -975,7 +1006,7 @@ class FileTransferManager {
   }
 
   handleTransferCancellation() {
-    this.cleanupReceivedTransfer();
+    this.cleanupReceivedTransfer({ statusSuffix: "Incomplete" });
     uiManager.showFileWarning("Sender cancelled transfer.");
   }
 
@@ -1242,7 +1273,9 @@ class FileTransferManager {
     this.receivedBytes = 0;
   }
 
-  createBatchHistoryUI(batch, direction, rootDirectoryName) {
+  createBatchHistoryUI(batch, direction, rootDirectoryName, options = {}) {
+    const { statusSuffix = null } = options;
+
     if (direction === "from") {
       batch.forEach((file) => {
         if (file.opfsHandle) {
@@ -1270,6 +1303,7 @@ class FileTransferManager {
       batch,
       direction,
       rootDirectoryName,
+      statusSuffix,
       peerDisplay: this.getPeerDisplay(webrtcManager.activePeerId),
       singleFileDownload,
       onZipDownload: async (_button, displayName) => {
@@ -1347,6 +1381,8 @@ class FileTransferManager {
   }
 
   cleanupSentTransfer() {
+    this._renderIncompleteSentHistoryIfNeeded("Incomplete");
+
     this.isSending = false;
     this.isPaused = false;
     this.isAutoThrottled = false;
@@ -1367,7 +1403,10 @@ class FileTransferManager {
     this.currentPauseStartSent = 0;
   }
 
-  async cleanupReceivedTransfer() {
+  async cleanupReceivedTransfer(options = {}) {
+    const { statusSuffix = null } = options;
+    const wasReceiving = this.isReceiving;
+
     this.isReceiving = false;
     this.isPaused = false;
     this._recvSpeedCtx = null;
@@ -1380,14 +1419,20 @@ class FileTransferManager {
     this.totalBatchBytesReceived = 0;
 
     if (this.receivedBatch && this.receivedBatch.length > 0) {
+      const historyStatusSuffix =
+        statusSuffix || (wasReceiving ? "Incomplete" : null);
+
       if (this.receivedBatchRootName) {
         this.createBatchHistoryUI(
           [...this.receivedBatch],
           "from",
           this.receivedBatchRootName,
+          { statusSuffix: historyStatusSuffix },
         );
       } else {
-        this.createBatchHistoryUI([...this.receivedBatch], "from", null);
+        this.createBatchHistoryUI([...this.receivedBatch], "from", null, {
+          statusSuffix: historyStatusSuffix,
+        });
       }
       this.receivedBatch = [];
     }

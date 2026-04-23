@@ -43,6 +43,7 @@ class WebRTCManager {
   initializeSocketEvents() {
     this.socket.on("connect", () => {
       uiManager.clearAlert();
+      statsService.fetchConnectionStats({ force: true });
     });
 
     this.socket.on("pin-assigned", (data) => {
@@ -70,7 +71,7 @@ class WebRTCManager {
       }
 
       if (this.peerConnection) {
-        this.resetCurrentConnection();
+        this.resetCurrentConnection({ notifyPeer: false });
       }
       if (this.pendingPeerConnection) {
         this.abortPendingConnection(false);
@@ -80,6 +81,7 @@ class WebRTCManager {
     this.socket.on("reconnect", (attemptNumber) => {
       console.log("Socket reconnected after", attemptNumber, "attempts");
       uiManager.clearAlert();
+      statsService.fetchConnectionStats({ force: true });
     });
 
     this.socket.on("reconnect_error", (error) => {
@@ -115,7 +117,8 @@ class WebRTCManager {
         (this.pendingPeerConnection && !this.activePeerId)
       ) {
         console.log(`Peer ${data.from} disconnected.`);
-        this.handleEndConnection();
+        this.resetCurrentConnection({ notifyPeer: false });
+        uiManager.showIdError("Peer disconnected.");
       }
     });
 
@@ -476,7 +479,7 @@ class WebRTCManager {
 
   handleControlMessage(message) {
     if (message.type === "disconnect") {
-      this.resetCurrentConnection();
+      this.resetCurrentConnection({ notifyPeer: false });
       return true;
     }
 
@@ -553,7 +556,9 @@ class WebRTCManager {
     }
   }
 
-  resetCurrentConnection() {
+  resetCurrentConnection(options = {}) {
+    const { notifyPeer = true } = options;
+
     this.stopHeartbeat();
     if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
     uiManager.clearAlert();
@@ -564,7 +569,11 @@ class WebRTCManager {
       fileTransferManager.clearFileSelection();
     }
 
-    if (this.dataChannel && this.dataChannel.readyState === "open") {
+    if (
+      notifyPeer &&
+      this.dataChannel &&
+      this.dataChannel.readyState === "open"
+    ) {
       this.sendControlMessage({ type: "disconnect" });
     }
     if (this.peerConnection) {
@@ -583,7 +592,9 @@ class WebRTCManager {
       this.controlChannel = null;
     }
     if (this.activePeerId) {
-      this.socket.emit("peer-disconnected", { target: this.activePeerId });
+      if (notifyPeer) {
+        this.socket.emit("peer-disconnected", { target: this.activePeerId });
+      }
       this.activePeerId = null;
     }
     uiManager.updateToIdle();
