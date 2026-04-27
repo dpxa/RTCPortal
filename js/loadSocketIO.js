@@ -27,6 +27,7 @@ function loadScript(options) {
   try {
     await loadScript({ src: socketIoSrc, target: "head" });
     await loadScript({ src: "js/core/webrtcManager.js", target: "body" });
+    await loadScript({ src: "js/core/fileTransferManager.js", target: "body" });
   } catch (error) {
     console.error("Script bootstrap failed:", error);
     if (window.uiManager) {

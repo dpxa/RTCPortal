@@ -4,6 +4,7 @@ const appUtils = {
     try {
       return JSON.parse(text);
     } catch (error) {
+      console.warn("safeJsonParse failed:", error);
       return null;
     }
   },
@@ -17,8 +18,13 @@ const appUtils = {
       units.length - 1,
       Math.floor(Math.log(size) / Math.log(1024)),
     );
+    const normalizedValue = size / Math.pow(1024, index);
 
-    return `${(size / Math.pow(1024, index)).toFixed(2)} ${units[index]}`;
+    if (index === 0) {
+      return `${Math.round(normalizedValue)} ${units[index]}`;
+    }
+
+    return `${normalizedValue.toFixed(2)} ${units[index]}`;
   },
 
   formatUptime(milliseconds) {
@@ -37,6 +43,29 @@ const appUtils = {
     return new Promise((resolve) => {
       setTimeout(resolve, Math.max(0, Number(milliseconds) || 0));
     });
+  },
+
+  async requestJson(url, options = {}) {
+    const { errorPrefix = "Request failed" } = options;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      let details = "";
+      try {
+        const errorData = await response.json();
+        details = errorData?.details || errorData?.error || "";
+      } catch (error) {
+        console.warn("Failed to parse JSON error response:", error);
+      }
+
+      const detailSuffix = details ? ` ${details}` : "";
+      throw new Error(
+        `${errorPrefix}: ${response.status} ${response.statusText}.${detailSuffix}`,
+      );
+    }
+
+    return response.json();
   },
 
   isPageHidden() {
