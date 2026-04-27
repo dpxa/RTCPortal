@@ -72,7 +72,6 @@
 }
 .batch-zip-container:first-child {
   margin-top: var(--space-1);
-  margin-bottom: var(--space-1);
 }
 
 * {
@@ -423,7 +422,6 @@ input:disabled {
 .qr-code-wrapper {
   text-align: center;
   margin-bottom: var(--space-1);
-  margin-top: 0;
 }
 
 .qr-code-container {
@@ -510,7 +508,6 @@ input:disabled {
 }
 
 .history-entry-wrapper {
-  padding: 0;
 }
 
 .history-entry-row {
@@ -898,14 +895,17 @@ body.dark-mode .zip-download-btn:hover {
   color: var(--dark-mode-zip-btn-hover-color);
 }
 
-#sent-stats {
+#sent-stats,
+#received-stats {
   font-size: 0.85rem;
+}
+
+#sent-stats {
   color: var(--accent);
   margin-bottom: var(--space-2);
 }
 
 #received-stats {
-  font-size: 0.85rem;
   color: var(--primary-color);
   margin-bottom: var(--space-1);
 }
@@ -935,22 +935,22 @@ body.dark-mode .zip-download-btn:hover {
   color: var(--danger);
 }
 
-#sent-buttons-container #pause-transfer-btn {
+#sent-buttons-container #pause-transfer-btn,
+#sent-buttons-container #stop-transfer-btn {
   font-size: 0.8rem;
   padding: 4px 8px;
-  background-color: var(--pause-color);
-  border: 1px solid var(--pause-color);
   color: var(--white-color);
   border-radius: 4px;
 }
 
+#sent-buttons-container #pause-transfer-btn {
+  background-color: var(--pause-color);
+  border: 1px solid var(--pause-color);
+}
+
 #sent-buttons-container #stop-transfer-btn {
-  font-size: 0.8rem;
-  padding: 4px 8px;
   background-color: var(--danger);
   border: 1px solid var(--danger);
-  color: var(--white-color);
-  border-radius: 4px;
   margin-left: 5px;
 }
 
@@ -972,16 +972,16 @@ body.dark-mode .zip-download-btn:hover {
   }
 
   #connect-btn,
-  #file-transfer-btn {
-    display: block;
-    width: 100%;
-    margin-bottom: var(--space-2);
-  }
-
+  #file-transfer-btn,
   #end-btn,
   #toggle-chat-btn {
     display: block;
     width: 100%;
+  }
+
+  #connect-btn,
+  #file-transfer-btn {
+    margin-bottom: var(--space-2);
   }
 
   .label-container,
