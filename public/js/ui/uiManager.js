@@ -250,7 +250,6 @@ class UIManager {
 
     window.addEventListener("beforeunload", this._onPageExit);
     window.addEventListener("pagehide", this._onPageExit);
-    window.addEventListener("unload", this._onPageExit);
   }
 
   dispose() {
@@ -267,7 +266,6 @@ class UIManager {
     if (this._onPageExit) {
       window.removeEventListener("beforeunload", this._onPageExit);
       window.removeEventListener("pagehide", this._onPageExit);
-      window.removeEventListener("unload", this._onPageExit);
       this._onPageExit = null;
     }
 
