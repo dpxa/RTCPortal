@@ -1,12 +1,16 @@
 {
   "name": "rtcportal",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Peer-to-peer file transfer using WebRTC and Socket.IO signaling.",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "audit": "npm audit --omit=dev --audit-level=high",
+    "audit:full": "npm audit --audit-level=high"
   },
   "repository": {
     "type": "git",
@@ -31,6 +35,8 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "selenium-webdriver": "^4.27.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0"
   }
 }

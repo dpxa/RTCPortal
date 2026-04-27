@@ -1,9 +1,4 @@
 module.exports = {
-  ENVIRONMENTS: {
-    DEVELOPMENT: "development",
-    PRODUCTION: "production",
-  },
-
   DEFAULT_PORT: 3000,
 
   ROUTES: {
@@ -13,7 +8,6 @@ module.exports = {
 
   CORS_ORIGINS: {
     GITHUB_PAGES: "https://dpxa.github.io",
-    LOCALHOST: ["http://localhost:3000", "http://127.0.0.1:3000"],
   },
 
   SOCKET_TRANSPORTS: ["websocket", "polling"],
@@ -25,8 +19,10 @@ module.exports = {
 
   RATE_LIMIT: {
     WINDOW_MS: 15 * 60 * 1000,
-    MAX_API_REQUESTS: 100,
-    MAX_TURN_REQUESTS: 20,
+    MAX_API_REQUESTS_DEV: 1000,
+    MAX_API_REQUESTS_PROD: 100,
+    MAX_TURN_REQUESTS_DEV: 200,
+    MAX_TURN_REQUESTS_PROD: 20,
     MESSAGES: {
       API_LIMIT: "Too many requests from this IP, please try again later.",
       TURN_LIMIT: "Too many TURN credential requests, please try again later.",

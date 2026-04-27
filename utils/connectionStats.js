@@ -23,10 +23,16 @@ class ConnectionStats {
     }
   }
 
-  addTransfer(bytes) {
-    if (typeof bytes === "number") {
-      this.totalBytesTransferred += bytes;
-      this.totalFilesTransferred++;
+  addTransfer(bytes, fileCount = 1) {
+    const safeBytes = Number(bytes);
+    const safeFileCount = Number(fileCount);
+
+    if (Number.isFinite(safeBytes) && safeBytes > 0) {
+      this.totalBytesTransferred += Math.round(safeBytes);
+    }
+
+    if (Number.isFinite(safeFileCount) && safeFileCount > 0) {
+      this.totalFilesTransferred += Math.floor(safeFileCount);
     }
   }
 
