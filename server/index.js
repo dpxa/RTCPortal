@@ -56,7 +56,7 @@ app.set("connectionStats", connectionStats);
 
 const apiLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
-  max: RATE_LIMIT.MAX_API_REQUESTS,
+  max: isProd ? RATE_LIMIT.MAX_API_REQUESTS_PROD : RATE_LIMIT.MAX_API_REQUESTS_DEV,
   message: { error: RATE_LIMIT.MESSAGES.API_LIMIT },
   standardHeaders: true,
   legacyHeaders: false,
@@ -64,7 +64,7 @@ const apiLimiter = rateLimit({
 
 const turnLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
-  max: RATE_LIMIT.MAX_TURN_REQUESTS,
+  max: isProd ? RATE_LIMIT.MAX_TURN_REQUESTS_PROD : RATE_LIMIT.MAX_TURN_REQUESTS_DEV,
   message: {
     error: RATE_LIMIT.MESSAGES.TURN_LIMIT,
   },
@@ -77,7 +77,6 @@ if (!isProd) {
 }
 
 app.get(ROUTES.TEST, (req, res) => {
-  console.log("Ping");
   res.status(200).send(`
     <h1>RTC Portal</h1>
     <p>Server is running.</p>
@@ -85,13 +84,19 @@ app.get(ROUTES.TEST, (req, res) => {
 });
 
 app.use(`${ROUTES.API}${API_ENDPOINTS.TURN_CREDENTIALS}`, turnLimiter);
-app.use(ROUTES.API, apiLimiter, apiRoutes);
+
+app.use(ROUTES.API, (req, res, next) => {
+  if (req.path === API_ENDPOINTS.TURN_CREDENTIALS) {
+    return next();
+  }
+  return apiLimiter(req, res, next);
+}, apiRoutes);
 
 app.use(ROUTES.API, (req, res) => {
   res.status(404).json({ error: "API route not found" });
 });
 
-app.use(ROUTES.API, (err, req, res, next) => {
+app.use(ROUTES.API, (err, req, res, _next) => {
   console.error("API Error:", err);
   res.status(500).json({ error: "Internal server error" });
 });

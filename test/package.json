@@ -1,12 +1,15 @@
 {
   "name": "rtcportal-selenium-tests",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Selenium tests for RTCPortal",
+  "private": true,
   "main": "selenium/connection-test.js",
   "scripts": {
     "test:local": "cross-env TEST_URL=http://localhost:3000 node selenium/connection-test.js",
     "test:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/connection-test.js",
-    "test:connection": "npm run test:prod"
+    "test:connection": "npm run test:prod",
+    "lint": "npm --prefix .. run lint -- test/**/*.js",
+    "lint:fix": "npm --prefix .. run lint:fix -- test/**/*.js"
   },
   "dependencies": {
     "selenium-webdriver": "^4.27.0"
@@ -18,6 +21,10 @@
   ],
   "author": "dpxa",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "devDependencies": {
     "cross-env": "^10.1.0"
   }

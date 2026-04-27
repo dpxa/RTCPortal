@@ -23,14 +23,13 @@ const RTC_CONFIG = {
   rtcpMuxPolicy: "require",
 };
 
-const SLICE_SIZE = 65536;
+const SLICE_SIZE = 262144;
 const DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD = 1048576;
 const DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT = 4194304;
 
 const CONNECTION_TIMEOUT = 30000;
 const TRANSFER_CLEANUP_DELAY = 600;
 const TRANSFER_PAUSE_POLL_INTERVAL = 200;
-const TRANSFER_PAUSE_RESUME_INTERVAL = 100;
 const CONNECTION_RESET_DELAY = 4000;
 const CONNECTION_RECOVERY_DELAY = 30000;
 const DOWNLOAD_BLOB_URL_REVOKE_DELAY = 100;
@@ -39,13 +38,13 @@ const WARNING_TIMEOUT = ALERT_TIMEOUT + 2000;
 const ID_UNDERLINE_TIMEOUT = 4000;
 const STATS_FETCH_INTERVAL = 30000;
 
-const SOCKET_IO_TRANSPORTS = ["websocket", "polling"];
+const SOCKET_TRANSPORTS = ["websocket", "polling"];
 
 function getCssVar(name, fallback = "") {
   try {
     const root = getComputedStyle(document.documentElement);
     return (root.getPropertyValue(name) || fallback).trim();
-  } catch (e) {
+  } catch (error) {
     return fallback;
   }
 }

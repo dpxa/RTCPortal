@@ -2,10 +2,10 @@ class WebRTCManager {
   constructor() {
     this.socket = environmentIsProd
       ? io(PROD_API_URL, {
-          transports: SOCKET_IO_TRANSPORTS,
+          transports: SOCKET_TRANSPORTS,
         })
       : io({
-          transports: SOCKET_IO_TRANSPORTS,
+          transports: SOCKET_TRANSPORTS,
         });
 
     this.peerConnection = null;
@@ -16,12 +16,10 @@ class WebRTCManager {
     this.selfId = null;
 
     this.newConnTimer = null;
-    this.connectionStartTime = null;
-    this.answerReceivedTime = null;
-    this.signalingDuration = null;
-    this.totalConnectionDuration = null;
+    this.connectionAttemptId = 0;
 
-    this.candidateQueue = [];
+    this.heartbeatInterval = null;
+    this.disconnectTimer = null;
 
     this.bindUIHandlers();
     this.initializeSocketEvents();
@@ -34,23 +32,128 @@ class WebRTCManager {
       onToggleQr: () => this.toggleQrCode(),
       onPartnerIdInput: () => this.updateConnectButton(),
       onConnect: () => this.initiateConnection(),
+      onSendChat: (text) => this.sendChat(text),
       onDisconnect: () => this.handleEndConnection(),
     });
 
-    uiManager.registerPageExitHandler(() => this.cleanup());
+    uiManager.registerPageExitHandler(() =>
+      this.cleanup({ disposeSocket: true }),
+    );
+  }
+
+  _disposeChannel(channel) {
+    if (!channel) return;
+
+    try {
+      channel.onopen = null;
+      channel.onclose = null;
+      channel.onerror = null;
+      channel.onmessage = null;
+      if (typeof channel.close === "function") {
+        channel.close();
+      }
+    } catch (error) {
+      console.warn("Failed to dispose data channel:", error);
+    }
+  }
+
+  _disposePeerConnection(connection) {
+    if (!connection) return;
+
+    try {
+      connection.onicecandidate = null;
+      connection.ondatachannel = null;
+      connection.onconnectionstatechange = null;
+      connection.oniceconnectionstatechange = null;
+      connection.onsignalingstatechange = null;
+      connection.close();
+    } catch (error) {
+      console.warn("Failed to dispose peer connection:", error);
+    }
+  }
+
+  _clearTimer(timerName) {
+    if (this[timerName]) {
+      clearTimeout(this[timerName]);
+      this[timerName] = null;
+    }
+  }
+
+  _clearNewConnectionTimer() {
+    this._clearTimer("newConnTimer");
+  }
+
+  _clearDisconnectTimer() {
+    this._clearTimer("disconnectTimer");
+  }
+
+  _cleanupFileTransfer({ clearSelection = false } = {}) {
+    if (!fileTransferManager) {
+      return;
+    }
+
+    fileTransferManager.cleanupAllTransfers();
+    if (clearSelection) {
+      fileTransferManager.clearFileSelection();
+    }
+  }
+
+  _handleSocketReady() {
+    uiManager.clearAlert();
+    statsService.requestConnectionStats({ force: true });
+  }
+
+  _isStaleAttempt(attemptId) {
+    return attemptId !== this.connectionAttemptId;
+  }
+
+  _handlePendingConnectionError({ attemptId, error, logMessage, userMessage }) {
+    if (this._isStaleAttempt(attemptId)) {
+      return;
+    }
+
+    console.error(logMessage, error);
+    if (userMessage) {
+      uiManager.showIdError(userMessage);
+    }
+    this.abortPendingConnection(false);
+    this.resetConnectionTiming();
+    statsService.requestConnectionStats();
+  }
+
+  _resolveConnectionTeardown({ emitUserFailForPending = true } = {}) {
+    if (this.pendingPeerConnection) {
+      this.abortPendingConnection(emitUserFailForPending);
+    } else if (this.peerConnection) {
+      this.resetCurrentConnection();
+    } else {
+      uiManager.updateToIdle();
+    }
+  }
+
+  _attachChannelMessageHandler(channel) {
+    channel.onmessage = (evt) => {
+      this.processIncomingChannelMessage(evt.data);
+    };
   }
 
   initializeSocketEvents() {
-    this.socket.on("connect", () => {
-      uiManager.clearAlert();
-      statsService.fetchConnectionStats({ force: true });
-    });
+    this.socket.on("connect", () => this._handleSocketReady());
 
     this.socket.on("pin-assigned", (data) => {
       this.selfId = data.pin;
       uiManager.setLocalPinAssigned(this.selfId);
 
-      this.handleUrlParameters();
+      const urlParams = new URLSearchParams(window.location.search);
+      const peerId = urlParams.get("peer");
+
+      if (peerId && peerId !== this.selfId) {
+        uiManager.setPartnerIdValue(peerId);
+        this.updateConnectButton();
+        this.initiateConnection();
+
+        window.history.replaceState({}, "", window.location.pathname);
+      }
     });
 
     this.socket.on("connect_error", (error) => {
@@ -70,19 +173,16 @@ class WebRTCManager {
         uiManager.showIdError("Connection lost. Reconnecting...");
       }
 
-      if (this.peerConnection) {
-        this.resetCurrentConnection({ notifyPeer: false });
+      if (this.peerConnection && this.dataChannel?.readyState === "open") {
+        return;
       }
+
       if (this.pendingPeerConnection) {
         this.abortPendingConnection(false);
       }
     });
 
-    this.socket.on("reconnect", (attemptNumber) => {
-      console.log("Socket reconnected after", attemptNumber, "attempts");
-      uiManager.clearAlert();
-      statsService.fetchConnectionStats({ force: true });
-    });
+    this.socket.on("reconnect", () => this._handleSocketReady());
 
     this.socket.on("reconnect_error", (error) => {
       console.error("Socket reconnection error:", error.message || error);
@@ -95,63 +195,94 @@ class WebRTCManager {
       );
     });
 
-    this.socket.on("offer", async (data) => {
-      try {
-        await this.handleOffer(data);
-      } catch (error) {
-        console.error("Offer handling failed:", error);
-      }
-    });
-
-    this.socket.on("answer", async (data) => {
-      try {
-        await this.handleAnswer(data);
-      } catch (error) {
-        console.error("Answer handling failed:", error);
-      }
-    });
+    this._registerSocketHandler("offer", "handleOffer");
+    this._registerSocketHandler("answer", "handleAnswer");
 
     this.socket.on("peer-disconnected", (data) => {
       if (
         this.activePeerId === data.from ||
         (this.pendingPeerConnection && !this.activePeerId)
       ) {
-        console.log(`Peer ${data.from} disconnected.`);
         this.resetCurrentConnection({ notifyPeer: false });
         uiManager.showIdError("Peer disconnected.");
       }
     });
 
     this.socket.on("candidate", (data) => {
-      this.handleCandidate(data);
+      const targetConnection =
+        this.pendingPeerConnection || this.peerConnection;
+      if (!targetConnection || !data?.candidate) {
+        return;
+      }
+
+      if (["closed", "failed"].includes(targetConnection.connectionState)) {
+        return;
+      }
+
+      if (!this._isCandidateForConnection(targetConnection, data)) {
+        return;
+      }
+
+      if (targetConnection.remoteDescription?.type) {
+        targetConnection.addIceCandidate(data.candidate).catch((error) => {
+          console.error("Failed to add ICE candidate:", error);
+        });
+      } else {
+        if (!Array.isArray(targetConnection._candidateQueue)) {
+          targetConnection._candidateQueue = [];
+        }
+        targetConnection._candidateQueue.push(data.candidate);
+      }
     });
 
-    this.socket.on("peer-not-found", (data) => {
-      this.handlePeerNotFound(data);
+    this.socket.on("peer-not-found", () => {
+      this._resolveConnectionTeardown({ emitUserFailForPending: false });
+      uiManager.showIdError("Peer ID not found!");
     });
+  }
+
+  _registerSocketHandler(eventName, handlerMethod) {
+    this.socket.on(eventName, async (data) => {
+      try {
+        await this[handlerMethod](data);
+      } catch (error) {
+        console.error(`${eventName} handling failed:`, error);
+      }
+    });
+  }
+
+  _isCandidateForConnection(connection, payload) {
+    if (!connection || !payload) {
+      return false;
+    }
+
+    const sourcePeer = payload.from || payload.caller || payload.callee || null;
+    if (!sourcePeer) {
+      return false;
+    }
+
+    return connection._peerId === sourcePeer;
+  }
+
+  _copyToClipboard(text, errorContext) {
+    if (!this.selfId) {
+      uiManager.showIdError("No ID to copy yet.");
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(text)
+      .then(() => uiManager.showCopied())
+      .catch((error) => console.error(`Error copying ${errorContext}:`, error));
   }
 
   copyId() {
-    if (this.selfId) {
-      navigator.clipboard
-        .writeText(this.selfId)
-        .then(() => uiManager.showCopied())
-        .catch((error) => console.error("Error copying ID:", error));
-    } else {
-      uiManager.showIdError("No ID to copy yet.");
-    }
+    this._copyToClipboard(this.selfId, "ID");
   }
 
   copyLink() {
-    if (this.selfId) {
-      const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
-      navigator.clipboard
-        .writeText(url)
-        .then(() => uiManager.showCopied())
-        .catch((error) => console.error("Error copying Link:", error));
-    } else {
-      uiManager.showIdError("No ID to copy yet.");
-    }
+    const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+    this._copyToClipboard(url, "Link");
   }
 
   toggleQrCode() {
@@ -163,19 +294,6 @@ class WebRTCManager {
     const shown = uiManager.toggleQrCodeForId(this.selfId);
     if (!shown && typeof QRCode === "undefined") {
       console.warn("QRCode library is missing (blocked by network).");
-    }
-  }
-
-  handleUrlParameters() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const peerId = urlParams.get("peer");
-
-    if (peerId && peerId !== this.selfId) {
-      uiManager.setPartnerIdValue(peerId);
-      this.updateConnectButton();
-      this.initiateConnection();
-
-      window.history.replaceState({}, "", window.location.pathname);
     }
   }
 
@@ -201,10 +319,11 @@ class WebRTCManager {
     }
 
     this.socket.emit("connection-attempt");
-    this.candidateQueue = [];
     uiManager.clearAlert();
     this.abortPendingConnection();
     uiManager.updateToWaiting();
+
+    const attemptId = ++this.connectionAttemptId;
 
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -212,12 +331,11 @@ class WebRTCManager {
       fileTransferManager.clearFileSelection();
     }
 
-    this.connectionStartTime = performance.now();
-
     this.newConnTimer = setTimeout(() => {
+      if (attemptId !== this.connectionAttemptId) return;
       uiManager.showIdError("Connection timed out.");
       this.abortPendingConnection(false);
-      statsService.fetchConnectionStats();
+      statsService.requestConnectionStats();
     }, CONNECTION_TIMEOUT);
 
     this.pendingPeerConnection = new RTCPeerConnection(
@@ -234,11 +352,12 @@ class WebRTCManager {
         sdp: this.pendingPeerConnection.localDescription,
       });
     } catch (err) {
-      console.error("Error creating offer:", err);
-      uiManager.showIdError("Failed to create connection offer.");
-      this.abortPendingConnection(false);
-      this.resetConnectionTiming();
-      statsService.fetchConnectionStats();
+      this._handlePendingConnectionError({
+        attemptId,
+        error: err,
+        logMessage: "Error creating offer:",
+        userMessage: "Failed to create connection offer.",
+      });
     }
   }
 
@@ -253,9 +372,10 @@ class WebRTCManager {
       this.resetCurrentConnection();
     }
 
+    const attemptId = ++this.connectionAttemptId;
+
     this.connectionStartTime = performance.now();
 
-    this.candidateQueue = [];
     this.peerConnection = new RTCPeerConnection(turnService.getRtcConfig());
     this.configureConnection(this.peerConnection, data.caller, false);
 
@@ -271,6 +391,9 @@ class WebRTCManager {
         sdp: this.peerConnection.localDescription,
       });
     } catch (err) {
+      if (this._isStaleAttempt(attemptId)) {
+        return;
+      }
       console.error("Error handling offer:", err);
       this.resetConnectionTiming();
       this.resetCurrentConnection();
@@ -278,6 +401,7 @@ class WebRTCManager {
   }
 
   async handleAnswer(data) {
+    const currentAttemptId = this.connectionAttemptId;
     this.answerReceivedTime = performance.now();
 
     if (this.connectionStartTime) {
@@ -288,9 +412,19 @@ class WebRTCManager {
     if (this.activePeerId) {
       this.resetCurrentConnection();
     }
+
+    if (!this.pendingPeerConnection) {
+      return;
+    }
+
     try {
       await this.pendingPeerConnection.setRemoteDescription(data.sdp);
       this.drainCandidateQueue(this.pendingPeerConnection);
+
+      if (this._isStaleAttempt(currentAttemptId)) {
+        return;
+      }
+
       this.activePeerId = data.callee;
 
       this.peerConnection = this.pendingPeerConnection;
@@ -300,36 +434,30 @@ class WebRTCManager {
       this.pendingDataChannel = null;
       this.pendingControlChannel = null;
     } catch (err) {
-      console.error("Error applying remote description:", err);
-      uiManager.showIdError("Failed to establish connection.");
-      this.abortPendingConnection(false);
-      this.resetConnectionTiming();
-      statsService.fetchConnectionStats();
-    }
-  }
-
-  handleCandidate(data) {
-    const targetConnection = this.pendingPeerConnection || this.peerConnection;
-    if (targetConnection) {
-      if (targetConnection.remoteDescription) {
-        targetConnection
-          .addIceCandidate(data.candidate)
-          .catch((e) => console.error(e));
-      } else {
-        this.candidateQueue.push(data.candidate);
-      }
+      this._handlePendingConnectionError({
+        attemptId: currentAttemptId,
+        error: err,
+        logMessage: "Error applying remote description:",
+        userMessage: "Failed to establish connection.",
+      });
     }
   }
 
   drainCandidateQueue(connection) {
-    while (this.candidateQueue.length) {
-      const c = this.candidateQueue.shift();
-      connection.addIceCandidate(c).catch((e) => console.error(e));
+    if (!Array.isArray(connection?._candidateQueue)) {
+      connection._candidateQueue = [];
+    }
+
+    while (connection._candidateQueue.length) {
+      const candidate = connection._candidateQueue.shift();
+      connection.addIceCandidate(candidate).catch((error) => {
+        console.error("Failed to drain ICE candidate queue:", error);
+      });
     }
   }
 
   handleConnectionFailure(conn) {
-    statsService.fetchConnectionStats();
+    statsService.requestConnectionStats();
     if (conn === this.pendingPeerConnection) {
       this.abortPendingConnection(false);
     } else {
@@ -337,20 +465,10 @@ class WebRTCManager {
     }
   }
 
-  handlePeerNotFound(data) {
-    if (!this.peerConnection) {
-      uiManager.updateToIdle();
-    }
-    if (this.pendingPeerConnection) {
-      this.abortPendingConnection(false);
-    } else {
-      this.resetCurrentConnection();
-    }
-    uiManager.showIdError("Peer ID not found!");
-  }
-
   configureConnection(conn, targetId, isInitiator) {
     conn._successEmitted = false;
+    conn._peerId = targetId;
+    conn._candidateQueue = [];
 
     conn.onicecandidate = (evt) => {
       if (evt.candidate) {
@@ -377,10 +495,7 @@ class WebRTCManager {
     };
 
     conn.onconnectionstatechange = () => {
-      if (this.disconnectTimer) {
-        clearTimeout(this.disconnectTimer);
-        this.disconnectTimer = null;
-      }
+      this._clearDisconnectTimer();
 
       if (conn.connectionState === "connected") {
         this.startHeartbeat();
@@ -398,19 +513,17 @@ class WebRTCManager {
               this.answerReceivedTime - this.connectionStartTime;
           }
 
-          this.logConnectionStats();
           this.resetConnectionTiming();
         }
 
         clearTimeout(this.newConnTimer);
         uiManager.updateToConnected(targetId);
 
-        statsService.fetchConnectionStats();
+        statsService.requestConnectionStats();
       } else if (conn.connectionState === "disconnected") {
         console.warn("Connection disconnected, attempting to recover...");
         this.disconnectTimer = setTimeout(() => {
           if (conn.connectionState !== "connected") {
-            console.log("Recovery failed, closing connection.");
             this.handleConnectionFailure(conn);
           }
         }, CONNECTION_RECOVERY_DELAY);
@@ -435,37 +548,32 @@ class WebRTCManager {
   }
 
   initializeControlChannel(channel) {
-    channel.onmessage = (evt) => {
-      if (typeof evt.data === "string") {
-        try {
-          const message = JSON.parse(evt.data);
-          if (this.handleControlMessage(message)) return;
-        } catch (e) {}
-        if (fileTransferManager) {
-          fileTransferManager.handleIncomingData(evt.data);
-        }
-      }
-    };
+    this._attachChannelMessageHandler(channel);
   }
 
   initializeDataChannel(channel) {
-    channel.bufferedAmountLowThreshold = DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT;
+    channel.bufferedAmountLowThreshold =
+      DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD;
     channel.binaryType = "arraybuffer";
-    channel.onmessage = (evt) => {
-      if (typeof evt.data !== "string") {
-        if (fileTransferManager) {
-          fileTransferManager.handleIncomingData(evt.data);
-        }
-      } else {
-        try {
-          const message = JSON.parse(evt.data);
-          if (this.handleControlMessage(message)) return;
-        } catch (e) {}
-        if (fileTransferManager) {
-          fileTransferManager.handleIncomingData(evt.data);
-        }
+    this._attachChannelMessageHandler(channel);
+  }
+
+  processIncomingChannelMessage(rawMessage) {
+    if (typeof rawMessage !== "string") {
+      if (fileTransferManager) {
+        fileTransferManager.handleIncomingData(rawMessage);
       }
-    };
+      return;
+    }
+
+    const message = appUtils.safeJsonParse(rawMessage);
+    if (message && this.handleControlMessage(message)) {
+      return;
+    }
+
+    if (fileTransferManager) {
+      fileTransferManager.handleIncomingData(rawMessage);
+    }
   }
 
   sendControlMessage(msgObj) {
@@ -478,81 +586,95 @@ class WebRTCManager {
   }
 
   handleControlMessage(message) {
-    if (message.type === "disconnect") {
-      this.resetCurrentConnection({ notifyPeer: false });
-      return true;
-    }
+    switch (message.type) {
+      case "disconnect":
+        this.resetCurrentConnection({ notifyPeer: false });
+        return true;
+      case "ping":
+        try {
+          this.sendControlMessage({ type: "pong" });
+        } catch (error) {
+          console.error("Failed to send pong response:", error);
+        }
+        return true;
+      case "pong":
+        return true;
+      case "chat": {
+        if (typeof message.text !== "string") {
+          return true;
+        }
 
-    if (message.type === "ping") {
-      try {
-        this.sendControlMessage({ type: "pong" });
-      } catch (e) {}
-      return true;
-    }
+        const sanitizedText = message.text.trim();
+        if (!sanitizedText || sanitizedText.length > 2000) {
+          return true;
+        }
 
-    if (message.type === "pong") {
-      return true;
+        uiManager.appendChatMessage(sanitizedText, false);
+        return true;
+      }
+      default:
+        return false;
     }
-
-    if (message.type === "chat") {
-      uiManager.appendChatMessage(message.text, false);
-      return true;
-    }
-
-    return false;
   }
 
   sendChat(text) {
+    if (typeof text !== "string") {
+      return;
+    }
+
+    const sanitizedText = text.trim();
+    if (!sanitizedText || sanitizedText.length > 2000) {
+      return;
+    }
+
     if (
       (this.controlChannel && this.controlChannel.readyState === "open") ||
       (this.dataChannel && this.dataChannel.readyState === "open")
     ) {
-      this.sendControlMessage({ type: "chat", text });
-      uiManager.appendChatMessage(text, true);
+      this.sendControlMessage({ type: "chat", text: sanitizedText });
+      uiManager.appendChatMessage(sanitizedText, true);
     } else {
       console.warn("Cannot send chat: Data channel not open.");
     }
   }
 
   handleEndConnection() {
-    if (!this.peerConnection) {
-      uiManager.updateToIdle();
-    }
-    if (this.pendingPeerConnection) {
-      this.abortPendingConnection();
-    } else {
-      this.resetCurrentConnection();
-    }
+    this._resolveConnectionTeardown();
   }
 
   abortPendingConnection(emitUserFail = true) {
-    uiManager.clearAlert();
-    clearTimeout(this.newConnTimer);
+    const hadPendingAttempt = Boolean(
+      this.pendingPeerConnection ||
+      this.pendingDataChannel ||
+      this.pendingControlChannel ||
+      this.newConnTimer,
+    );
 
-    if (fileTransferManager) {
-      fileTransferManager.cleanupAllTransfers();
+    uiManager.clearAlert();
+    this._clearNewConnectionTimer();
+    if (hadPendingAttempt) {
+      this.connectionAttemptId++;
     }
+
+    this._cleanupFileTransfer();
 
     if (this.pendingPeerConnection && emitUserFail) {
       this.socket.emit("connection-user-failed");
     }
-    if (this.pendingPeerConnection) {
-      this.pendingPeerConnection.onicecandidate = null;
-      this.pendingPeerConnection.ondatachannel = null;
-      this.pendingPeerConnection.onconnectionstatechange = null;
-      this.pendingPeerConnection.close();
-      this.pendingPeerConnection = null;
-    }
-    if (this.pendingDataChannel) {
-      this.pendingDataChannel.close();
-      this.pendingDataChannel = null;
-    }
-    if (this.pendingControlChannel) {
-      this.pendingControlChannel.close();
-      this.pendingControlChannel = null;
-    }
+
+    this._disposePeerConnection(this.pendingPeerConnection);
+    this.pendingPeerConnection = null;
+
+    this._disposeChannel(this.pendingDataChannel);
+    this.pendingDataChannel = null;
+
+    this._disposeChannel(this.pendingControlChannel);
+    this.pendingControlChannel = null;
+
     if (this.peerConnection) {
       uiManager.updateToConnectedAfterAbort(this.activePeerId);
+    } else {
+      uiManager.updateToIdle();
     }
   }
 
@@ -560,14 +682,11 @@ class WebRTCManager {
     const { notifyPeer = true } = options;
 
     this.stopHeartbeat();
-    if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
+    this._clearDisconnectTimer();
     uiManager.clearAlert();
-    clearTimeout(this.newConnTimer);
+    this._clearNewConnectionTimer();
 
-    if (fileTransferManager) {
-      fileTransferManager.cleanupAllTransfers();
-      fileTransferManager.clearFileSelection();
-    }
+    this._cleanupFileTransfer({ clearSelection: true });
 
     if (
       notifyPeer &&
@@ -576,21 +695,15 @@ class WebRTCManager {
     ) {
       this.sendControlMessage({ type: "disconnect" });
     }
-    if (this.peerConnection) {
-      this.peerConnection.onicecandidate = null;
-      this.peerConnection.ondatachannel = null;
-      this.peerConnection.onconnectionstatechange = null;
-      this.peerConnection.close();
-      this.peerConnection = null;
-    }
-    if (this.dataChannel) {
-      this.dataChannel.close();
-      this.dataChannel = null;
-    }
-    if (this.controlChannel) {
-      this.controlChannel.close();
-      this.controlChannel = null;
-    }
+    this._disposePeerConnection(this.peerConnection);
+    this.peerConnection = null;
+
+    this._disposeChannel(this.dataChannel);
+    this.dataChannel = null;
+
+    this._disposeChannel(this.controlChannel);
+    this.controlChannel = null;
+
     if (this.activePeerId) {
       if (notifyPeer) {
         this.socket.emit("peer-disconnected", { target: this.activePeerId });
@@ -607,30 +720,13 @@ class WebRTCManager {
     this.totalConnectionDuration = null;
   }
 
-  logConnectionStats() {
-    if (this.signalingDuration && this.totalConnectionDuration) {
-      this.signalingDuration = Math.round(this.signalingDuration * 100) / 100;
-      const webRTCNegotiation =
-        Math.round(
-          (this.totalConnectionDuration - this.signalingDuration) * 100,
-        ) / 100;
-      this.totalConnectionDuration =
-        Math.round(this.totalConnectionDuration * 100) / 100;
-
-      console.log(`Connection Timing Stats (Peer: ${this.activePeerId}):
-      - Signaling Duration: ${this.signalingDuration}ms
-      - WebRTC Negotiation: ${webRTCNegotiation}ms
-      - Total Connection Duration: ${this.totalConnectionDuration}ms`);
-    }
-  }
-
   startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatInterval = setInterval(() => {
       try {
         this.sendControlMessage({ type: "ping" });
-      } catch (e) {
-        console.warn("Heartbeat failed", e);
+      } catch (heartbeatError) {
+        console.warn("Heartbeat failed", heartbeatError);
       }
     }, 2000);
   }
@@ -642,13 +738,37 @@ class WebRTCManager {
     }
   }
 
-  cleanup() {
+  cleanup(options = {}) {
+    const { disposeSocket = false } = options;
+
     this.stopHeartbeat();
-    if (this.activePeerId) {
-      this.resetCurrentConnection();
+
+    this._clearDisconnectTimer();
+    this._clearNewConnectionTimer();
+
+    if (this.peerConnection || this.activePeerId) {
+      this.resetCurrentConnection({ notifyPeer: !disposeSocket });
     }
-    if (this.pendingPeerConnection) {
-      this.abortPendingConnection();
+    if (
+      this.pendingPeerConnection ||
+      this.pendingDataChannel ||
+      this.pendingControlChannel
+    ) {
+      this.abortPendingConnection(!disposeSocket);
+    }
+
+    if (disposeSocket && this.socket) {
+      try {
+        this.socket.off();
+      } catch (error) {
+        console.error("Socket off() failed during cleanup:", error);
+      }
+
+      try {
+        this.socket.disconnect();
+      } catch (error) {
+        console.error("Socket disconnect() failed during cleanup:", error);
+      }
     }
   }
 }

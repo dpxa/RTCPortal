@@ -1,8 +1,74 @@
-const { Builder, By, until, Key } = require("selenium-webdriver");
+const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const fs = require("fs");
 const path = require("path");
 const { DEFAULT_PORT } = require("../../server/config/constants");
+
+async function buildDriver(options) {
+  const driver = await new Builder()
+    .forBrowser("chrome")
+    .setChromeOptions(options)
+    .build();
+  await driver.manage().setTimeouts({ pageLoad: 30000, implicit: 5000 });
+  return driver;
+}
+
+async function waitForAssignedPeerId(driver) {
+  const myIdDisplay = await driver.wait(
+    until.elementLocated(By.id("my-id-display")),
+    20000,
+  );
+
+  await driver.wait(async () => {
+    const text = await myIdDisplay.getText();
+    return (
+      text !== "Waiting for PIN..." &&
+      text !== "Waiting for ID..." &&
+      text !== "" &&
+      text !== "Connection Error" &&
+      text.length > 5
+    );
+  }, 20000);
+
+  const peerId = (await myIdDisplay.getText()).trim();
+  return peerId;
+}
+
+async function setupPeer({ driver, url, expectedTitle, label }) {
+  console.log(`Setup ${label}`);
+  await driver.get(url);
+  console.log(`${label} navigated to: ${url}`);
+
+  await driver.wait(until.titleIs(expectedTitle), 20000);
+  console.log(`Page Title: ${await driver.getTitle()}`);
+
+  const peerId = await waitForAssignedPeerId(driver);
+  console.log(`${label} ID: ${peerId}`);
+
+  const copyIdButton = await driver.findElement(By.id("copy-id-btn"));
+  await driver.wait(until.elementIsVisible(copyIdButton), 20000);
+  console.log("Copy ID button visible");
+
+  return peerId;
+}
+
+async function waitForPeerConnection(driver, expectedPeerId, label) {
+  const activeConnectionContainer = await driver.findElement(
+    By.id("active-connection-container"),
+  );
+  const activeConnectionStatus = await driver.findElement(
+    By.id("active-connection-status"),
+  );
+
+  await driver.wait(until.elementIsVisible(activeConnectionContainer), 30000);
+  console.log(`${label} connected`);
+
+  await driver.wait(async () => {
+    const text = (await activeConnectionStatus.getText()).trim();
+    return text === expectedPeerId;
+  }, 30000);
+  console.log(`${label} status: Connected to ${expectedPeerId}`);
+}
 
 async function runConnectionTest() {
   const options = new chrome.Options();
@@ -15,8 +81,6 @@ async function runConnectionTest() {
   options.addArguments("--use-fake-device-for-media-stream");
 
   let driver1, driver2;
-  let peer1Id = null;
-  let peer2Id = null;
   let testFilePath = null;
 
   try {
@@ -27,78 +91,24 @@ async function runConnectionTest() {
     console.log(`Created test file: ${testFilePath}`);
 
     console.log("Creating WebDriver instances");
-    driver1 = await new Builder()
-      .forBrowser("chrome")
-      .setChromeOptions(options)
-      .build();
-    await driver1.manage().setTimeouts({ pageLoad: 30000, implicit: 5000 });
-
-    driver2 = await new Builder()
-      .forBrowser("chrome")
-      .setChromeOptions(options)
-      .build();
-    await driver2.manage().setTimeouts({ pageLoad: 30000, implicit: 5000 });
+    driver1 = await buildDriver(options);
+    driver2 = await buildDriver(options);
 
     const url = process.env.TEST_URL || `http://localhost:${DEFAULT_PORT}`;
     const expectedTitle = "RTCPortal - P2P Transfer Hub";
 
-    console.log("Setup Peer 1 (Initiator)");
-    await driver1.get(url);
-    console.log(`Peer 1 navigated to: ${url}`);
-
-    await driver1.wait(until.titleIs(expectedTitle), 15000);
-    console.log(`Page Title: ${await driver1.getTitle()}`);
-
-    const myIdDisplay1 = await driver1.wait(
-      until.elementLocated(By.id("my-id-display")),
-      20000,
-    );
-    await driver1.wait(async () => {
-      const text = await myIdDisplay1.getText();
-      return (
-        text !== "Waiting for PIN..." &&
-        text !== "Waiting for ID..." &&
-        text !== "" &&
-        text !== "Connection Error" &&
-        text.length > 5
-      );
-    }, 20000);
-
-    peer1Id = (await myIdDisplay1.getText()).trim();
-    console.log(`Peer 1 ID: ${peer1Id}`);
-
-    const copyIdButton1 = await driver1.findElement(By.id("copy-id-btn"));
-    await driver1.wait(until.elementIsVisible(copyIdButton1), 20000);
-    console.log(`Copy ID button visible`);
-
-    console.log("Setup Peer 2 (Receiver)");
-    await driver2.get(url);
-    console.log(`Peer 2 navigated to: ${url}`);
-
-    await driver2.wait(until.titleIs(expectedTitle), 20000);
-    console.log(`Page Title: ${await driver2.getTitle()}`);
-
-    const myIdDisplay2 = await driver2.wait(
-      until.elementLocated(By.id("my-id-display")),
-      20000,
-    );
-    await driver2.wait(async () => {
-      const text = await myIdDisplay2.getText();
-      return (
-        text !== "Waiting for PIN..." &&
-        text !== "Waiting for ID..." &&
-        text !== "" &&
-        text !== "Connection Error" &&
-        text.length > 5
-      );
-    }, 20000);
-
-    peer2Id = (await myIdDisplay2.getText()).trim();
-    console.log(`Peer 2 ID: ${peer2Id}`);
-
-    const copyIdButton2 = await driver2.findElement(By.id("copy-id-btn"));
-    await driver2.wait(until.elementIsVisible(copyIdButton2), 20000);
-    console.log(`Copy ID button visible`);
+    const peer1Id = await setupPeer({
+      driver: driver1,
+      url,
+      expectedTitle,
+      label: "Peer 1 (Initiator)",
+    });
+    const peer2Id = await setupPeer({
+      driver: driver2,
+      url,
+      expectedTitle,
+      label: "Peer 2 (Receiver)",
+    });
 
     console.log("Establishing P2P Connection");
     const partnerIdField1 = await driver1.findElement(
@@ -116,44 +126,9 @@ async function runConnectionTest() {
     console.log("Clicking Connect button");
     await connectButton1.click();
 
-    const activeConnectionContainer1 = await driver1.findElement(
-      By.id("active-connection-container"),
-    );
-    const activeConnectionStatus1 = await driver1.findElement(
-      By.id("active-connection-status"),
-    );
-
     console.log("Waiting for connection");
-    await driver1.wait(
-      until.elementIsVisible(activeConnectionContainer1),
-      30000,
-    );
-    console.log(`Peer 1 connected`);
-
-    await driver1.wait(async () => {
-      const text = (await activeConnectionStatus1.getText()).trim();
-      return text === peer2Id;
-    }, 30000);
-    console.log(`Peer 1 status: Connected to ${peer2Id}`);
-
-    const activeConnectionContainer2 = await driver2.findElement(
-      By.id("active-connection-container"),
-    );
-    const activeConnectionStatus2 = await driver2.findElement(
-      By.id("active-connection-status"),
-    );
-
-    await driver2.wait(
-      until.elementIsVisible(activeConnectionContainer2),
-      30000,
-    );
-    console.log(`Peer 2 connected`);
-
-    await driver2.wait(async () => {
-      const text = (await activeConnectionStatus2.getText()).trim();
-      return text === peer1Id;
-    }, 30000);
-    console.log(`Peer 2 status: Connected to ${peer1Id}`);
+    await waitForPeerConnection(driver1, peer2Id, "Peer 1");
+    await waitForPeerConnection(driver2, peer1Id, "Peer 2");
 
     const fileTransferSection1 = await driver1.findElement(
       By.id("file-transfer-section"),
@@ -190,7 +165,7 @@ async function runConnectionTest() {
         );
         const statusText = await statusDiv.getText();
         return statusText.toLowerCase().includes("sent");
-      } catch (e) {
+      } catch {
         return false;
       }
     }, 45000);
@@ -204,7 +179,7 @@ async function runConnectionTest() {
         );
         const filesText = await incomingFiles.getText();
         return filesText.includes(testFileName);
-      } catch (e) {
+      } catch {
         return false;
       }
     }, 45000);

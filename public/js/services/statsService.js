@@ -3,11 +3,21 @@ class StatsService {
     this.fetchInFlight = null;
     this.lastSuccessfulFetchAt = 0;
     this.fetchCooldownMs = 1200;
+    this.statsIntervalId = null;
 
     this.requestConnectionStats({ force: true });
-    setInterval(() => {
-      this.requestConnectionStats();
+    this.statsIntervalId = setInterval(() => {
+      this.requestConnectionStats().catch((err) => {
+        console.error("Stats fetch failed:", err);
+      });
     }, STATS_FETCH_INTERVAL);
+
+    if (
+      window.uiManager &&
+      typeof uiManager.registerPageExitHandler === "function"
+    ) {
+      uiManager.registerPageExitHandler(() => this.cleanup());
+    }
   }
 
   async requestConnectionStats(options = {}) {
@@ -31,26 +41,12 @@ class StatsService {
     return this.fetchInFlight;
   }
 
-  async fetchConnectionStats(options = {}) {
-    return this.requestConnectionStats(options);
-  }
-
   async _fetchAndRender() {
     try {
-      const response = await fetch(
+      const stats = await appUtils.requestJson(
         `${BASE_API_URL}${API_ENDPOINTS.CONNECTION_STATS}`,
+        { errorPrefix: "Failed to fetch stats" },
       );
-
-      if (!response.ok) {
-        let errorMessage = `Failed to fetch stats: ${response.status} ${response.statusText}.`;
-        try {
-          const errorData = await response.json();
-          errorMessage += ` ${errorData.details || errorData.error || ""}`;
-        } catch (error) {}
-        throw new Error(errorMessage);
-      }
-
-      const stats = await response.json();
       this.lastSuccessfulFetchAt = Date.now();
       uiManager.updateConnectionStats(stats);
     } catch (error) {
@@ -58,6 +54,16 @@ class StatsService {
       uiManager.showConnectionStatsError();
     }
   }
+
+  cleanup() {
+    if (this.statsIntervalId) {
+      clearInterval(this.statsIntervalId);
+      this.statsIntervalId = null;
+    }
+
+    this.fetchInFlight = null;
+  }
 }
 
 const statsService = new StatsService();
+window.statsService = statsService;

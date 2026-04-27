@@ -6,36 +6,27 @@ class TurnService {
 
   async initializeTurnCredentials() {
     if (!environmentIsProd) {
-      console.log(
-        "Local environment: Using default STUN servers only. (Skipped TURN fetch)",
-      );
+      console.log("Development mode: Using STUN servers only (no TURN)");
       return;
     }
 
     try {
-      const response = await fetch(
+      const turnServers = await appUtils.requestJson(
         `${BASE_API_URL}${API_ENDPOINTS.TURN_CREDENTIALS}`,
+        { errorPrefix: "Failed to fetch TURN credentials" },
       );
-
-      if (!response.ok) {
-        let errorMsg = `Failed to fetch TURN credentials: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMsg = errorData.error || errorMsg;
-        } catch {}
-        throw new Error(errorMsg);
-      }
-
-      const turnServers = await response.json();
 
       if (Array.isArray(turnServers) && turnServers.length > 0) {
         this.rtcConfig.iceServers =
           this.rtcConfig.iceServers.concat(turnServers);
+        console.log(`TURN servers added: ${turnServers.length} server(s)`);
       } else {
         console.warn("Using default STUN servers only.");
       }
     } catch (error) {
-      console.warn("Could not retrieve premium TURN servers. Using default STUN servers only.");
+      console.warn(
+        "Could not retrieve premium TURN servers. Using default STUN servers only.",
+      );
     }
   }
 
@@ -45,3 +36,4 @@ class TurnService {
 }
 
 const turnService = new TurnService();
+window.turnService = turnService;

@@ -12,6 +12,12 @@ class UIManager {
     this.fileTransferHandlers = {};
     this.historyClearHandlers = new Set();
     this.pageExitHandlers = new Set();
+    this.pageExitTriggered = false;
+    this._onPaste = null;
+    this._onClearHistory = null;
+    this._onPageExit = null;
+    this._themeMediaQuery = null;
+    this._onThemePreferenceChange = null;
 
     this._initializeElements();
     this._attachEventListeners();
@@ -212,26 +218,67 @@ class UIManager {
       });
     }
 
-    document.addEventListener("paste", (event) => {
+    this._onPaste = (event) => {
       this._safeCall(this.fileTransferHandlers.onPaste, event);
-    });
+    };
+    document.addEventListener("paste", this._onPaste);
 
-    document.addEventListener("clear-history", () => {
+    this._onClearHistory = () => {
       this._clearChatHistoryUI();
       for (const handler of this.historyClearHandlers) {
         this._safeCall(handler);
       }
       this.setClearHistoryVisible(false);
-    });
+    };
+    document.addEventListener("clear-history", this._onClearHistory);
 
-    const handlePageExit = () => {
+    this._onPageExit = () => {
+      if (this.pageExitTriggered) {
+        return;
+      }
+
+      this.pageExitTriggered = true;
+      this.dispose();
+      clearTimeout(this.idMsgTimer);
+      clearTimeout(this.newIdAlertTimer);
+      clearTimeout(this.fileMsgTimer);
+
       for (const handler of this.pageExitHandlers) {
         this._safeCall(handler);
       }
     };
 
-    window.addEventListener("beforeunload", handlePageExit);
-    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", this._onPageExit);
+    window.addEventListener("pagehide", this._onPageExit);
+    window.addEventListener("unload", this._onPageExit);
+  }
+
+  dispose() {
+    if (this._onPaste) {
+      document.removeEventListener("paste", this._onPaste);
+      this._onPaste = null;
+    }
+
+    if (this._onClearHistory) {
+      document.removeEventListener("clear-history", this._onClearHistory);
+      this._onClearHistory = null;
+    }
+
+    if (this._onPageExit) {
+      window.removeEventListener("beforeunload", this._onPageExit);
+      window.removeEventListener("pagehide", this._onPageExit);
+      window.removeEventListener("unload", this._onPageExit);
+      this._onPageExit = null;
+    }
+
+    if (this._themeMediaQuery && this._onThemePreferenceChange) {
+      this._themeMediaQuery.removeEventListener(
+        "change",
+        this._onThemePreferenceChange,
+      );
+      this._onThemePreferenceChange = null;
+      this._themeMediaQuery = null;
+    }
   }
 
   async _handleFolderBrowseClick() {
@@ -347,22 +394,29 @@ class UIManager {
     }
 
     try {
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      if (!persistedTheme && mediaQuery.matches) {
+      this._themeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      if (!persistedTheme && this._themeMediaQuery.matches) {
         applyTheme(true);
       }
 
-      if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener("change", (event) => {
+      if (this._themeMediaQuery.addEventListener) {
+        this._onThemePreferenceChange = (event) => {
           let currentPreference = null;
           try {
             currentPreference = localStorage.getItem("rtcTheme");
-          } catch (error) {}
+          } catch (error) {
+            console.warn("Unable to read stored theme preference:", error);
+          }
 
           if (!currentPreference) {
             applyTheme(event.matches);
           }
-        });
+        };
+
+        this._themeMediaQuery.addEventListener(
+          "change",
+          this._onThemePreferenceChange,
+        );
       }
     } catch (error) {
       console.warn("Theme media matching failed:", error);
@@ -830,12 +884,34 @@ class UIManager {
 
     statsDiv.hidden = false;
 
-    const isCalculating =
-      !speed || speed === "-" || speed === "..." || !eta || eta === "-";
+    let statsRow = statsDiv.querySelector(".transfer-stats-row");
+    let speedSpan = statsDiv.querySelector(".transfer-stat-speed");
+    let etaSpan = statsDiv.querySelector(".transfer-stat-eta");
 
-    statsDiv.textContent = isCalculating
-      ? "Calculating..."
-      : `${speed}  ETA: ${eta}`;
+    if (!statsRow || !speedSpan || !etaSpan) {
+      statsDiv.textContent = "";
+
+      statsRow = document.createElement("div");
+      statsRow.className = "transfer-stats-row";
+
+      speedSpan = document.createElement("span");
+      speedSpan.className = "transfer-stat transfer-stat-speed";
+
+      etaSpan = document.createElement("span");
+      etaSpan.className = "transfer-stat transfer-stat-eta";
+
+      statsRow.appendChild(speedSpan);
+      statsRow.appendChild(etaSpan);
+      statsDiv.appendChild(statsRow);
+    }
+
+    const hasSpeed = Boolean(speed && speed !== "-" && speed !== "...");
+    const hasEta = Boolean(eta && eta !== "-" && eta !== "...");
+
+    speedSpan.textContent = hasSpeed
+      ? `Speed: ${speed}`
+      : "Speed: Calculating...";
+    etaSpan.textContent = hasEta ? `ETA: ${eta}` : "ETA: Calculating...";
   }
 
   updateSentStats(speed, eta) {
@@ -940,9 +1016,9 @@ class UIManager {
 
   handleSendChat() {
     const text = this.chatInput?.value.trim();
-    if (!text || !window.webrtcManager) return;
+    if (!text) return;
 
-    window.webrtcManager.sendChat(text);
+    this._safeCall(this.webRtcHandlers.onSendChat, text);
     this.chatInput.value = "";
   }
 
@@ -1271,6 +1347,31 @@ class UIManager {
         (file) => file.isDirectoryMarker || String(file.name).includes("/"),
       );
 
+    let targetContainer, targetSection;
+
+    if (direction === "from") {
+      targetContainer = isFolderItem
+        ? this.incomingFoldersContainer
+        : this.incomingFilesContainer;
+      targetSection = isFolderItem
+        ? this.incomingFoldersSection
+        : this.incomingFilesSection;
+    } else {
+      targetContainer = isFolderItem
+        ? this.outgoingFoldersContainer
+        : this.outgoingFilesContainer;
+      targetSection = isFolderItem
+        ? this.outgoingFoldersSection
+        : this.outgoingFilesSection;
+    }
+
+    if (!targetContainer || !targetSection) return;
+
+    const normalizedStatusSuffix =
+      typeof statusSuffix === "string" ? statusSuffix.trim() : "";
+    const isIncompleteStatus =
+      normalizedStatusSuffix.toLowerCase() === "incomplete";
+
     let displayName = "Files";
     if (rootDirectoryName) {
       displayName = rootDirectoryName;
@@ -1279,7 +1380,14 @@ class UIManager {
     } else if (batch.length === 1) {
       displayName = String(batch[0].name || "File");
     } else {
-      displayName = `${batch.length} files`;
+      const hasPriorReceivedZipGroup =
+        direction === "from" &&
+        !isFolderItem &&
+        Boolean(targetContainer.firstElementChild);
+
+      displayName = hasPriorReceivedZipGroup
+        ? `Last ${batch.length} Files`
+        : `${batch.length} Files`;
     }
 
     const totalSize = batch.reduce(
@@ -1301,19 +1409,30 @@ class UIManager {
 
       const downloadButton = document.createElement("button");
       downloadButton.className = "zip-download-btn";
-      downloadButton.textContent = isFolderItem
-        ? `Download ${displayName}`
-        : `Download ${batch.length} files (ZIP)`;
+
+      const setDownloadButtonLabel = () => {
+        const baseLabel = `Download ${String(displayName || "").trim()}`;
+
+        downloadButton.textContent = baseLabel;
+
+        if (isIncompleteStatus) {
+          const suffixSpan = document.createElement("span");
+          suffixSpan.className = "history-status-incomplete";
+          suffixSpan.textContent = " - Incomplete";
+          downloadButton.appendChild(suffixSpan);
+        }
+      };
+
+      setDownloadButtonLabel();
 
       downloadButton.addEventListener("click", async () => {
-        const defaultText = downloadButton.textContent;
         downloadButton.textContent = "Zipping...";
         downloadButton.disabled = true;
 
         try {
           await onZipDownload(downloadButton, displayName);
         } finally {
-          downloadButton.textContent = defaultText;
+          setDownloadButtonLabel();
           downloadButton.disabled = false;
         }
       });
@@ -1336,9 +1455,17 @@ class UIManager {
       label.download = singleFileDownload.fileName;
     }
 
-    label.textContent = statusSuffix
-      ? `${displayName} - ${statusSuffix}`
-      : displayName;
+    label.textContent = displayName;
+    if (normalizedStatusSuffix) {
+      const suffixSpan = document.createElement("span");
+      suffixSpan.textContent = isIncompleteStatus
+        ? " - Incomplete"
+        : ` - ${normalizedStatusSuffix}`;
+      if (isIncompleteStatus) {
+        suffixSpan.classList.add("history-status-incomplete");
+      }
+      label.appendChild(suffixSpan);
+    }
     entryDiv.appendChild(label);
 
     const metaSpan = document.createElement("span");
@@ -1349,26 +1476,6 @@ class UIManager {
     entryDiv.appendChild(metaSpan);
 
     wrapperDiv.appendChild(entryDiv);
-
-    const targetContainer =
-      direction === "from"
-        ? isFolderItem
-          ? this.incomingFoldersContainer
-          : this.incomingFilesContainer
-        : isFolderItem
-          ? this.outgoingFoldersContainer
-          : this.outgoingFilesContainer;
-
-    const targetSection =
-      direction === "from"
-        ? isFolderItem
-          ? this.incomingFoldersSection
-          : this.incomingFilesSection
-        : isFolderItem
-          ? this.outgoingFoldersSection
-          : this.outgoingFilesSection;
-
-    if (!targetContainer || !targetSection) return;
 
     this._setHidden(targetSection, false);
 
@@ -1388,20 +1495,38 @@ class UIManager {
     return tag === "INPUT" || tag === "TEXTAREA";
   }
 
+  _clearSuccessRateClasses() {
+    if (!this.successRateDisplay) return;
+    this.successRateDisplay.classList.remove(
+      "stats-good",
+      "stats-warn",
+      "stats-bad",
+    );
+  }
+
   updateConnectionStats(stats) {
     if (!stats) return;
 
-    if (this.successRateDisplay) {
-      this.successRateDisplay.textContent = `${stats.successRate}%`;
-      this.successRateDisplay.classList.remove(
-        "stats-good",
-        "stats-warn",
-        "stats-bad",
-      );
+    const successRate = Number.isFinite(Number(stats.successRate))
+      ? Math.max(0, Math.min(100, Number(stats.successRate)))
+      : 0;
+    const uptimeMs = Math.max(0, Number(stats.uptimeMs) || 0);
+    const totalBytesTransferred = Math.max(
+      0,
+      Math.round(Number(stats.totalBytesTransferred) || 0),
+    );
+    const totalFilesTransferred = Math.max(
+      0,
+      Math.floor(Number(stats.totalFilesTransferred) || 0),
+    );
 
-      if (stats.successRate >= 80) {
+    if (this.successRateDisplay) {
+      this.successRateDisplay.textContent = `${successRate.toFixed(1)}%`;
+      this._clearSuccessRateClasses();
+
+      if (successRate >= 80) {
         this.successRateDisplay.classList.add("stats-good");
-      } else if (stats.successRate >= 60) {
+      } else if (successRate >= 60) {
         this.successRateDisplay.classList.add("stats-warn");
       } else {
         this.successRateDisplay.classList.add("stats-bad");
@@ -1409,30 +1534,25 @@ class UIManager {
     }
 
     if (this.uptimeDisplay) {
-      this.uptimeDisplay.textContent = appUtils.formatUptime(stats.uptimeMs);
+      this.uptimeDisplay.textContent = appUtils.formatUptime(uptimeMs);
     }
 
     if (this.totalDataDisplay) {
       this.totalDataDisplay.textContent = appUtils.formatBytes(
-        stats.totalBytesTransferred || 0,
+        totalBytesTransferred,
       );
     }
 
     if (this.totalFilesDisplay) {
-      this.totalFilesDisplay.textContent = (
-        stats.totalFilesTransferred || 0
-      ).toLocaleString();
+      this.totalFilesDisplay.textContent =
+        totalFilesTransferred.toLocaleString();
     }
   }
 
   showConnectionStatsError() {
     if (this.successRateDisplay) {
       this.successRateDisplay.textContent = "Error";
-      this.successRateDisplay.classList.remove(
-        "stats-good",
-        "stats-warn",
-        "stats-bad",
-      );
+      this._clearSuccessRateClasses();
     }
 
     if (this.uptimeDisplay) this.uptimeDisplay.textContent = "Error";
