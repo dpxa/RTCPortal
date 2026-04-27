@@ -25,8 +25,15 @@ const emitPeerNotFound = (socket, target) => {
   socket.emit("peer-not-found", { target });
 };
 
+const getSocketIdentity = (socket) => socket.pin || socket.id;
+
 const handleSocketConnection = (io, connectionStats) => {
   io.on("connection", (socket) => {
+    const selfTargetResolveOptions = {
+      preventSelfTarget: true,
+    };
+    const signalRelayRequiredFields = ["target", "sdp"];
+
     let pin;
     do {
       pin = generatePin();
@@ -39,6 +46,23 @@ const handleSocketConnection = (io, connectionStats) => {
 
     socket.emit("pin-assigned", { pin });
 
+    const handleMissingRelayTarget = (payloadTarget, options = {}) => {
+      const {
+        decrementAttemptsOnMissing = false,
+        emitPeerNotFoundOnMissing = false,
+      } = options;
+
+      if (decrementAttemptsOnMissing) {
+        connectionStats.decrementAttempts();
+      }
+
+      if (emitPeerNotFoundOnMissing) {
+        emitPeerNotFound(socket, payloadTarget);
+      }
+
+      return null;
+    };
+
     const resolveRelayTarget = (payload, options = {}) => {
       const {
         decrementAttemptsOnMissing = false,
@@ -50,13 +74,10 @@ const handleSocketConnection = (io, connectionStats) => {
       const targetId = resolveTargetSocketId(payload?.target);
 
       if (!targetId) {
-        if (decrementAttemptsOnMissing) {
-          connectionStats.decrementAttempts();
-        }
-        if (emitPeerNotFoundOnMissing) {
-          emitPeerNotFound(socket, payload?.target);
-        }
-        return null;
+        return handleMissingRelayTarget(payload?.target, {
+          decrementAttemptsOnMissing,
+          emitPeerNotFoundOnMissing,
+        });
       }
 
       if (preventSelfTarget && targetId === socket.id) {
@@ -64,13 +85,10 @@ const handleSocketConnection = (io, connectionStats) => {
       }
 
       if (requireLiveSocket && !io.sockets.sockets.get(targetId)) {
-        if (decrementAttemptsOnMissing) {
-          connectionStats.decrementAttempts();
-        }
-        if (emitPeerNotFoundOnMissing) {
-          emitPeerNotFound(socket, payload?.target);
-        }
-        return null;
+        return handleMissingRelayTarget(payload?.target, {
+          decrementAttemptsOnMissing,
+          emitPeerNotFoundOnMissing,
+        });
       }
 
       return targetId;
@@ -97,11 +115,45 @@ const handleSocketConnection = (io, connectionStats) => {
       return resolveRelayTarget(payload, resolveOptions);
     };
 
+    const relayEventToTarget = (targetId, eventName, payloadBuilder) => {
+      io.to(targetId).emit(eventName, payloadBuilder());
+    };
+
+    const registerRelayEvent = ({
+      incomingEvent,
+      outgoingEvent,
+      requiredFields,
+      validatePayload,
+      resolveOptions,
+      beforeRelay,
+      payloadBuilder,
+    }) => {
+      socket.on(incomingEvent, (payload) => {
+        const targetId = resolveValidatedRelayTarget({
+          payload,
+          requiredFields,
+          validatePayload,
+          resolveOptions,
+        });
+        if (!targetId) {
+          return;
+        }
+
+        if (typeof beforeRelay === "function") {
+          beforeRelay(targetId, payload);
+        }
+
+        relayEventToTarget(targetId, outgoingEvent, () =>
+          payloadBuilder({ payload, targetId }),
+        );
+      });
+    };
+
     socket.on("disconnect", () => {
       const targetId = activePairings.get(socket.id);
       if (targetId) {
         io.to(targetId).emit("peer-disconnected", {
-          from: socket.pin || socket.id,
+          from: getSocketIdentity(socket),
         });
         activePairings.delete(socket.id);
         activePairings.delete(targetId);
@@ -136,87 +188,63 @@ const handleSocketConnection = (io, connectionStats) => {
       }
     });
 
-    socket.on("offer", (payload) => {
-      const targetId = resolveValidatedRelayTarget({
-        payload,
-        requiredFields: ["target", "sdp"],
-        validatePayload: (data) => isValidObject(data.sdp),
-        resolveOptions: {
-          decrementAttemptsOnMissing: true,
-          emitPeerNotFoundOnMissing: true,
-          preventSelfTarget: true,
-          requireLiveSocket: true,
-        },
-      });
-      if (!targetId) {
-        return;
-      }
-
-      io.to(targetId).emit("offer", {
+    registerRelayEvent({
+      incomingEvent: "offer",
+      outgoingEvent: "offer",
+      requiredFields: ["target", "sdp"],
+      validatePayload: (data) => isValidObject(data.sdp),
+      resolveOptions: {
+        decrementAttemptsOnMissing: true,
+        emitPeerNotFoundOnMissing: true,
+        preventSelfTarget: true,
+        requireLiveSocket: true,
+      },
+      payloadBuilder: ({ payload }) => ({
         sdp: payload.sdp,
-        caller: socket.pin || socket.id,
-      });
+        caller: getSocketIdentity(socket),
+      }),
     });
 
-    socket.on("answer", (payload) => {
-      const targetId = resolveValidatedRelayTarget({
-        payload,
-        requiredFields: ["target", "sdp"],
-        validatePayload: (data) => isValidObject(data.sdp),
-        resolveOptions: {
-          preventSelfTarget: true,
-        },
-      });
-      if (!targetId) {
-        return;
-      }
-
-      activePairings.set(socket.id, targetId);
-      activePairings.set(targetId, socket.id);
-
-      io.to(targetId).emit("answer", {
+    registerRelayEvent({
+      incomingEvent: "answer",
+      outgoingEvent: "answer",
+      requiredFields: signalRelayRequiredFields,
+      validatePayload: (data) => isValidObject(data.sdp),
+      resolveOptions: selfTargetResolveOptions,
+      beforeRelay: (targetId) => {
+        activePairings.set(socket.id, targetId);
+        activePairings.set(targetId, socket.id);
+      },
+      payloadBuilder: ({ payload }) => ({
         sdp: payload.sdp,
-        callee: socket.pin || socket.id,
-      });
+        callee: getSocketIdentity(socket),
+      }),
     });
 
-    socket.on("candidate", (payload) => {
-      const targetId = resolveValidatedRelayTarget({
-        payload,
-        requiredFields: ["target", "candidate"],
-        validatePayload: (data) => isValidObject(data.candidate),
-        resolveOptions: {
-          preventSelfTarget: true,
-        },
-      });
-      if (!targetId) {
-        return;
-      }
-
-      io.to(targetId).emit("candidate", {
+    registerRelayEvent({
+      incomingEvent: "candidate",
+      outgoingEvent: "candidate",
+      requiredFields: ["target", "candidate"],
+      validatePayload: (data) => isValidObject(data.candidate),
+      resolveOptions: selfTargetResolveOptions,
+      payloadBuilder: ({ payload }) => ({
         candidate: payload.candidate,
-        from: socket.pin || socket.id,
-      });
+        from: getSocketIdentity(socket),
+      }),
     });
 
-    socket.on("peer-disconnected", (payload) => {
-      const targetId = resolveValidatedRelayTarget({
-        payload,
-        requiredFields: ["target"],
-        resolveOptions: {
-          preventSelfTarget: true,
-        },
-      });
-      if (!targetId) {
-        return;
-      }
-
-      activePairings.delete(socket.id);
-      activePairings.delete(targetId);
-
-      io.to(targetId).emit("peer-disconnected", {
-        from: socket.pin || socket.id,
-      });
+    registerRelayEvent({
+      incomingEvent: "peer-disconnected",
+      outgoingEvent: "peer-disconnected",
+      requiredFields: ["target"],
+      resolveOptions: selfTargetResolveOptions,
+      beforeRelay: (targetId) => {
+        activePairings.delete(socket.id);
+        activePairings.delete(targetId);
+      },
+      payloadBuilder: () => ({
+        from: getSocketIdentity(socket),
+      }),
     });
   });
 };
