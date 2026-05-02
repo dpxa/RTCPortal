@@ -1,11 +1,33 @@
-self.importScripts(
-  "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
-);
+function ensureJsZipLoaded() {
+  if (typeof self.JSZip !== "undefined") {
+    return;
+  }
+
+  const scriptCandidates = [
+    "../vendor/jszip.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
+    "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+  ];
+
+  let lastError = null;
+  for (const src of scriptCandidates) {
+    try {
+      self.importScripts(src);
+      if (typeof self.JSZip !== "undefined") {
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw new Error(
+    `JSZip failed to load in worker.${lastError ? ` ${String(lastError)}` : ""}`,
+  );
+}
 
 function buildZip(files) {
-  if (typeof self.JSZip === "undefined") {
-    throw new Error("JSZip failed to load in worker.");
-  }
+  ensureJsZipLoaded();
 
   const zip = new self.JSZip();
   const createdDirs = new Set();

@@ -1537,14 +1537,6 @@ class FileTransferManager {
   async downloadSpecificBatch(files, defaultName) {
     if (!files || files.length === 0) return;
 
-    if (typeof JSZip === "undefined") {
-      uiManager.showFileWarning(
-        "ZIP library failed to load. Downloads blocked.",
-      );
-      console.warn("JSZip library is missing (blocked by network).");
-      return;
-    }
-
     try {
       const content = await this._generateZipBlob(files);
       const blobUrl = URL.createObjectURL(content);
