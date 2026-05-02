@@ -36,6 +36,7 @@ if (isProd) {
 
 app.use(
   helmet({
+    permissionsPolicy: false,
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
