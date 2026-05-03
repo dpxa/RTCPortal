@@ -687,8 +687,8 @@ class UIManager {
       text: url,
       width: 128,
       height: 128,
-      colorDark: getCssVar("--qr-color-dark", "#000000"),
-      colorLight: getCssVar("--qr-color-light", "#ffffff"),
+      colorDark: "#000000",
+      colorLight: "#ffffff",
       correctLevel: QRCode.CorrectLevel.H,
     });
 
@@ -1519,8 +1519,10 @@ class UIManager {
     );
 
     if (this.successRateDisplay) {
-      this.successRateDisplay.textContent =
-        successRate === 0 ? "0%" : `${successRate.toFixed(1)}%`;
+      const isWholeNumber = Number.isInteger(successRate);
+      this.successRateDisplay.textContent = isWholeNumber
+        ? `${Math.round(successRate)}%`
+        : `${successRate.toFixed(1)}%`;
       this._clearSuccessRateClasses();
 
       if (successRate >= 80) {

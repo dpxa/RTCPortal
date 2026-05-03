@@ -1391,7 +1391,7 @@ class FileTransferManager {
     const currentWritable = this.opfsWritable;
     const currentFileHandle = this.opfsFileHandle;
     const currentDetails = this.receivedFileDetails;
-    let currentChunks = this.collectedChunks;
+    const currentChunks = this.collectedChunks;
 
     if (!currentDetails) {
       if (currentWritable) {

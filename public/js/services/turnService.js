@@ -23,7 +23,7 @@ class TurnService {
       } else {
         console.warn("Using default STUN servers only.");
       }
-    } catch (error) {
+    } catch {
       console.warn(
         "Could not retrieve premium TURN servers. Using default STUN servers only.",
       );

@@ -46,8 +46,6 @@
   --pulse-red-transparent: rgba(231, 76, 60, 0);
   --link-shadow: rgba(74, 144, 226, 0.5);
   --shadow-overlay: 0 -2px 4px rgba(0, 0, 0, 0.1);
-  --qr-color-dark: #000000;
-  --qr-color-light: #ffffff;
 
   --font-family: "Poppins", sans-serif;
   --radius-sm: 4px;
@@ -404,6 +402,7 @@ input:disabled {
 }
 
 .pin-action-buttons {
+  display: flex;
   gap: var(--space-1);
 }
 
@@ -812,6 +811,7 @@ body.dark-mode .chat-input-container {
   display: flex;
   gap: var(--space-2);
   margin-top: var(--space-2);
+  position: relative;
   z-index: 10;
   flex-wrap: wrap;
 }

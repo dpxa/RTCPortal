@@ -3,14 +3,12 @@ const globals = require("globals");
 
 module.exports = [
   {
-    linterOptions: {
-      reportUnusedDisableDirectives: "warn",
-    },
     ignores: [
       "**/node_modules/**",
       "assets/**",
       "test_files/**",
       "public/images/**",
+      "public/js/vendor/**",
     ],
   },
   {
@@ -51,6 +49,8 @@ module.exports = [
           caughtErrors: "none",
         },
       ],
+      "prefer-const": "warn",
+      eqeqeq: ["warn", "always"],
     },
   },
   {
