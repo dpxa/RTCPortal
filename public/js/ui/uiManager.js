@@ -1519,7 +1519,8 @@ class UIManager {
     );
 
     if (this.successRateDisplay) {
-      this.successRateDisplay.textContent = `${successRate.toFixed(1)}%`;
+      this.successRateDisplay.textContent =
+        successRate === 0 ? "0%" : `${successRate.toFixed(1)}%`;
       this._clearSuccessRateClasses();
 
       if (successRate >= 80) {
