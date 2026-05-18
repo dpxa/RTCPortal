@@ -80,8 +80,15 @@ self.addEventListener("message", async (incomingEvent) => {
     const blob = await buildZip(files);
     self.postMessage({ blob });
   } catch (error) {
+    const isJsZipError =
+      error?.message?.includes("JSZip failed to load") ||
+      error?.message?.includes("JSZip is not defined");
+    const userMessage = isJsZipError
+      ? "Unable to create ZIP: the compression library could not be loaded. Please check your internet connection and try again."
+      : "Unable to create ZIP file. The files may be too large or corrupted.";
     self.postMessage({
-      error: error?.message || "ZIP generation failed in worker.",
+      error: userMessage,
+      technical: error?.message || "Unknown error",
     });
   }
 });

@@ -13,6 +13,7 @@ module.exports = {
   SOCKET_TRANSPORTS: ["websocket", "polling"],
 
   API_ENDPOINTS: {
+    TURN_TOKEN: "/turn-token",
     TURN_CREDENTIALS: "/turn-credentials",
     CONNECTION_STATS: "/connection-stats",
   },
@@ -23,9 +24,12 @@ module.exports = {
     MAX_API_REQUESTS_PROD: 100,
     MAX_TURN_REQUESTS_DEV: 200,
     MAX_TURN_REQUESTS_PROD: 20,
+    MAX_TURN_TOKEN_REQUESTS_DEV: 500,
+    MAX_TURN_TOKEN_REQUESTS_PROD: 50,
     MESSAGES: {
       API_LIMIT: "Too many requests from this IP, please try again later.",
       TURN_LIMIT: "Too many TURN credential requests, please try again later.",
+      TURN_TOKEN_LIMIT: "Too many TURN token requests, please try again later.",
     },
   },
 

@@ -75,6 +75,27 @@ const appUtils = {
       return false;
     }
   },
+
+  async sha256(buffer) {
+    try {
+      const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (error) {
+      console.warn("SHA-256 computation failed:", error);
+      return null;
+    }
+  },
+
+  async sha256Blob(blob) {
+    try {
+      const buffer = await blob.arrayBuffer();
+      return this.sha256(buffer);
+    } catch (error) {
+      console.warn("SHA-256 blob computation failed:", error);
+      return null;
+    }
+  },
 };
 
 window.appUtils = appUtils;

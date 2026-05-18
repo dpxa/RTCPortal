@@ -1,6 +1,6 @@
 const express = require("express");
+const crypto = require("crypto");
 const {
-  CORS_ORIGINS,
   METERED_API_BASE_URL,
   HTTP_STATUS,
   API_ENDPOINTS,
@@ -8,19 +8,74 @@ const {
 const router = express.Router();
 
 const sendError = (res, status, error) => res.status(status).json({ error });
-const isFromGitHubPages = (referer, origin) =>
-  referer?.startsWith(CORS_ORIGINS.GITHUB_PAGES) ||
-  origin?.startsWith(CORS_ORIGINS.GITHUB_PAGES);
+
+const TURN_TOKEN_SECRET = process.env.TURN_TOKEN_SECRET || null;
+const TURN_TOKEN_TTL_MS = 60000;
+
+const generateTurnToken = () => {
+  if (!TURN_TOKEN_SECRET) return null;
+  const expiresAt = Date.now() + TURN_TOKEN_TTL_MS;
+  const payload = `${expiresAt}`;
+  const signature = crypto
+    .createHmac("sha256", TURN_TOKEN_SECRET)
+    .update(payload)
+    .digest("hex");
+  return `${payload}.${signature}`;
+};
+
+const isAuthorizedTurnRequest = (req) => {
+  if (!TURN_TOKEN_SECRET) return false;
+
+  const authHeader = req.get("Authorization") || "";
+  let token = req.query.token || null;
+  if (!token && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7);
+  }
+
+  if (!token) return false;
+
+  const dotIndex = token.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+
+  const expiresAtStr = token.slice(0, dotIndex);
+  const providedSig = token.slice(dotIndex + 1);
+
+  const expectedSig = crypto
+    .createHmac("sha256", TURN_TOKEN_SECRET)
+    .update(expiresAtStr)
+    .digest("hex");
+
+  if (
+    !crypto.timingSafeEqual(
+      Buffer.from(providedSig, "hex"),
+      Buffer.from(expectedSig, "hex"),
+    )
+  ) {
+    return false;
+  }
+
+  const expiresAt = parseInt(expiresAtStr, 10);
+  return Number.isFinite(expiresAt) && Date.now() <= expiresAt;
+};
+
+router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
+  const token = generateTurnToken();
+  if (!token) {
+    return sendError(
+      res,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      "TURN token service not configured",
+    );
+  }
+  res.status(HTTP_STATUS.OK).json({ token, expiresIn: TURN_TOKEN_TTL_MS });
+});
 
 router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
-  const referer = req.get("Referer");
-  const origin = req.get("Origin");
-
-  if (!isFromGitHubPages(referer, origin)) {
+  if (!isAuthorizedTurnRequest(req)) {
     return sendError(
       res,
       HTTP_STATUS.FORBIDDEN,
-      "Forbidden - Access restricted",
+      "Forbidden - Invalid or expired access token",
     );
   }
 
@@ -36,8 +91,12 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
       );
     }
 
-    const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${apiKey}`;
-    const response = await fetch(meteredApiUrl);
+    const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials`;
+    const response = await fetch(meteredApiUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
 
     if (!response.ok) {
       let errorMsg = `Failed to fetch TURN credentials: ${response.status} ${response.statusText}.`;

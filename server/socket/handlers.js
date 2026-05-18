@@ -1,5 +1,26 @@
 const pinMap = new Map();
 const activePairings = new Map();
+const pairingTimestamps = new Map();
+
+const PAIRING_TTL_MS = 120000;
+const PAIRING_SWEEP_INTERVAL_MS = 30000;
+
+setInterval(() => {
+  if (activePairings.size === 0) return;
+  const now = Date.now();
+  for (const [socketId] of activePairings) {
+    const connectedAt = pairingTimestamps.get(socketId) || 0;
+    if (now - connectedAt > PAIRING_TTL_MS) {
+      const targetId = activePairings.get(socketId);
+      if (targetId) {
+        activePairings.delete(socketId);
+        activePairings.delete(targetId);
+        pairingTimestamps.delete(socketId);
+        pairingTimestamps.delete(targetId);
+      }
+    }
+  }
+}, PAIRING_SWEEP_INTERVAL_MS);
 
 const generatePin = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -35,9 +56,21 @@ const handleSocketConnection = (io, connectionStats) => {
     const signalRelayRequiredFields = ["target", "sdp"];
 
     let pin;
+    let pinRetries = 0;
+    const MAX_PIN_RETRIES = 100;
     do {
       pin = generatePin();
-    } while (pinMap.has(pin));
+      pinRetries++;
+    } while (pinMap.has(pin) && pinRetries < MAX_PIN_RETRIES);
+
+    if (pinMap.has(pin)) {
+      console.error("Failed to generate unique PIN after maximum retries");
+      socket.emit("error", {
+        message: "Server is at capacity. Please try again later.",
+      });
+      socket.disconnect(true);
+      return;
+    }
 
     pinMap.set(pin, socket.id);
     socket.pin = pin;
@@ -157,10 +190,13 @@ const handleSocketConnection = (io, connectionStats) => {
         });
         activePairings.delete(socket.id);
         activePairings.delete(targetId);
+        pairingTimestamps.delete(socket.id);
+        pairingTimestamps.delete(targetId);
       }
 
       if (socket.pin) {
         pinMap.delete(socket.pin);
+        pairingTimestamps.delete(socket.id);
       }
     });
 
@@ -214,6 +250,9 @@ const handleSocketConnection = (io, connectionStats) => {
       beforeRelay: (targetId) => {
         activePairings.set(socket.id, targetId);
         activePairings.set(targetId, socket.id);
+        const now = Date.now();
+        pairingTimestamps.set(socket.id, now);
+        pairingTimestamps.set(targetId, now);
       },
       payloadBuilder: ({ payload }) => ({
         sdp: payload.sdp,

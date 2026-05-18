@@ -728,7 +728,7 @@ class WebRTCManager {
       } catch (heartbeatError) {
         console.warn("Heartbeat failed", heartbeatError);
       }
-    }, 2000);
+    }, HEARTBEAT_INTERVAL);
   }
 
   stopHeartbeat() {
@@ -758,12 +758,6 @@ class WebRTCManager {
     }
 
     if (disposeSocket && this.socket) {
-      try {
-        this.socket.off();
-      } catch (error) {
-        console.error("Socket off() failed during cleanup:", error);
-      }
-
       try {
         this.socket.disconnect();
       } catch (error) {

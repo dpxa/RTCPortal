@@ -1,3 +1,53 @@
+class TokenBucket {
+  constructor(bytesPerSec) {
+    this._bytesPerSec = Math.max(0, Number(bytesPerSec) || 0);
+    this._tokens = 0;
+    this._lastRefill = Date.now();
+  }
+
+  setRate(bytesPerSec) {
+    this._bytesPerSec = Math.max(0, Number(bytesPerSec) || 0);
+  }
+
+  get bytesPerSec() {
+    return this._bytesPerSec;
+  }
+
+  async consume(bytesNeeded) {
+    if (this._bytesPerSec <= 0) return;
+
+    this._refill();
+    bytesNeeded = Number(bytesNeeded) || 0;
+
+    if (bytesNeeded <= this._tokens) {
+      this._tokens -= bytesNeeded;
+      return;
+    }
+
+    const deficit = bytesNeeded - this._tokens;
+    const waitMs = Math.ceil((deficit / this._bytesPerSec) * 1000);
+
+    if (waitMs > 0) {
+      await appUtils.wait(waitMs);
+    }
+
+    this._refill();
+    this._tokens = Math.max(0, this._tokens - bytesNeeded);
+  }
+
+  _refill() {
+    const now = Date.now();
+    const elapsed = (now - this._lastRefill) / 1000;
+    if (elapsed > 0) {
+      this._tokens = Math.min(
+        this._bytesPerSec,
+        this._tokens + elapsed * this._bytesPerSec,
+      );
+      this._lastRefill = now;
+    }
+  }
+}
+
 const yieldToMain = () =>
   new Promise((resolve) => {
     const channel = new MessageChannel();
@@ -55,7 +105,7 @@ class SimpleQueue {
 }
 
 class FileTransferManager {
-  constructor(webrtcManager) {
+  constructor(webrtcManager, sendRateLimit = null) {
     this.webrtcManager = webrtcManager;
     this.receivedFileDetails = null;
     this.collectedChunks = [];
@@ -82,10 +132,19 @@ class FileTransferManager {
     this.sentCleanupTimer = null;
     this.sentBatchProgress = [];
     this.receiveSessionId = 0;
+    this.totalBytesReceived = 0;
 
     this.configureUIBindings();
 
     this.sweepOrphanedOpfsFiles();
+
+    this.opfsCleanupInterval = setInterval(() => {
+      this.sweepOrphanedOpfsFiles();
+    }, 300000);
+
+    if (sendRateLimit) {
+      this.sendRateLimit = new TokenBucket(sendRateLimit);
+    }
   }
 
   _reportTransferCompleteIfPending() {
@@ -142,7 +201,15 @@ class FileTransferManager {
   }
 
   handlePageExit() {
-    Promise.allSettled([this.cleanupAllTransfers(), this.revokeAllBlobUrls()])
+    if (this.opfsCleanupInterval) {
+      clearInterval(this.opfsCleanupInterval);
+      this.opfsCleanupInterval = null;
+    }
+    Promise.allSettled([
+      this.cleanupAllTransfers(),
+      this.revokeAllBlobUrls(),
+      this.sweepOrphanedOpfsFiles(),
+    ])
       .then((results) => {
         for (const result of results) {
           if (result.status === "rejected") {
@@ -559,6 +626,11 @@ class FileTransferManager {
           lastLoopYieldAndUI = Date.now();
         }
 
+        let fileHash = null;
+        if (!fileToSend.isDirectoryMarker && fileToSend.size > 0) {
+          fileHash = await appUtils.sha256Blob(fileToSend);
+        }
+
         webrtcManager.dataChannel.send(
           JSON.stringify({
             type: "metadata",
@@ -567,9 +639,10 @@ class FileTransferManager {
             lastModified: fileToSend.lastModified || Date.now(),
             batchIndex: i + 1,
             batchTotal: this.selectedFiles.length,
-            totalBatchSize: totalBatchSize,
+            totalBatchSize,
             isDirectoryMarker: fileToSend.isDirectoryMarker || false,
             rootDirectoryName: this.rootDirectoryName || null,
+            sha256: fileHash,
           }),
         );
 
@@ -743,12 +816,11 @@ class FileTransferManager {
     }
 
     let bufferRetries = 0;
-    const MAX_BUFFER_RETRIES = 100;
 
     while (
       channel.readyState === "open" &&
       channel.bufferedAmount > DATA_CHANNEL_BUFFERED_AMOUNT_LIMIT &&
-      bufferRetries++ < MAX_BUFFER_RETRIES
+      bufferRetries++ < DATA_CHANNEL_BUFFER_MAX_RETRIES
     ) {
       await new Promise((resolve) => {
         let settled = false;
@@ -771,7 +843,7 @@ class FileTransferManager {
 
         const timerId = setTimeout(() => {
           finish();
-        }, 50);
+        }, DATA_CHANNEL_BUFFER_RETRY_INTERVAL_MS);
 
         channel.addEventListener("bufferedamountlow", onEvent);
         channel.addEventListener("close", onEvent);
@@ -791,7 +863,11 @@ class FileTransferManager {
     const fileNameIsValid =
       typeof metadata.fileName === "string" &&
       metadata.fileName.trim().length > 0 &&
-      metadata.fileName.length <= 1024;
+      metadata.fileName.length <= 1024 &&
+      !metadata.fileName.includes("..") &&
+      !metadata.fileName.includes("\0") &&
+      !metadata.fileName.startsWith("/") &&
+      !metadata.fileName.startsWith("\\");
     const fileSizeIsValid =
       Number.isFinite(metadata.fileSize) &&
       metadata.fileSize >= 0 &&
@@ -802,12 +878,18 @@ class FileTransferManager {
       Number.isInteger(metadata.batchTotal) &&
       metadata.batchTotal >= metadata.batchIndex &&
       metadata.batchTotal <= MAX_BATCH_ITEMS;
+    const sha256IsValid =
+      metadata.sha256 === null ||
+      metadata.sha256 === undefined ||
+      (typeof metadata.sha256 === "string" &&
+        /^[a-f0-9]{64}$/.test(metadata.sha256));
 
     return (
       fileNameIsValid &&
       fileSizeIsValid &&
       batchIndexIsValid &&
-      batchTotalIsValid
+      batchTotalIsValid &&
+      sha256IsValid
     );
   }
 
@@ -881,6 +963,11 @@ class FileTransferManager {
           }
 
           await this.waitForWebRTCBuffer();
+          if (this.sendRateLimit) {
+            await this.sendRateLimit.consume(
+              chunk.byteLength || chunk.length || 0,
+            );
+          }
           webrtcManager.dataChannel.send(chunk);
           this.sentBytes += chunk.byteLength || chunk.length || 0;
           offset += chunk.byteLength;
@@ -949,12 +1036,6 @@ class FileTransferManager {
             if (window.statsService) {
               window.statsService.requestConnectionStats();
             }
-            await new Promise((r) =>
-              setTimeout(
-                r,
-                appUtils.isPageHidden() ? 100 : TRANSFER_CLEANUP_DELAY,
-              ),
-            );
             this.isSending = false;
           }
 
@@ -1074,7 +1155,10 @@ class FileTransferManager {
     this.receiveBuffer.push(data);
     this.receiveBufferSize += data.byteLength || data.length || 0;
 
-    if (this.receiveBufferSize > 20 * 1024 * 1024 && !this.isThrottlingSender) {
+    if (
+      this.receiveBufferSize > RECEIVE_BUFFER_THROTTLE_THRESHOLD &&
+      !this.isThrottlingSender
+    ) {
       this.isThrottlingSender = true;
       const dataChannel = this.webrtcManager?.dataChannel;
       if (dataChannel && dataChannel.readyState === "open") {
@@ -1151,7 +1235,10 @@ class FileTransferManager {
   }
 
   _checkThrottleResumeOnBufferLow() {
-    if (this.isThrottlingSender && this.receiveBufferSize < 5 * 1024 * 1024) {
+    if (
+      this.isThrottlingSender &&
+      this.receiveBufferSize < RECEIVE_BUFFER_RESUME_THRESHOLD
+    ) {
       this.isThrottlingSender = false;
       const dataChannel = this.webrtcManager?.dataChannel;
       if (dataChannel && dataChannel.readyState === "open") {
@@ -1179,9 +1266,17 @@ class FileTransferManager {
           break;
         case "throttle-pause":
           this.isAutoThrottled = true;
+          if (this.isSending) {
+            uiManager.setSentStatus(
+              "Throttled by receiver — waiting for buffer to drain...",
+            );
+          }
           break;
         case "throttle-resume":
           this.isAutoThrottled = false;
+          if (this.isSending) {
+            uiManager.setSentStatus(this.currentSendStatus || "Sending...");
+          }
           break;
         case "done":
           await this.finalizeIncomingFile();
@@ -1248,6 +1343,7 @@ class FileTransferManager {
       this.receivedBatch = [];
       this.receivedBatchRootName = info.rootDirectoryName || null;
       this.totalBatchBytesReceived = 0;
+      this.totalBytesReceived = 0;
       this.receivedBatchStartTime = Date.now();
 
       this.totalPausedTimeReceived = 0;
@@ -1266,6 +1362,7 @@ class FileTransferManager {
       batchTotal: info.batchTotal || 1,
       totalBatchSize: info.totalBatchSize || info.fileSize,
       isDirectoryMarker: info.isDirectoryMarker || false,
+      expectedHash: info.sha256 || null,
     };
 
     this.collectedChunks = [];
@@ -1316,6 +1413,23 @@ class FileTransferManager {
   async processIncomingChunk(arrayBuffer) {
     if (!this.receivedFileDetails) return;
 
+    this.totalBytesReceived += arrayBuffer.byteLength;
+    if (this.totalBytesReceived > MAX_RECEIVE_BATCH_SIZE) {
+      console.error("Received data exceeds maximum batch size");
+      this.cleanupReceivedTransfer({
+        statusSuffix: "Failed - Exceeded size limit",
+      });
+      if (this.isDataChannelOpen()) {
+        webrtcManager.dataChannel.send(
+          JSON.stringify({ type: "cancel-transfer" }),
+        );
+      }
+      uiManager.showFileWarning(
+        `Transfer aborted: received data exceeds the ${appUtils.formatBytes(MAX_RECEIVE_BATCH_SIZE)} limit.`,
+      );
+      return;
+    }
+
     if (this.opfsReady && this.opfsWritable) {
       try {
         await this.opfsWritable.write(arrayBuffer);
@@ -1327,6 +1441,12 @@ class FileTransferManager {
     } else {
       this.collectedChunks.push(arrayBuffer);
     }
+
+    if (this.receivedFileDetails?.expectedHash) {
+      if (!this._hashChunks) this._hashChunks = [];
+      this._hashChunks.push(arrayBuffer.slice(0));
+    }
+
     this.receivedBytes += arrayBuffer.byteLength;
     this.totalBatchBytesReceived += arrayBuffer.byteLength;
 
@@ -1439,6 +1559,27 @@ class FileTransferManager {
       lastModified: currentDetails.lastModified,
       size: currentDetails.fileSize,
     });
+
+    if (
+      currentDetails.expectedHash &&
+      fileBlob &&
+      !currentDetails.isDirectoryMarker
+    ) {
+      const hashChunks = this._hashChunks || [];
+      const hashBlob = new Blob(hashChunks);
+      const computedHash = await appUtils.sha256Blob(hashBlob);
+      if (computedHash && computedHash !== currentDetails.expectedHash) {
+        console.error(
+          `SHA-256 mismatch for ${currentDetails.fileName}: expected ${currentDetails.expectedHash}, got ${computedHash}`,
+        );
+        uiManager.showFileWarning(
+          `File "${currentDetails.fileName}" may be corrupted (checksum mismatch).`,
+        );
+      } else if (computedHash) {
+        console.log(`SHA-256 verified for ${currentDetails.fileName}`);
+      }
+      this._hashChunks = [];
+    }
 
     if (currentDetails.batchIndex === currentDetails.batchTotal) {
       uiManager.setReceivedStatus(
@@ -1581,10 +1722,11 @@ class FileTransferManager {
       return await this._generateZipBlobViaWorker(workerFiles);
     } catch (error) {
       console.error("ZIP worker failed:", error);
-      throw new Error(
-        "ZIP generation failed. Please try again or download files individually.",
-        { cause: error },
-      );
+      const message =
+        error?.message && error.message !== "ZIP worker error"
+          ? error.message
+          : "ZIP generation failed. Please try again or download files individually.";
+      throw new Error(message, { cause: error });
     }
   }
 
@@ -1710,13 +1852,14 @@ class FileTransferManager {
       this.opfsWritable = null;
     }
     if (this.opfsFileHandle) {
+      const name = this.opfsFileHandle.name; // Capture name
+      this.opfsFileHandle = null; // Clear state early
       try {
         const root = await navigator.storage.getDirectory();
-        await root.removeEntry(this.opfsFileHandle.name);
+        await root.removeEntry(name, { recursive: true });
       } catch (error) {
         console.error("Failed to remove OPFS temp file during cleanup:", error);
       }
-      this.opfsFileHandle = null;
     }
     this.opfsReady = false;
 
@@ -1746,5 +1889,8 @@ class FileTransferManager {
   }
 }
 
-const fileTransferManager = new FileTransferManager(window.webrtcManager);
+const fileTransferManager = new FileTransferManager(
+  window.webrtcManager,
+  DEFAULT_SEND_RATE_LIMIT_BYTES_PER_SEC,
+);
 window.fileTransferManager = fileTransferManager;
