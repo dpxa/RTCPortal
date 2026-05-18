@@ -11,8 +11,17 @@ class TurnService {
     }
 
     try {
+      const { token } = await appUtils.requestJson(
+        `${BASE_API_URL}${API_ENDPOINTS.TURN_TOKEN}`,
+        { errorPrefix: "Failed to fetch TURN access token" },
+      );
+
+      if (!token || typeof token !== "string") {
+        throw new Error("Invalid token response from server");
+      }
+
       const turnServers = await appUtils.requestJson(
-        `${BASE_API_URL}${API_ENDPOINTS.TURN_CREDENTIALS}`,
+        `${BASE_API_URL}${API_ENDPOINTS.TURN_CREDENTIALS}?token=${encodeURIComponent(token)}`,
         { errorPrefix: "Failed to fetch TURN credentials" },
       );
 
