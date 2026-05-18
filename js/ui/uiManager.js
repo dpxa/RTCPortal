@@ -771,6 +771,19 @@ class UIManager {
     }
   }
 
+  showSentCompleteState(displayName) {
+    this.updateSentProgressBarValue(100);
+    this.updateSentStats("", "");
+    this.setSentButtonsVisible(false);
+    this.setSentStatus(`Sent: ${displayName}`);
+  }
+
+  showReceivedCompleteState(displayName) {
+    this.updateReceivedProgressBarValue(100);
+    this.updateReceivedStats("", "");
+    this.setReceivedStatus(`Received: ${displayName}`);
+  }
+
   ensureSentContainer() {
     if (!this.fileTransferSection) return;
 
@@ -1088,7 +1101,7 @@ class UIManager {
       eraseHistoryBtn = document.createElement("button");
       eraseHistoryBtn.id = "erase-history-btn";
       eraseHistoryBtn.className = "erase-history-btn";
-      eraseHistoryBtn.textContent = "Clear History";
+      eraseHistoryBtn.textContent = "Clear";
       eraseHistoryBtn.addEventListener("click", () => {
         document.dispatchEvent(new Event("clear-history"));
       });
@@ -1416,7 +1429,7 @@ class UIManager {
         if (isIncompleteStatus) {
           const suffixSpan = document.createElement("span");
           suffixSpan.className = "history-status-incomplete";
-          suffixSpan.textContent = " - Incomplete";
+          suffixSpan.textContent = " (Incomplete)";
           downloadButton.appendChild(suffixSpan);
         }
       };
@@ -1457,7 +1470,7 @@ class UIManager {
     if (normalizedStatusSuffix) {
       const suffixSpan = document.createElement("span");
       suffixSpan.textContent = isIncompleteStatus
-        ? " - Incomplete"
+        ? " (Incomplete)"
         : ` - ${normalizedStatusSuffix}`;
       if (isIncompleteStatus) {
         suffixSpan.classList.add("history-status-incomplete");

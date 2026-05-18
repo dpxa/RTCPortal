@@ -31,7 +31,7 @@ function loadScript(options) {
   } catch (error) {
     console.error("Script bootstrap failed:", error);
     if (window.uiManager) {
-      window.uiManager.showIdError("Unable to load connection scripts.");
+      window.uiManager.showIdError("Unable to load connection scripts");
     }
   }
 })();

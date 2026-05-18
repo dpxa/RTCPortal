@@ -191,7 +191,7 @@ class WebRTCManager {
     this.socket.on("reconnect_failed", () => {
       console.error("Socket reconnection failed");
       uiManager.showIdError(
-        "Unable to reconnect to server. Please refresh the page.",
+        "Unable to reconnect to server. Please refresh the page",
       );
     });
 
@@ -204,7 +204,7 @@ class WebRTCManager {
         (this.pendingPeerConnection && !this.activePeerId)
       ) {
         this.resetCurrentConnection({ notifyPeer: false });
-        uiManager.showIdError("Peer disconnected.");
+        uiManager.showIdError("Peer disconnected");
       }
     });
 
@@ -237,7 +237,7 @@ class WebRTCManager {
 
     this.socket.on("peer-not-found", () => {
       this._resolveConnectionTeardown({ emitUserFailForPending: false });
-      uiManager.showIdError("Peer ID not found!");
+      uiManager.showIdError("Peer ID not found");
     });
   }
 
@@ -266,7 +266,7 @@ class WebRTCManager {
 
   _copyToClipboard(text, errorContext) {
     if (!this.selfId) {
-      uiManager.showIdError("No ID to copy yet.");
+      uiManager.showIdError("No ID to copy yet");
       return;
     }
 
@@ -287,7 +287,7 @@ class WebRTCManager {
 
   toggleQrCode() {
     if (!this.selfId) {
-      uiManager.showIdError("No ID to share yet.");
+      uiManager.showIdError("No ID to share yet");
       return;
     }
 
@@ -306,15 +306,15 @@ class WebRTCManager {
     uiManager.setConnectButtonEnabled(false);
 
     if (!/^[a-zA-Z0-9_-]+$/.test(peerId)) {
-      uiManager.showIdError("Invalid peer PIN/ID!");
+      uiManager.showIdError("Invalid peer PIN/ID");
       return;
     }
     if (peerId === this.selfId) {
-      uiManager.showIdError("Cannot connect to yourself.");
+      uiManager.showIdError("Cannot connect to yourself");
       return;
     }
     if (peerId === this.activePeerId) {
-      uiManager.showIdError("Already connected.");
+      uiManager.showIdError("Already connected");
       return;
     }
 
@@ -331,9 +331,11 @@ class WebRTCManager {
       fileTransferManager.clearFileSelection();
     }
 
+    this.connectionStartTime = performance.now();
+
     this.newConnTimer = setTimeout(() => {
       if (attemptId !== this.connectionAttemptId) return;
-      uiManager.showIdError("Connection timed out.");
+      uiManager.showIdError("Connection timed out");
       this.abortPendingConnection(false);
       statsService.requestConnectionStats();
     }, CONNECTION_TIMEOUT);
@@ -513,6 +515,7 @@ class WebRTCManager {
               this.answerReceivedTime - this.connectionStartTime;
           }
 
+          this.logConnectionStats();
           this.resetConnectionTiming();
         }
 
@@ -718,6 +721,20 @@ class WebRTCManager {
     this.answerReceivedTime = null;
     this.signalingDuration = null;
     this.totalConnectionDuration = null;
+  }
+
+  logConnectionStats() {
+    if (this.signalingDuration && this.totalConnectionDuration) {
+      const signaling = Math.round(this.signalingDuration);
+      const webRTCNegotiation = Math.round(
+        this.totalConnectionDuration - this.signalingDuration,
+      );
+      const total = Math.round(this.totalConnectionDuration);
+      console.log(`Connection Timing Stats (Peer: ${this.activePeerId}):
+    - Signaling Duration: ${signaling}ms
+    - WebRTC Negotiation: ${webRTCNegotiation}ms
+    - Total Connection Duration: ${total}ms`);
+    }
   }
 
   startHeartbeat() {

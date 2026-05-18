@@ -302,7 +302,7 @@ class FileTransferManager {
       }
     } catch (error) {
       console.error("Paste handling failed:", error);
-      uiManager.showFileWarning("Could not parse pasted files.");
+      uiManager.showFileWarning("Could not parse pasted files");
     }
   }
 
@@ -331,7 +331,7 @@ class FileTransferManager {
       }
     } catch (error) {
       console.error("Drop handling failed:", error);
-      uiManager.showFileWarning("Could not process dropped files.");
+      uiManager.showFileWarning("Could not process dropped files");
     }
   }
 
@@ -493,7 +493,7 @@ class FileTransferManager {
 
     if (totalSize > MAX_SIZE) {
       uiManager.showFileWarning(
-        `Total transfer size exceeds 2GB limit (${appUtils.formatBytes(totalSize)}). Please select fewer files.`,
+        `Total transfer size exceeds 2GB limit (${appUtils.formatBytes(totalSize)}). Please select fewer files`,
       );
       this.clearFileSelectionUI();
       return;
@@ -564,7 +564,7 @@ class FileTransferManager {
       }
 
       if (this.selectedFiles.length === 0) {
-        uiManager.showFileAlert("No file selected.");
+        uiManager.showFileAlert("No file selected");
         return;
       }
 
@@ -588,7 +588,7 @@ class FileTransferManager {
       this.hasReportedTransferComplete = false;
       this.sentBatchProgress = [];
       let totalBytesSent = 0;
-      const batchStartTime = Date.now();
+      this._batchStartTime = Date.now();
 
       let lastLoopYieldAndUI = Date.now();
 
@@ -653,7 +653,7 @@ class FileTransferManager {
             this.selectedFiles.length,
             totalBatchSize,
             totalBytesSent,
-            batchStartTime,
+            this._batchStartTime,
           );
         } catch (err) {
           console.warn("Transfer aborted or failed:", err);
@@ -677,22 +677,22 @@ class FileTransferManager {
         this.updateTransferButtonState();
       } else {
         uiManager.setFileTransferButtonEnabled(false);
-        uiManager.updateSentProgressBarValue(100);
-        uiManager.updateSentStats("", "");
-        uiManager.setSentButtonsVisible(false);
 
         const batchForHistory = this.selectedFiles.map((file) =>
           this._buildTransferHistoryEntry(file),
         );
 
+        const batchDisplayName = this._getBatchDisplayName(
+          this.rootDirectoryName,
+          this.selectedFiles,
+        );
+
         if (this.hasReceivedBatchConfirmation) {
-          this.finalizeSentBatchForHistory(
-            batchForHistory,
-            "to",
-            this.rootDirectoryName,
-          );
+          this._showSentCompleteAndFinalize(batchForHistory);
         } else {
-          uiManager.setSentStatus("Waiting for receiver confirmation...");
+          uiManager.setSentStatus(
+            `Waiting for receiver confirmation: ${batchDisplayName}`,
+          );
           this.pendingBatchForHistory = {
             batch: batchForHistory,
             direction: "to",
@@ -702,12 +702,16 @@ class FileTransferManager {
       }
     } catch (error) {
       console.error("Unexpected send pipeline failure:", error);
-      uiManager.showFileWarning("Transfer failed unexpectedly.");
+      uiManager.showFileWarning("Transfer failed unexpectedly");
       this.cleanupSentTransfer();
     }
   }
 
   finalizeSentBatchForHistory(batch, direction, rootDirectoryName) {
+    if (this._pendingSentCompleteTimer) {
+      clearTimeout(this._pendingSentCompleteTimer);
+      this._pendingSentCompleteTimer = null;
+    }
     this.createBatchHistoryUI(batch, direction, rootDirectoryName);
     uiManager.resetSentTransferUI();
     this.hasReceivedBatchConfirmation = false;
@@ -723,6 +727,36 @@ class FileTransferManager {
       isDirectoryMarker: file.isDirectoryMarker || false,
       lastModified: file.lastModified || Date.now(),
     };
+  }
+
+  _getBatchDisplayName(rootName, files) {
+    return (
+      rootName ||
+      (files.length === 1
+        ? files[0].customRelativePath || files[0].name
+        : `${files.length} files`)
+    );
+  }
+
+  _showSentCompleteAndFinalize(batchForHistory) {
+    const batchDisplayName = this._getBatchDisplayName(
+      this.rootDirectoryName,
+      this.selectedFiles,
+    );
+
+    uiManager.showSentCompleteState(batchDisplayName);
+
+    if (this._pendingSentCompleteTimer) {
+      clearTimeout(this._pendingSentCompleteTimer);
+    }
+    this._pendingSentCompleteTimer = setTimeout(() => {
+      this._pendingSentCompleteTimer = null;
+      this.finalizeSentBatchForHistory(
+        batchForHistory,
+        "to",
+        this.rootDirectoryName,
+      );
+    }, 500);
   }
 
   _renderIncompleteSentHistoryIfNeeded(statusSuffix = "Incomplete") {
@@ -777,6 +811,10 @@ class FileTransferManager {
 
       this._sendSpeedCtx = null;
       this._recvSpeedCtx = null;
+      this._batchStartTime = Date.now();
+      this.receivedBatchStartTime = Date.now();
+      this.lastSentUIUpdate = 0;
+      this.lastReceivedUIUpdate = 0;
 
       if (this.isDataChannelOpen()) {
         webrtcManager.dataChannel.send(
@@ -786,6 +824,12 @@ class FileTransferManager {
 
       uiManager.setPauseButtonLabel("Pause");
       uiManager.setSentStatus(this.currentSendStatus || "Sending...");
+      if (this.isSending) {
+        uiManager.updateSentStats("-", "-");
+      }
+      if (this.isReceiving) {
+        uiManager.updateReceivedStats("-", "-");
+      }
     }
   }
 
@@ -982,7 +1026,7 @@ class FileTransferManager {
         const now = Date.now();
         if (
           !this.lastSentUIUpdate ||
-          now - this.lastSentUIUpdate > 50 ||
+          now - this.lastSentUIUpdate > UI_UPDATE_INTERVAL ||
           (offset === fileObj.size && currentIdx === totalCount)
         ) {
           uiManager.ensureSentContainer();
@@ -993,16 +1037,11 @@ class FileTransferManager {
             this.calculateProgressPercent(currentTotalSent, totalSize),
           );
 
-          const effectivePauseTime =
-            (this.totalPausedTimeSent || 0) +
-            (this.isPaused && this.currentPauseStartSent
-              ? Date.now() - this.currentPauseStartSent
-              : 0);
           const stats = this.calculateTransferStats(
             currentTotalSent,
             totalSize,
-            batchStartTime,
-            now - effectivePauseTime,
+            this._batchStartTime,
+            now,
             true,
           );
           if (stats) {
@@ -1285,11 +1324,10 @@ class FileTransferManager {
         case "batch-received":
           this._reportTransferCompleteIfPending();
           if (this.pendingBatchForHistory) {
-            this.finalizeSentBatchForHistory(
+            this._showSentCompleteAndFinalize(
               this.pendingBatchForHistory.batch,
-              this.pendingBatchForHistory.direction,
-              this.pendingBatchForHistory.rootDirectoryName,
             );
+            this.pendingBatchForHistory = null;
           } else {
             this.hasReceivedBatchConfirmation = true;
           }
@@ -1302,7 +1340,7 @@ class FileTransferManager {
       }
     } catch (error) {
       console.warn("Received malformed transfer control data.", error);
-      uiManager.showFileWarning("Received malformed transfer control data.");
+      uiManager.showFileWarning("Received malformed transfer control data");
     }
   }
 
@@ -1320,6 +1358,7 @@ class FileTransferManager {
     }
 
     this._recvSpeedCtx = null;
+    uiManager.updateReceivedStats("-", "-");
   }
 
   handleTransferCancellation() {
@@ -1328,7 +1367,7 @@ class FileTransferManager {
         console.error("Failed to cancel incoming transfer cleanly:", error);
       },
     );
-    uiManager.showFileWarning("Sender cancelled transfer.");
+    uiManager.showFileWarning("Sender cancelled transfer");
   }
 
   async handleIncomingMetadata(info) {
@@ -1425,7 +1464,7 @@ class FileTransferManager {
         );
       }
       uiManager.showFileWarning(
-        `Transfer aborted: received data exceeds the ${appUtils.formatBytes(MAX_RECEIVE_BATCH_SIZE)} limit.`,
+        `Transfer aborted: received data exceeds the ${appUtils.formatBytes(MAX_RECEIVE_BATCH_SIZE)} limit`,
       );
       return;
     }
@@ -1452,7 +1491,7 @@ class FileTransferManager {
 
     const now = Date.now();
     if (
-      now - this.lastReceivedUIUpdate > 100 ||
+      now - this.lastReceivedUIUpdate > UI_UPDATE_INTERVAL ||
       this.receivedBytes === this.receivedFileDetails.fileSize
     ) {
       uiManager.ensureReceivedContainer();
@@ -1483,16 +1522,11 @@ class FileTransferManager {
         );
         uiManager.updateReceivedStats("", "");
       } else {
-        const effectivePauseTime =
-          (this.totalPausedTimeReceived || 0) +
-          (this.currentPauseStartReceived
-            ? Date.now() - this.currentPauseStartReceived
-            : 0);
         const stats = this.calculateTransferStats(
           this.totalBatchBytesReceived,
           totalSize,
           this.receivedBatchStartTime,
-          now - effectivePauseTime,
+          now,
           false,
         );
         if (stats) {
@@ -1573,10 +1607,8 @@ class FileTransferManager {
           `SHA-256 mismatch for ${currentDetails.fileName}: expected ${currentDetails.expectedHash}, got ${computedHash}`,
         );
         uiManager.showFileWarning(
-          `File "${currentDetails.fileName}" may be corrupted (checksum mismatch).`,
+          `File "${currentDetails.fileName}" may be corrupted (checksum mismatch)`,
         );
-      } else if (computedHash) {
-        console.log(`SHA-256 verified for ${currentDetails.fileName}`);
       }
       this._hashChunks = [];
     }
@@ -1603,8 +1635,12 @@ class FileTransferManager {
     );
 
     if (isLastInBatch) {
-      uiManager.updateReceivedProgressBarValue(100);
-      uiManager.updateReceivedStats("", "");
+      const batchDisplayName = this._getBatchDisplayName(
+        this.receivedBatchRootName,
+        this.receivedBatch,
+      );
+
+      uiManager.showReceivedCompleteState(batchDisplayName);
 
       if (
         this.webrtcManager &&
@@ -1622,13 +1658,16 @@ class FileTransferManager {
       if (this.receivedCleanupTimer) {
         clearTimeout(this.receivedCleanupTimer);
       }
-      this.receivedCleanupTimer = setTimeout(() => {
-        this._queueReceivedBatchHistory();
+      this.receivedCleanupTimer = setTimeout(
+        () => {
+          this._queueReceivedBatchHistory();
 
-        uiManager.resetReceivedTransferUI();
-        this.totalBatchBytesReceived = 0;
-        this.receivedCleanupTimer = null;
-      }, TRANSFER_CLEANUP_DELAY);
+          uiManager.resetReceivedTransferUI();
+          this.totalBatchBytesReceived = 0;
+          this.receivedCleanupTimer = null;
+        },
+        Math.max(TRANSFER_CLEANUP_DELAY, 500),
+      );
     }
 
     this.receivedFileDetails = null;
@@ -1693,7 +1732,7 @@ class FileTransferManager {
     } catch (e) {
       console.error("Error generating zip:", e);
       uiManager.showFileWarning(
-        "Failed to create ZIP: Transfer may be too large for browser memory.",
+        "Failed to create ZIP: Transfer may be too large for browser memory",
       );
     }
   }
@@ -1789,6 +1828,11 @@ class FileTransferManager {
   }
 
   cleanupSentTransfer() {
+    if (this._pendingSentCompleteTimer) {
+      clearTimeout(this._pendingSentCompleteTimer);
+      this._pendingSentCompleteTimer = null;
+    }
+
     this._renderIncompleteSentHistoryIfNeeded("Incomplete");
 
     this.isSending = false;
