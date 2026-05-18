@@ -91,12 +91,8 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
       );
     }
 
-    const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials`;
-    const response = await fetch(meteredApiUrl, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
+    const meteredApiUrl = `${METERED_API_BASE_URL}/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`;
+    const response = await fetch(meteredApiUrl);
 
     if (!response.ok) {
       let errorMsg = `Failed to fetch TURN credentials: ${response.status} ${response.statusText}.`;
