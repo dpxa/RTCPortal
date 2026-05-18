@@ -6,11 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "node server/index.js",
+    "dev": "cross-env NODE_ENV=development node server/index.js",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "audit": "npm audit --omit=dev --audit-level=high",
-    "audit:full": "npm audit --audit-level=high"
+    "lint:fix": "eslint . --fix"
   },
   "repository": {
     "type": "git",
@@ -36,7 +34,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "cross-env": "^10.1.0",
     "eslint": "^10.2.1",
     "globals": "^17.5.0"
   }
 }
+
