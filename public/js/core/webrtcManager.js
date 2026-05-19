@@ -208,14 +208,17 @@ class WebRTCManager {
       }
     });
 
-    this.socket.on("candidate", (data) => {
-      const targetConnection =
-        this.pendingPeerConnection || this.peerConnection;
-      if (!targetConnection || !data?.candidate) {
+    this.socket.on("candidate", async (data) => {
+      const targetConnection = this._getCandidateConnection(data);
+      // data.candidate can be null to indicate end of gathering, so we check for undefined
+      if (!targetConnection || data?.candidate === undefined) {
         return;
       }
 
-      if (["closed", "failed"].includes(targetConnection.connectionState)) {
+      if (
+        ["closed", "failed"].includes(targetConnection.connectionState) ||
+        targetConnection.signalingState === "closed"
+      ) {
         return;
       }
 
@@ -223,10 +226,16 @@ class WebRTCManager {
         return;
       }
 
-      if (targetConnection.remoteDescription?.type) {
-        targetConnection.addIceCandidate(data.candidate).catch((error) => {
+      const addCandidate = async (candidate) => {
+        try {
+          await targetConnection.addIceCandidate(candidate || null);
+        } catch (error) {
           console.error("Failed to add ICE candidate:", error);
-        });
+        }
+      };
+
+      if (targetConnection.remoteDescription?.type) {
+        await addCandidate(data.candidate);
       } else {
         if (!Array.isArray(targetConnection._candidateQueue)) {
           targetConnection._candidateQueue = [];
@@ -262,6 +271,31 @@ class WebRTCManager {
     }
 
     return connection._peerId === sourcePeer;
+  }
+
+  _getCandidateConnection(payload) {
+    const connections = [this.pendingPeerConnection, this.peerConnection];
+
+    for (const connection of connections) {
+      if (this._isCandidateForConnection(connection, payload)) {
+        return connection;
+      }
+    }
+
+    return null;
+  }
+
+  _isAnswerForPendingConnection(payload) {
+    if (!this.pendingPeerConnection || !payload) {
+      return false;
+    }
+
+    const sourcePeer = payload.callee || payload.from || payload.caller || null;
+    if (!sourcePeer) {
+      return false;
+    }
+
+    return this.pendingPeerConnection._peerId === sourcePeer;
   }
 
   _copyToClipboard(text, errorContext) {
@@ -364,6 +398,17 @@ class WebRTCManager {
   }
 
   async handleOffer(data) {
+    const isGlare =
+      this.pendingPeerConnection &&
+      this.pendingPeerConnection._peerId === data.caller;
+    if (isGlare) {
+      if (this.selfId && data.caller && this.selfId > data.caller) {
+        console.warn("Glare detected and resolved: ignoring incoming offer.");
+        return;
+      }
+      console.warn("Glare detected and resolved: yielding to incoming offer.");
+    }
+
     if (fileTransferManager) {
       fileTransferManager.clearFileSelection();
     }
@@ -383,10 +428,12 @@ class WebRTCManager {
 
     try {
       await this.peerConnection.setRemoteDescription(data.sdp);
-      this.drainCandidateQueue(this.peerConnection);
+      await this.drainCandidateQueue(this.peerConnection);
       const ans = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(ans);
       this.activePeerId = data.caller;
+
+      this.answerReceivedTime = performance.now();
 
       this.socket.emit("answer", {
         target: data.caller,
@@ -404,6 +451,25 @@ class WebRTCManager {
 
   async handleAnswer(data) {
     const currentAttemptId = this.connectionAttemptId;
+    if (!this.pendingPeerConnection) {
+      return;
+    }
+
+    if (!this._isAnswerForPendingConnection(data)) {
+      return;
+    }
+
+    if (this.pendingPeerConnection.signalingState !== "have-local-offer") {
+      console.warn(
+        "Ignoring answer: pending connection not in have-local-offer state.",
+      );
+      return;
+    }
+
+    if (this.activePeerId) {
+      this.resetCurrentConnection();
+    }
+
     this.answerReceivedTime = performance.now();
 
     if (this.connectionStartTime) {
@@ -411,17 +477,9 @@ class WebRTCManager {
         this.answerReceivedTime - this.connectionStartTime;
     }
 
-    if (this.activePeerId) {
-      this.resetCurrentConnection();
-    }
-
-    if (!this.pendingPeerConnection) {
-      return;
-    }
-
     try {
       await this.pendingPeerConnection.setRemoteDescription(data.sdp);
-      this.drainCandidateQueue(this.pendingPeerConnection);
+      await this.drainCandidateQueue(this.pendingPeerConnection);
 
       if (this._isStaleAttempt(currentAttemptId)) {
         return;
@@ -445,16 +503,24 @@ class WebRTCManager {
     }
   }
 
-  drainCandidateQueue(connection) {
-    if (!Array.isArray(connection?._candidateQueue)) {
+  async drainCandidateQueue(connection) {
+    if (!connection) {
+      return;
+    }
+
+    if (!Array.isArray(connection._candidateQueue)) {
       connection._candidateQueue = [];
     }
 
     while (connection._candidateQueue.length) {
       const candidate = connection._candidateQueue.shift();
-      connection.addIceCandidate(candidate).catch((error) => {
+      try {
+        if (connection.signalingState !== "closed") {
+          await connection.addIceCandidate(candidate || null);
+        }
+      } catch (error) {
         console.error("Failed to drain ICE candidate queue:", error);
-      });
+      }
     }
   }
 
@@ -473,12 +539,11 @@ class WebRTCManager {
     conn._candidateQueue = [];
 
     conn.onicecandidate = (evt) => {
-      if (evt.candidate) {
-        this.socket.emit("candidate", {
-          target: targetId,
-          candidate: evt.candidate,
-        });
-      }
+      // Send candidate even if it is null to signal end of ICE gathering
+      this.socket.emit("candidate", {
+        target: targetId,
+        candidate: evt.candidate,
+      });
     };
 
     conn.ondatachannel = (evt) => {
@@ -515,7 +580,7 @@ class WebRTCManager {
               this.answerReceivedTime - this.connectionStartTime;
           }
 
-          this.logConnectionStats();
+          this.logConnectionStats(isInitiator);
           this.resetConnectionTiming();
         }
 
@@ -531,6 +596,29 @@ class WebRTCManager {
           }
         }, CONNECTION_RECOVERY_DELAY);
       } else if (conn.connectionState === "failed") {
+        this.handleConnectionFailure(conn);
+      }
+    };
+
+    conn.oniceconnectionstatechange = () => {
+      if (conn.iceConnectionState === "disconnected") {
+        console.warn("ICE connection disconnected, attempting to recover...");
+        if (!this.disconnectTimer) {
+          this.disconnectTimer = setTimeout(() => {
+            if (
+              conn.iceConnectionState !== "connected" &&
+              conn.iceConnectionState !== "completed"
+            ) {
+              this.handleConnectionFailure(conn);
+            }
+          }, CONNECTION_RECOVERY_DELAY);
+        }
+      } else if (
+        conn.iceConnectionState === "connected" ||
+        conn.iceConnectionState === "completed"
+      ) {
+        this._clearDisconnectTimer();
+      } else if (conn.iceConnectionState === "failed") {
         this.handleConnectionFailure(conn);
       }
     };
@@ -723,15 +811,32 @@ class WebRTCManager {
     this.totalConnectionDuration = null;
   }
 
-  logConnectionStats() {
+  logConnectionStats(isInitiator = false) {
     if (this.signalingDuration && this.totalConnectionDuration) {
       const signaling = Math.round(this.signalingDuration);
       const webRTCNegotiation = Math.round(
         this.totalConnectionDuration - this.signalingDuration,
       );
       const total = Math.round(this.totalConnectionDuration);
-      console.log(`Connection Timing Stats (Peer: ${this.activePeerId}):
-    - Signaling Duration: ${signaling}ms
+
+      let peerDisplay = this.activePeerId;
+      if (typeof uiManager !== "undefined" && uiManager.getNickname) {
+        const nickname = uiManager.getNickname(this.activePeerId);
+        if (
+          nickname &&
+          nickname !== this.activePeerId &&
+          nickname !== String(this.activePeerId)
+        ) {
+          peerDisplay = `${nickname} (${this.activePeerId})`;
+        }
+      }
+
+      const signalingLabel = isInitiator
+        ? "Signaling Duration (Round-Trip)"
+        : "Signaling Duration (Processing)";
+
+      console.log(`Connection Timing Stats for ${peerDisplay}:
+    - ${signalingLabel}: ${signaling}ms
     - WebRTC Negotiation: ${webRTCNegotiation}ms
     - Total Connection Duration: ${total}ms`);
     }
