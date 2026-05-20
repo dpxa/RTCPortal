@@ -210,7 +210,6 @@ class WebRTCManager {
 
     this.socket.on("candidate", async (data) => {
       const targetConnection = this._getCandidateConnection(data);
-      // data.candidate can be null to indicate end of gathering, so we check for undefined
       if (!targetConnection || data?.candidate === undefined) {
         return;
       }
@@ -421,7 +420,7 @@ class WebRTCManager {
 
     const attemptId = ++this.connectionAttemptId;
 
-    this.connectionStartTime = performance.now();
+    const offerReceivedTime = performance.now();
 
     this.peerConnection = new RTCPeerConnection(turnService.getRtcConfig());
     this.configureConnection(this.peerConnection, data.caller, false);
@@ -433,7 +432,12 @@ class WebRTCManager {
       await this.peerConnection.setLocalDescription(ans);
       this.activePeerId = data.caller;
 
-      this.answerReceivedTime = performance.now();
+      if (!this.connectionStartTime) {
+        this.connectionStartTime = offerReceivedTime;
+        this.answerReceivedTime = performance.now();
+        this.signalingDuration =
+          this.answerReceivedTime - this.connectionStartTime;
+      }
 
       this.socket.emit("answer", {
         target: data.caller,
@@ -539,7 +543,6 @@ class WebRTCManager {
     conn._candidateQueue = [];
 
     conn.onicecandidate = (evt) => {
-      // Send candidate even if it is null to signal end of ICE gathering
       this.socket.emit("candidate", {
         target: targetId,
         candidate: evt.candidate,
@@ -575,7 +578,8 @@ class WebRTCManager {
           this.totalConnectionDuration =
             performance.now() - this.connectionStartTime;
 
-          if (this.answerReceivedTime) {
+          if (this.signalingDuration) {
+          } else if (this.answerReceivedTime) {
             this.signalingDuration =
               this.answerReceivedTime - this.connectionStartTime;
           }

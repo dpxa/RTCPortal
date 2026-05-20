@@ -1896,8 +1896,8 @@ class FileTransferManager {
       this.opfsWritable = null;
     }
     if (this.opfsFileHandle) {
-      const name = this.opfsFileHandle.name; // Capture name
-      this.opfsFileHandle = null; // Clear state early
+      const name = this.opfsFileHandle.name;
+      this.opfsFileHandle = null;
       try {
         const root = await navigator.storage.getDirectory();
         await root.removeEntry(name, { recursive: true });
