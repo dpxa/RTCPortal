@@ -39,9 +39,12 @@ function buildZip(files) {
     }
 
     const isDirectoryMarker = Boolean(file?.isDirectoryMarker);
-    const fileDate = file?.lastModified
-      ? new Date(file.lastModified)
-      : new Date();
+    const fileDate =
+      file?.lastModified !== null &&
+      file.lastModified !== undefined &&
+      file.lastModified !== ""
+        ? new Date(file.lastModified)
+        : new Date();
     const pathParts = fileName.split("/");
     let currentPath = "";
 

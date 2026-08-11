@@ -1,3 +1,11 @@
+import {
+  ALERT_TIMEOUT,
+  WARNING_TIMEOUT,
+  ID_UNDERLINE_TIMEOUT,
+} from "../config/constants.js";
+import { appUtils } from "../utils/commonUtils.js";
+import { historyService } from "../services/historyService.js";
+
 class UIManager {
   constructor() {
     this.idMsgTimer = null;
@@ -238,10 +246,10 @@ class UIManager {
       }
 
       this.pageExitTriggered = true;
-      this.dispose();
       clearTimeout(this.idMsgTimer);
       clearTimeout(this.newIdAlertTimer);
       clearTimeout(this.fileMsgTimer);
+      this.dispose();
 
       for (const handler of this.pageExitHandlers) {
         this._safeCall(handler);
@@ -1337,6 +1345,93 @@ class UIManager {
 
     this.chatBox.appendChild(messageDiv);
     this.chatBox.scrollTop = this.chatBox.scrollHeight;
+
+    // Persist chat so it can be restored after a page refresh.
+    const peerId =
+      this.activeConnectionStatus?.getAttribute("data-peer-id") || null;
+    if (typeof historyService !== "undefined") {
+      historyService
+        .addChatRecord({
+          text,
+          isSelf: Boolean(isSelf),
+          peerId,
+          peerDisplay: this.getPeerDisplayLabel(peerId),
+          timestamp: Date.now(),
+        })
+        .catch((e) => console.warn("Chat history save failed:", e));
+    }
+  }
+
+  // Builds a peer display label consistent with getPeerDisplay, or falls
+  // back to the raw peer id if nicknames are unavailable.
+  getPeerDisplayLabel(peerId) {
+    if (!peerId) return peerId || null;
+    const peerName = this.getNickname ? this.getNickname(peerId) : peerId;
+    if (!peerName || peerName === peerId) return peerId;
+    return `${peerName} (${peerId})`;
+  }
+
+  // Renders stored chat records (restored after refresh) into the
+  // chat-history section, grouped per session/peer with their original
+  // per-message timestamps.
+  renderStoredChatHistory(records) {
+    if (
+      !this.chatHistoryList ||
+      !Array.isArray(records) ||
+      records.length === 0
+    ) {
+      return;
+    }
+
+    // Group into session blocks, breaking a new block whenever the peer
+    // changes so distinct sessions stay visually separate (matching how
+    // archiveChat groups messages at connection teardown).
+    const sessions = [];
+    let currentKey = null;
+    for (const record of records) {
+      if (!record || typeof record.text !== "string") continue;
+      const key = record.peerId || "__unknown__";
+      if (key !== currentKey) {
+        currentKey = key;
+        sessions.push([]);
+      }
+      sessions[sessions.length - 1].push(record);
+    }
+
+    for (const recordsForPeer of sessions) {
+      const historyBlock = document.createElement("div");
+      historyBlock.className = "history-session-block";
+
+      const first = recordsForPeer[0];
+      const timestamp = document.createElement("div");
+      timestamp.className = "history-session-timestamp";
+      const peerLabel = first?.peerDisplay || first?.peerId || "";
+      timestamp.textContent = peerLabel
+        ? `Session with ${peerLabel}`
+        : "Session";
+      historyBlock.appendChild(timestamp);
+
+      for (const record of recordsForPeer) {
+        const msg = document.createElement("div");
+        msg.classList.add("chat-message", record.isSelf ? "self" : "peer");
+        msg.textContent = record.text;
+
+        const timeSpan = document.createElement("span");
+        timeSpan.className = "chat-message-time";
+        const d = record.timestamp ? new Date(record.timestamp) : new Date();
+        timeSpan.textContent = d.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        msg.appendChild(timeSpan);
+        historyBlock.appendChild(msg);
+      }
+
+      this.chatHistoryList.append(historyBlock);
+    }
+
+    this._setHidden(this.chatHistorySection, false);
+    this.ensureClearHistoryButton();
   }
 
   renderTransferHistoryBatch(payload) {
@@ -1592,5 +1687,4 @@ class UIManager {
   }
 }
 
-const uiManager = new UIManager();
-window.uiManager = uiManager;
+export const uiManager = new UIManager();

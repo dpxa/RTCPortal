@@ -5,14 +5,20 @@
   "private": true,
   "main": "selenium/connection-test.js",
   "scripts": {
-    "test:local": "cross-env TEST_URL=http://localhost:3000 node selenium/connection-test.js",
-    "test:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/connection-test.js",
-    "test:connection": "npm run test:prod",
+    "test:regression": "node run-regression-suite.js",
+    "test:coverage": "node run-regression-suite.js --coverage",
+    "test:connection:local": "cross-env TEST_URL=http://localhost:3000 node selenium/connection-test.js",
+    "test:connection:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/connection-test.js",
+    "test:ui:local": "cross-env TEST_URL=http://localhost:3000 node selenium/ui-test.js",
+    "test:ui:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/ui-test.js",
+    "test:selenium:local": "npm run test:connection:local && npm run test:ui:local",
+    "test:all": "npm run test:regression && npm run test:selenium:local",
     "lint": "npm --prefix .. run lint -- test/**/*.js",
     "lint:fix": "npm --prefix .. run lint:fix -- test/**/*.js"
   },
   "dependencies": {
-    "selenium-webdriver": "^4.27.0"
+    "selenium-webdriver": "^4.27.0",
+    "socket.io-client": "^4.8.1"
   },
   "keywords": [
     "selenium",
@@ -26,6 +32,7 @@
     "npm": ">=8.0.0"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "jsdom": "^29.1.1"
   }
 }

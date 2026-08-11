@@ -1,4 +1,4 @@
-name: Selenium Connection Test
+name: Selenium Tests (Browser E2E)
 
 on:
   push:
@@ -8,15 +8,23 @@ on:
       - "public/**"
       - "server/**"
       - "test/**"
-      - "package.json"
   workflow_dispatch:
+    inputs:
+      test_url:
+        description: "URL to test (defaults to the public GitHub Pages site)"
+        required: false
+        default: "https://dpxa.github.io/RTCPortal/"
+      wait_seconds:
+        description: "Seconds to wait for deployment before testing"
+        required: false
+        default: "0"
 
 concurrency:
   group: selenium-test
   cancel-in-progress: true
 
 jobs:
-  selenium-test:
+  selenium-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -41,10 +49,37 @@ jobs:
         working-directory: ./test
         run: npm install
 
-      - name: Wait for deployment
-        run: sleep 300
+      - name: Determine test URL
+        id: test-url
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.test_url }}" ]; then
+            URL="${{ github.event.inputs.test_url }}"
+          else
+            URL="https://dpxa.github.io/RTCPortal/"
+          fi
+          echo "TEST_URL=$URL" >> "$GITHUB_ENV"
+          echo "Using TEST_URL: $URL"
 
-      - name: Run Selenium Connection Test
+      - name: Wait for deployment (optional)
+        shell: bash
+        run: |
+          WAIT="${{ github.event.inputs.wait_seconds }}"
+          if [ -n "$WAIT" ] && [ "$WAIT" -gt 0 ]; then
+            echo "Waiting ${WAIT}s for deployment..."
+            sleep "$WAIT"
+          fi
+
+      - name: Run Selenium UI Test (single peer)
         working-directory: ./test
-        run: npm run test:connection
+        run: |
+          if [ -n "$TEST_URL" ]; then export TEST_URL="$TEST_URL"; fi
+          node selenium/ui-test.js
+        timeout-minutes: 5
+
+      - name: Run Selenium Connection Test (two peers + transfer + chat)
+        working-directory: ./test
+        run: |
+          if [ -n "$TEST_URL" ]; then export TEST_URL="$TEST_URL"; fi
+          node selenium/connection-test.js
         timeout-minutes: 5

@@ -28,7 +28,7 @@ module.exports = [
     files: ["public/js/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
-      sourceType: "script",
+      sourceType: "module",
       globals: {
         ...globals.browser,
         ...globals.es2021,
@@ -39,7 +39,6 @@ module.exports = [
     },
     rules: {
       ...js.configs.recommended.rules,
-      "no-undef": "off",
       "no-empty": ["error", { allowEmptyCatch: true }],
       "no-useless-assignment": "warn",
       "no-unused-vars": [
@@ -69,7 +68,10 @@ module.exports = [
     rules: {
       ...js.configs.recommended.rules,
       "no-empty": ["error", { allowEmptyCatch: true }],
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", caughtErrors: "none" },
+      ],
     },
   },
 ];

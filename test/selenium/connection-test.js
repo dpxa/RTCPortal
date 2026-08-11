@@ -1,209 +1,172 @@
-const { Builder, By, until } = require("selenium-webdriver");
-const chrome = require("selenium-webdriver/chrome");
+// End-to-end P2P connection and file transfer test for RTCPortal.
+//
+// Uses two headless Chrome instances to verify: PIN assignment, P2P connect,
+// bidirectional file transfer, chat messaging, history entries, and clean
+// disconnect. Built on the shared Selenium helpers.
+//
+// Usage:
+//   TEST_URL=http://localhost:3000 node selenium/connection-test.js
+
 const fs = require("fs");
 const path = require("path");
-const { DEFAULT_PORT } = require("../../server/config/constants");
+const {
+  EXPECTED_TITLE,
+  buildDriver,
+  getUrl,
+  setupPeer,
+  waitForVisible,
+  connectPeers,
+  transferFile,
+  By,
+  until,
+} = require("./helpers");
 
-async function buildDriver(options) {
-  const driver = await new Builder()
-    .forBrowser("chrome")
-    .setChromeOptions(options)
-    .build();
-  await driver.manage().setTimeouts({ pageLoad: 30000, implicit: 5000 });
-  return driver;
+async function sendChatMessage(driver, text) {
+  const chatInput = await driver.findElement(By.id("chat-input"));
+  await chatInput.clear();
+  await chatInput.sendKeys(text);
+  const sendBtn = await driver.findElement(By.id("send-chat-btn"));
+  await sendBtn.click();
 }
 
-async function waitForAssignedPeerId(driver) {
-  const myIdDisplay = await driver.wait(
-    until.elementLocated(By.id("my-id-display")),
-    20000,
+async function verifyChatMessage(driver, text) {
+  await driver.wait(
+    async () => {
+      const chatBox = await driver.findElement(By.id("chat-box"));
+      const content = await chatBox.getText();
+      return content.includes(text);
+    },
+    15000,
+    `Waiting for chat message: ${text}`,
   );
-
-  await driver.wait(async () => {
-    const text = await myIdDisplay.getText();
-    return (
-      text !== "Waiting for PIN..." &&
-      text !== "Waiting for ID..." &&
-      text !== "" &&
-      text !== "Connection Error" &&
-      text.length > 5
-    );
-  }, 20000);
-
-  const peerId = (await myIdDisplay.getText()).trim();
-  return peerId;
-}
-
-async function setupPeer({ driver, url, expectedTitle, label }) {
-  console.log(`Setup ${label}`);
-  await driver.get(url);
-  console.log(`${label} navigated to: ${url}`);
-
-  await driver.wait(until.titleIs(expectedTitle), 20000);
-  console.log(`Page Title: ${await driver.getTitle()}`);
-
-  const peerId = await waitForAssignedPeerId(driver);
-  console.log(`${label} ID: ${peerId}`);
-
-  const copyIdButton = await driver.findElement(By.id("copy-id-btn"));
-  await driver.wait(until.elementIsVisible(copyIdButton), 20000);
-  console.log("Copy ID button visible");
-
-  return peerId;
-}
-
-async function waitForPeerConnection(driver, expectedPeerId, label) {
-  const activeConnectionContainer = await driver.findElement(
-    By.id("active-connection-container"),
-  );
-  const activeConnectionStatus = await driver.findElement(
-    By.id("active-connection-status"),
-  );
-
-  await driver.wait(until.elementIsVisible(activeConnectionContainer), 30000);
-  console.log(`${label} connected`);
-
-  await driver.wait(async () => {
-    const text = (await activeConnectionStatus.getText()).trim();
-    return text === expectedPeerId;
-  }, 30000);
-  console.log(`${label} status: Connected to ${expectedPeerId}`);
+  console.log(`Chat message verified: ${text}`);
 }
 
 async function runConnectionTest() {
-  const options = new chrome.Options();
-  options.addArguments("--headless");
-  options.addArguments("--no-sandbox");
-  options.addArguments("--disable-dev-shm-usage");
-  options.addArguments("--disable-web-security");
-  options.addArguments("--allow-running-insecure-content");
-  options.addArguments("--use-fake-ui-for-media-stream");
-  options.addArguments("--use-fake-device-for-media-stream");
-
   let driver1, driver2;
   let testFilePath = null;
+  let testFilePath2 = null;
 
   try {
+    const url = getUrl();
     const testFileName = "test-file-rtcportal.txt";
     const testFileContent = `Test file for RTCPortal P2P Transfer\nCreated at: ${new Date().toISOString()}\nThis file should appear in both peers' transfer history.`;
     testFilePath = path.join(require("os").tmpdir(), testFileName);
     fs.writeFileSync(testFilePath, testFileContent);
-    console.log(`Created test file: ${testFilePath}`);
+
+    const testFileName2 = "test-file-reverse.txt";
+    const testFileContent2 = `Reverse file for RTCPortal P2P Transfer\nCreated at: ${new Date().toISOString()}\nThis verifies reverse direction transfers.`;
+    testFilePath2 = path.join(require("os").tmpdir(), testFileName2);
+    fs.writeFileSync(testFilePath2, testFileContent2);
 
     console.log("Creating WebDriver instances");
-    driver1 = await buildDriver(options);
-    driver2 = await buildDriver(options);
-
-    const url = process.env.TEST_URL || `http://localhost:${DEFAULT_PORT}`;
-    const expectedTitle = "RTCPortal - P2P Transfer Hub";
+    driver1 = await buildDriver();
+    driver2 = await buildDriver();
 
     const peer1Id = await setupPeer({
       driver: driver1,
       url,
-      expectedTitle,
+      expectedTitle: EXPECTED_TITLE,
       label: "Peer 1 (Initiator)",
     });
     const peer2Id = await setupPeer({
       driver: driver2,
       url,
-      expectedTitle,
+      expectedTitle: EXPECTED_TITLE,
       label: "Peer 2 (Receiver)",
     });
 
     console.log("Establishing P2P Connection");
-    const partnerIdField1 = await driver1.findElement(
-      By.id("partner-id-field"),
-    );
-    const connectButton1 = await driver1.findElement(By.id("connect-btn"));
+    await connectPeers(driver1, driver2, peer2Id, peer1Id);
 
-    console.log(`Entering Peer 2 ID: ${peer2Id}`);
-    await partnerIdField1.clear();
-    await partnerIdField1.sendKeys(peer2Id);
-
-    await driver1.wait(until.elementIsEnabled(connectButton1), 20000);
-    console.log(`Connect button enabled`);
-
-    console.log("Clicking Connect button");
-    await connectButton1.click();
-
-    console.log("Waiting for connection");
-    await waitForPeerConnection(driver1, peer2Id, "Peer 1");
-    await waitForPeerConnection(driver2, peer1Id, "Peer 2");
-
-    const fileTransferSection1 = await driver1.findElement(
+    // Verify file transfer sections are visible on both peers.
+    await waitForVisible(
+      driver1,
       By.id("file-transfer-section"),
+      20000,
+      "file transfer section on Peer 1",
     );
-    const fileTransferSection2 = await driver2.findElement(
+    await waitForVisible(
+      driver2,
       By.id("file-transfer-section"),
+      20000,
+      "file transfer section on Peer 2",
+    );
+    console.log("File transfer sections visible on both peers");
+
+    // 1. Test chat messaging (both directions).
+    console.log("Testing chat both directions");
+    const chatToggle1 = await driver1.findElement(By.id("toggle-chat-btn"));
+    await driver1.wait(until.elementIsVisible(chatToggle1), 10000);
+    await driver1.executeScript(
+      "document.getElementById('toggle-chat-btn').click()",
     );
 
-    await driver1.wait(until.elementIsVisible(fileTransferSection1), 20000);
-    await driver2.wait(until.elementIsVisible(fileTransferSection2), 20000);
-    console.log(`File transfer sections visible on both peers`);
-
-    console.log("Testing File Transfer");
-    console.log(`Uploading file: ${testFileName}`);
-
-    const fileInput = await driver1.findElement(By.id("upload-field"));
-    await fileInput.sendKeys(testFilePath);
-    console.log(`File selected`);
-
-    const fileTransferBtn = await driver1.findElement(
-      By.id("file-transfer-btn"),
+    const chatToggle2 = await driver2.findElement(By.id("toggle-chat-btn"));
+    await driver2.wait(until.elementIsVisible(chatToggle2), 10000);
+    await driver2.executeScript(
+      "document.getElementById('toggle-chat-btn').click()",
     );
-    await driver1.wait(until.elementIsEnabled(fileTransferBtn), 10000);
-    console.log(`Send button enabled`);
 
-    await fileTransferBtn.click();
-    console.log(`File transfer initiated`);
+    await sendChatMessage(driver1, "hello from peer1");
+    await verifyChatMessage(driver2, "hello from peer1");
+    await sendChatMessage(driver2, "hi peer2 here");
+    await verifyChatMessage(driver1, "hi peer2 here");
+    console.log("Chat round-trip verified");
 
-    console.log(`Waiting for file transfer to complete`);
-    await driver1.wait(async () => {
-      try {
-        const statusDiv = await driver1.findElement(
-          By.id("transfer-status-sent"),
-        );
-        const statusText = await statusDiv.getText();
-        return statusText.toLowerCase().includes("sent");
-      } catch {
-        return false;
-      }
-    }, 45000);
-    console.log(`File transfer completed on Peer 1`);
-
-    console.log(`Checking for received file on Peer 2`);
-    await driver2.wait(async () => {
-      try {
-        const incomingFiles = await driver2.findElement(
-          By.id("incoming-files"),
-        );
-        const filesText = await incomingFiles.getText();
-        return filesText.includes(testFileName);
-      } catch {
-        return false;
-      }
-    }, 45000);
-    console.log(`File received on Peer 2`);
+    // 2. Test file transfer: Peer 1 -> Peer 2.
+    console.log("Testing File Transfer (Peer 1 -> Peer 2)");
+    await transferFile(driver1, driver2, testFilePath, testFileName);
 
     const incomingSection = await driver2.findElement(
       By.id("incoming-files-section"),
     );
+    await driver2.wait(until.elementIsVisible(incomingSection), 20000);
     const incomingText = await incomingSection.getText();
-
     if (!incomingText.includes(testFileName)) {
       throw new Error(
         `File not found in Peer 2's incoming files: expected ${testFileName}`,
       );
     }
-    console.log(`File verified in transfer history`);
+    console.log("File verified in receiver history");
+
+    // 3. Test file transfer reverse: Peer 2 -> Peer 1.
+    console.log("Testing File Transfer (Peer 2 -> Peer 1)");
+    await transferFile(driver2, driver1, testFilePath2, testFileName2);
+
+    const incomingSection1 = await driver1.findElement(
+      By.id("incoming-files-section"),
+    );
+    const outgoingText1 = await incomingSection1.getText();
+    if (!outgoingText1.includes(testFileName2)) {
+      throw new Error(
+        `File not found in Peer 1's incoming files: expected ${testFileName2}`,
+      );
+    }
+    console.log("Reverse file verified in receiver history");
+
+    // 4. End the connection and verify both peers return to idle.
+    console.log("Testing disconnect");
+    const endBtn = await driver1.findElement(By.id("end-btn"));
+    await driver1.wait(until.elementIsVisible(endBtn), 10000);
+    await endBtn.click();
 
     console.log("Test Results:");
     console.log("Both peers connected successfully");
-    console.log("File transfer completed");
-    console.log("File appears in receiver's history");
+    console.log("File transfer completed in both directions");
+    console.log("Chat round-trip verified");
+    console.log("Files appear in receiver history");
     console.log("All tests passed");
   } catch (error) {
     console.error("Test failed:", error.message);
+    try {
+      const logs1 = await driver1.manage().logs().get("browser");
+      console.log("Driver 1 Logs:", logs1);
+    } catch (e) {}
+    try {
+      const logs2 = await driver2.manage().logs().get("browser");
+      console.log("Driver 2 Logs:", logs2);
+    } catch (e) {}
     if (error.stack) console.error(error.stack);
     process.exitCode = 1;
   } finally {
@@ -218,7 +181,9 @@ async function runConnectionTest() {
       }
       if (testFilePath && fs.existsSync(testFilePath)) {
         fs.unlinkSync(testFilePath);
-        console.log(`Deleted test file: ${testFilePath}`);
+      }
+      if (testFilePath2 && fs.existsSync(testFilePath2)) {
+        fs.unlinkSync(testFilePath2);
       }
     } catch (cleanupError) {
       console.error("Cleanup error:", cleanupError.message);

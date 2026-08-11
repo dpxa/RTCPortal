@@ -1,13 +1,19 @@
+const DEFAULT_PORT = 3000;
+
 module.exports = {
-  DEFAULT_PORT: 3000,
+  DEFAULT_PORT,
+  DEFAULT_HOST: "0.0.0.0",
 
   ROUTES: {
-    TEST: "/test",
     API: "/api",
   },
 
   CORS_ORIGINS: {
     GITHUB_PAGES: "https://dpxa.github.io",
+    LOCALHOST: [
+      `http://localhost:${DEFAULT_PORT}`,
+      `http://127.0.0.1:${DEFAULT_PORT}`,
+    ],
   },
 
   SOCKET_TRANSPORTS: ["websocket", "polling"],
@@ -33,7 +39,19 @@ module.exports = {
     },
   },
 
+  // Stats endpoint rate limiting (per-IP, token bucket)
+  STATS_RATE_LIMIT: {
+    maxRequests: 5,
+    windowMs: 10000,
+  },
+
   METERED_API_BASE_URL: "https://rtcportal.metered.live/api/v1",
+
+  // Per-IP bandwidth quota (default: 500 MB). Set to 0 to disable per-IP limiting.
+  PER_IP_BANDWIDTH_QUOTA_BYTES: parseInt(process.env.PER_IP_BANDWIDTH_QUOTA_BYTES, 10) || 500 * 1024 * 1024,
+
+  // Global TURN bandwidth pool across all users (default: 20 GB). Set to 0 to disable global limiting.
+  GLOBAL_BANDWIDTH_QUOTA_BYTES: parseInt(process.env.GLOBAL_BANDWIDTH_QUOTA_BYTES, 10) || 20 * 1024 * 1024 * 1024,
 
   HTTP_STATUS: {
     OK: 200,
