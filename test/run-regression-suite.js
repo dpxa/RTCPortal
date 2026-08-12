@@ -7,7 +7,7 @@ const REGRESSION_DIR = path.join(__dirname, "regression");
 function discoverTests() {
   return fs
     .readdirSync(REGRESSION_DIR)
-    .filter((f) => f.endsWith(".test.js") || f.endsWith(".test.mjs"))
+    .filter((f) => f.includes("test.js") || f.includes("test.mjs"))
     .sort();
 }
 

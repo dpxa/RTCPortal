@@ -147,24 +147,29 @@ const handleSocketConnection = (io, connectionStats) => {
           const s = io.sockets.sockets.get(socketId);
           const t = io.sockets.sockets.get(targetId);
 
+          const key = pairKey(socketId, targetId);
+          const completed = new Set();
+          if (!s) completed.add(socketId);
+          if (!t) completed.add(targetId);
+          
+          pendingDisconnects.set(key, {
+            sockets: [socketId, targetId],
+            identities: {
+              [socketId]: s ? getSocketIdentity(s) : socketId,
+              [targetId]: t ? getSocketIdentity(t) : targetId
+            },
+            completed,
+            createdAt: now,
+          });
+
           if (s && t) {
             s.emit("peer-disconnected", {
-              from: t.pin || t.id,
+              from: getSocketIdentity(t),
               reason: "ttl-expired",
             });
             t.emit("peer-disconnected", {
-              from: s.pin || s.id,
+              from: getSocketIdentity(s),
               reason: "ttl-expired",
-            });
-          } else {
-            const key = pairKey(socketId, targetId);
-            const completed = new Set();
-            if (!s) completed.add(socketId);
-            if (!t) completed.add(targetId);
-            pendingDisconnects.set(key, {
-              sockets: [socketId, targetId],
-              completed,
-              createdAt: now,
             });
           }
 
@@ -342,7 +347,10 @@ const handleSocketConnection = (io, connectionStats) => {
         pinMap.delete(socket.pin);
       }
       pairingTimestamps.delete(socket.id);
-      socket._hasPendingAttempt = false;
+      if (socket._hasPendingAttempt) {
+        socket._hasPendingAttempt = false;
+        connectionStats.decrementAttempts();
+      }
     };
 
     const statsRateTracker = new Map();
@@ -352,34 +360,27 @@ const handleSocketConnection = (io, connectionStats) => {
     const isStatsRateLimited = (eventName) => {
       const now = Date.now();
       const key = `${socket.id}:${eventName}`;
-      const lastTime = statsRateTracker.get(key) || 0;
-      const minInterval =
-        STATS_RATE_LIMIT.windowMs / STATS_RATE_LIMIT.maxEvents;
-
-      if (now - lastTime < minInterval) {
+      let timestamps = statsRateTracker.get(key);
+      if (!timestamps) {
+        timestamps = [];
+        statsRateTracker.set(key, timestamps);
+      }
+      
+      const cutoff = now - STATS_RATE_LIMIT.windowMs;
+      while (timestamps.length > 0 && timestamps[0] < cutoff) {
+        timestamps.shift();
+      }
+      
+      if (timestamps.length >= STATS_RATE_LIMIT.maxEvents) {
         return true;
       }
-      statsRateTracker.set(key, now);
-
+      timestamps.push(now);
+      
       if (statsRateTracker.size > STATS_TRACKER_MAX_SIZE) {
-        const cutoff = now - STATS_RATE_LIMIT.windowMs;
-        for (const [k, v] of statsRateTracker) {
-          if (v < cutoff) statsRateTracker.delete(k);
-        }
-
-        if (statsRateTracker.size > STATS_TRACKER_MAX_SIZE) {
-          const sorted = [...statsRateTracker.entries()].sort(
-            (a, b) => a[1] - b[1],
-          );
-          const toRemove = sorted.slice(
-            0,
-            statsRateTracker.size - STATS_TRACKER_MAX_SIZE,
-          );
-          for (const [k] of toRemove) {
-            statsRateTracker.delete(k);
-          }
-        }
+        const oldestKey = statsRateTracker.keys().next().value;
+        if (oldestKey) statsRateTracker.delete(oldestKey);
       }
+      
       return false;
     };
 
@@ -396,28 +397,19 @@ const handleSocketConnection = (io, connectionStats) => {
         if (!Array.isArray(info.sockets)) continue;
         if (!info.sockets.includes(socket.id)) continue;
 
-        info.completed.add(socket.id);
-        const allCompleted = info.sockets.every((sId) =>
-          info.completed.has(sId),
-        );
-        if (allCompleted) {
-          for (const sId of info.sockets) {
+        for (const sId of info.sockets) {
+          if (sId !== socket.id) {
             const sSock = io.sockets.sockets.get(sId);
             if (sSock) {
-              const otherId = info.sockets.find((x) => x !== sId) || null;
-              const otherSock = otherId
-                ? io.sockets.sockets.get(otherId)
-                : null;
+              const fromIdentity = info.identities ? info.identities[socket.id] : null;
               sSock.emit("peer-disconnected", {
-                from: otherSock ? getSocketIdentity(otherSock) : null,
-                reason: "peer-disconnected-during-transfer",
+                from: fromIdentity,
+                reason: "peer-disconnected",
               });
             }
           }
-          pendingDisconnects.delete(key);
-        } else {
-          pendingDisconnects.set(key, info);
         }
+        pendingDisconnects.delete(key);
       }
 
       for (const key of [...statsRateTracker.keys()]) {
@@ -472,12 +464,14 @@ const handleSocketConnection = (io, connectionStats) => {
         payload.confirmed === true &&
         typeof payload.fileSize === "number" &&
         Number.isFinite(payload.fileSize) &&
-        payload.fileSize >= 0
+        payload.fileSize >= 0 &&
+        payload.fileSize <= 2 * 1024 * 1024 * 1024
       ) {
         const fileCount =
           typeof payload.fileCount === "number" &&
           Number.isFinite(payload.fileCount) &&
-          payload.fileCount > 0
+          payload.fileCount > 0 &&
+          payload.fileCount <= 50000
             ? payload.fileCount
             : 1;
         connectionStats.addTransfer(payload.fileSize, fileCount);
@@ -502,11 +496,9 @@ const handleSocketConnection = (io, connectionStats) => {
             const sSock = io.sockets.sockets.get(sId);
             if (sSock) {
               const otherId = info.sockets.find((x) => x !== sId) || null;
-              const otherSock = otherId
-                ? io.sockets.sockets.get(otherId)
-                : null;
+              const fromIdentity = info.identities && otherId ? info.identities[otherId] : null;
               sSock.emit("peer-disconnected", {
-                from: otherSock ? getSocketIdentity(otherSock) : null,
+                from: fromIdentity,
                 reason: "ttl-expired-after-transfer",
               });
             }
@@ -559,6 +551,17 @@ const handleSocketConnection = (io, connectionStats) => {
         socket._hasPendingAttempt = false;
         const targetSocket = io.sockets.sockets.get(targetId);
         if (targetSocket) targetSocket._hasPendingAttempt = false;
+
+        const existingTargetPair = activePairings.get(targetId);
+        if (existingTargetPair && existingTargetPair !== socket.id) {
+          evictPeerAndNotify(io, existingTargetPair, targetId, socket);
+        }
+
+        const existingSenderPair = activePairings.get(socket.id);
+        if (existingSenderPair && existingSenderPair !== targetId) {
+          evictPeerAndNotify(io, existingSenderPair, socket.id, socket);
+        }
+
         activePairings.set(socket.id, targetId);
         activePairings.set(targetId, socket.id);
         const now = Date.now();

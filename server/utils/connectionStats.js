@@ -44,6 +44,10 @@ class ConnectionStats {
     if (!ip || !Number.isFinite(bytes) || bytes <= 0) return;
     const current = this.ipBandwidth.get(ip) || 0;
     this.ipBandwidth.set(ip, current + Math.round(bytes));
+    if (this.ipBandwidth.size > 10000) {
+      const oldestIp = this.ipBandwidth.keys().next().value;
+      this.ipBandwidth.delete(oldestIp);
+    }
   }
 
   getIpBandwidth(ip) {

@@ -150,6 +150,7 @@ class UIManager {
     }
     if (this.endBtn) {
       this.endBtn.addEventListener("click", () => {
+        console.warn("UI Manager: endBtn click event fired natively");
         this._safeCall(this.webRtcHandlers.onDisconnect);
       });
     }
@@ -1677,3 +1678,6 @@ class UIManager {
 }
 
 export const uiManager = new UIManager();
+if (typeof window !== "undefined") {
+  window.uiManager = uiManager;
+}

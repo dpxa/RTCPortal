@@ -21,6 +21,7 @@ import { IncrementalSHA256 } from "../utils/incrementalSha256.js";
 import {
   encryptFileChunk,
   decryptTaggedPayload,
+  encryptMessage,
   ENCRYPTION_TAGS,
 } from "../utils/encryption.js";
 import { uiManager } from "../ui/uiManager.js";
@@ -208,7 +209,7 @@ class FileTransferManager {
 
     try {
       if (statsService) {
-        statsService.requestConnectionStats({ force: true });
+        statsService.requestConnectionStats();
       }
     } catch (e) {
       console.warn("Failed to refresh stats after transfer completion", e);
@@ -500,6 +501,26 @@ class FileTransferManager {
     return [];
   }
 
+  async _sendControlMessageOrdered(msgObj) {
+    if (webrtcManager.encryption?.enabled) {
+      await webrtcManager._awaitHandshake();
+      if (webrtcManager.encryption.sessionKey) {
+        try {
+          const encrypted = await encryptMessage(webrtcManager.encryption.sessionKey, msgObj);
+          if (webrtcManager.dataChannel && webrtcManager.dataChannel.readyState === "open") {
+            webrtcManager.dataChannel.send(encrypted);
+          }
+          return;
+        } catch (e) {
+          console.error("Encryption failed for control message:", e);
+        }
+      }
+    }
+    if (webrtcManager.dataChannel && webrtcManager.dataChannel.readyState === "open") {
+      webrtcManager.dataChannel.send(JSON.stringify(msgObj));
+    }
+  }
+
   isDataChannelOpen() {
     const wm = this.webrtcManager;
     return wm && wm.dataChannel && wm.dataChannel.readyState === "open";
@@ -773,8 +794,7 @@ class FileTransferManager {
         if (!this.isDataChannelOpen()) {
           throw new Error("Data channel closed before send");
         }
-        webrtcManager.dataChannel.send(
-          JSON.stringify({
+        await this._sendControlMessageOrdered({
             type: "metadata",
             fileName: currentFileName,
             fileSize: fileToSend.size,
@@ -785,8 +805,7 @@ class FileTransferManager {
             isDirectoryMarker: fileToSend.isDirectoryMarker || false,
             rootDirectoryName: this.rootDirectoryName || null,
             sha256: fileHash,
-          }),
-        );
+        });
 
         this._resumeOffset = null;
 
@@ -798,6 +817,7 @@ class FileTransferManager {
             totalBatchSize,
             totalBytesSent,
             this._batchStartTime,
+            fileHash,
           );
         } catch (err) {
           console.warn("Transfer aborted or failed:", err);
@@ -1122,6 +1142,7 @@ class FileTransferManager {
     totalBatchSize,
     totalBytesSentStart,
     _batchStartTime,
+    fileHash,
   ) {
     if (this.isStopped) return Promise.resolve();
 
@@ -1214,25 +1235,20 @@ class FileTransferManager {
               }
               offset = position;
 
-              if (
-                webrtcManager.dataChannel &&
-                webrtcManager.dataChannel.readyState === "open"
-              ) {
-                webrtcManager.dataChannel.send(
-                  JSON.stringify({
-                    type: "metadata",
-                    fileName: currentFileNameForResume,
-                    fileSize: fileObj.size,
-                    lastModified: fileObj.lastModified ?? Date.now(),
-                    batchIndex: currentIdx,
-                    batchTotal: totalCount,
-                    totalBatchSize,
-                    isDirectoryMarker: false,
-                    rootDirectoryName: this.rootDirectoryName || null,
-                    sha256: null,
-                    resumeOffset: offset,
-                  }),
-                );
+              if (!this.isStopped) {
+                await this._sendControlMessageOrdered({
+                  type: "metadata",
+                  fileName: fileObj.name || fileObj.fileName,
+                  fileSize: fileObj.size || fileObj.fileSize,
+                  lastModified: fileObj.lastModified || Date.now(),
+                  batchIndex: currentIdx,
+                  batchTotal: totalCount,
+                  totalBatchSize,
+                  isDirectoryMarker: false,
+                  rootDirectoryName: this.rootDirectoryName || null,
+                  sha256: fileHash,
+                  resumeOffset: this._resumeOffset,
+                });
               }
 
               this._resumeOffset = null;
@@ -1256,13 +1272,8 @@ class FileTransferManager {
                 this.lastSentUIUpdate = Date.now();
               }
 
-              if (
-                webrtcManager.dataChannel &&
-                webrtcManager.dataChannel.readyState === "open"
-              ) {
-                webrtcManager.dataChannel.send(
-                  JSON.stringify({ type: "done" }),
-                );
+              if (!this.isStopped) {
+                await this._sendControlMessageOrdered({ type: "done" });
               }
 
               if (currentIdx === totalCount) {
@@ -1335,13 +1346,7 @@ class FileTransferManager {
                   webrtcManager.encryption.sessionKey,
                   chunk_slice,
                 );
-                webrtcManager.dataChannel.send(
-                  JSON.stringify({
-                    type: "e2e-chunk",
-                    tag: ENCRYPTION_TAGS.BINARY,
-                    payload: Array.from(new Uint8Array(encrypted)),
-                  }),
-                );
+                webrtcManager.dataChannel.send(encrypted);
               } else {
                 webrtcManager.dataChannel.send(chunk_slice);
               }
@@ -1408,18 +1413,11 @@ class FileTransferManager {
     return Math.floor(clampedPercent);
   }
 
-  sendResumeOffsetSync() {
+  async sendResumeOffsetSync() {
     if (this.isReceiving && this.receivedFileDetails) {
       const offset = this.receivedBytes || 0;
       console.warn("Sending resume-offset-sync for offset", offset);
-      if (
-        webrtcManager.dataChannel &&
-        webrtcManager.dataChannel.readyState === "open"
-      ) {
-        webrtcManager.dataChannel.send(
-          JSON.stringify({ type: "resume-offset-sync", offset }),
-        );
-      }
+      await this._sendControlMessageOrdered({ type: "resume-offset-sync", offset });
     }
   }
 
@@ -1599,32 +1597,7 @@ class FileTransferManager {
         parsed = JSON.parse(data);
       } catch {}
 
-      if (
-        parsed &&
-        parsed.type === "e2e-chunk" &&
-        Array.isArray(parsed.payload)
-      ) {
-        if (
-          !webrtcManager.encryption?.sessionKey ||
-          !webrtcManager.encryption?.enabled
-        ) {
-          console.warn(
-            "Received encrypted chunk without an active session key",
-          );
-          return;
-        }
-        try {
-          const { plaintext } = await decryptTaggedPayload(
-            webrtcManager.encryption.sessionKey,
-            new Uint8Array(parsed.payload).buffer,
-          );
-          await this.processIncomingChunk(plaintext);
-          return;
-        } catch (error) {
-          console.warn("Failed to decrypt incoming file chunk:", error);
-          return;
-        }
-      }
+
 
       await this.processControlInstruction(data);
     } else {
@@ -1700,7 +1673,7 @@ class FileTransferManager {
 
           try {
             if (statsService) {
-              statsService.requestConnectionStats({ force: true });
+              statsService.requestConnectionStats();
             }
           } catch (e) {
             console.warn("Failed to refresh stats after batch received", e);
@@ -1803,7 +1776,6 @@ class FileTransferManager {
 
     this.collectedChunks = [];
     this.receivedBytes = this.receivedFileDetails.resumeOffset || 0;
-    this.totalBatchBytesReceived = this.receivedFileDetails.resumeOffset || 0;
     this.isReceiving = true;
     this.isStopped = false;
     this.isAutoThrottled = false;
@@ -1811,6 +1783,11 @@ class FileTransferManager {
     this.opfsReady = false;
 
     if (this.receivedFileDetails.resumeOffset > 0) {
+      console.warn(
+        `Receiver resuming "${info.fileName}" from byte offset ${this.receivedFileDetails.resumeOffset}`,
+      );
+      this.opfsReady = true;
+    } else {
       if (this.opfsWritable) {
         try {
           await this.opfsWritable.abort();
@@ -1829,9 +1806,6 @@ class FileTransferManager {
           console.error("Failed to remove stale OPFS file:", error);
         }
       }
-      console.warn(
-        `Receiver resuming "${info.fileName}" from byte offset ${this.receivedFileDetails.resumeOffset}`,
-      );
     }
 
     uiManager.ensureReceivedContainer();
@@ -1844,11 +1818,13 @@ class FileTransferManager {
       ),
     );
 
-    if (!info.isDirectoryMarker) {
+    if (!info.isDirectoryMarker && this.receivedFileDetails.resumeOffset === 0) {
       await this.initializeOPFSForIncomingFile(info.fileName);
     }
 
-    this._initIncomingHasher(info);
+    if (this.receivedFileDetails.resumeOffset === 0) {
+      this._initIncomingHasher(info);
+    }
   }
 
   async initializeOPFSForIncomingFile(fileName) {
@@ -2461,6 +2437,17 @@ class FileTransferManager {
       this._stopDonePromise = null;
     }
 
+    if (this.isSending && !this.hasReportedTransferComplete) {
+      webrtcManager.reportTransferComplete(
+        {
+          bytes: this.sentBytes || 0,
+          count: this.sentBatchIndex ? this.sentBatchIndex - 1 : 0,
+        },
+        true,
+      );
+      this.hasReportedTransferComplete = true;
+    }
+
     this._renderIncompleteSentHistoryIfNeeded("Incomplete");
 
     this.isSending = false;
@@ -2501,6 +2488,17 @@ class FileTransferManager {
     this.receiveBufferSize = 0;
     this.isThrottlingSender = false;
     this.receivedBytes = 0;
+    
+    if (wasReceiving) {
+      webrtcManager.reportTransferComplete(
+        {
+          bytes: this.totalBatchBytesReceived || 0,
+          count: this.receivedFileDetails ? this.receivedFileDetails.batchIndex - 1 : 0,
+        },
+        false,
+      );
+    }
+
     this.totalBytesReceived = 0;
     this.totalBatchBytesReceived = 0;
 

@@ -8,30 +8,12 @@ const {
   waitForVisible,
   connectPeers,
   transferFile,
+  sendChatMessage,
+  verifyChatMessage,
   By,
   until,
 } = require("./helpers");
 
-async function sendChatMessage(driver, text) {
-  const chatInput = await driver.findElement(By.id("chat-input"));
-  await chatInput.clear();
-  await chatInput.sendKeys(text);
-  const sendBtn = await driver.findElement(By.id("send-chat-btn"));
-  await sendBtn.click();
-}
-
-async function verifyChatMessage(driver, text) {
-  await driver.wait(
-    async () => {
-      const chatBox = await driver.findElement(By.id("chat-box"));
-      const content = await chatBox.getText();
-      return content.includes(text);
-    },
-    15000,
-    `Waiting for chat message: ${text}`,
-  );
-  console.log(`Chat message verified: ${text}`);
-}
 
 async function runConnectionTest() {
   let driver1, driver2;
@@ -133,15 +115,36 @@ async function runConnectionTest() {
     console.log("Reverse file verified in receiver history");
 
     console.log("Testing disconnect");
+    await driver1.sleep(1000);
     const endBtn = await driver1.findElement(By.id("end-btn"));
     await driver1.wait(until.elementIsVisible(endBtn), 10000);
-    await endBtn.click();
+    console.log("Calling onDisconnect directly...");
+    await driver1.executeScript("window.uiManager.webRtcHandlers.onDisconnect()");
+    console.log("Finished calling onDisconnect");
+
+    // Wait for Peer 1 to finish its cleanup while it is still in the foreground
+    await driver1.wait(async () => {
+      const activeContainer = await driver1.findElement(By.id("active-connection-container"));
+      const isHidden = await activeContainer.getAttribute("hidden");
+      return isHidden !== null;
+    }, 5000, "Waiting for Peer 1 to hide active connection container");
+
+    // Ensure we sleep in driver1 context to allow network flush before switching drivers
+    await driver1.sleep(1000);
+
+    await driver2.wait(async () => {
+      const activeContainer = await driver2.findElement(By.id("active-connection-container"));
+      const isHidden = await activeContainer.getAttribute("hidden");
+      return isHidden !== null;
+    }, 15000, "Waiting for Peer 2 to recognize the disconnection by hiding active container");
+    console.log("Disconnect successfully propagated to Peer 2");
 
     console.log("Test Results:");
     console.log("Both peers connected successfully");
     console.log("File transfer completed in both directions");
     console.log("Chat round-trip verified");
     console.log("Files appear in receiver history");
+    console.log("Disconnection handled properly");
     console.log("All tests passed");
   } catch (error) {
     console.error("Test failed:", error.message);

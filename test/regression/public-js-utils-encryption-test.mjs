@@ -132,7 +132,7 @@ test("tampering with ciphertext fails decryption", async () => {
   const encrypted = await encryption.encryptFileChunk(aliceKey, plaintext);
 
   const tampered = new Uint8Array(encrypted);
-  tampered[tampered.length - 1] ^= 0x01; // flip the last auth-tag byte
+  tampered[tampered.length - 1] ^= 0x01;
 
   await assert.rejects(() =>
     encryption.decryptTaggedPayload(bobKey, tampered.buffer),

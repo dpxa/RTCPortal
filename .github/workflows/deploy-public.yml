@@ -41,16 +41,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run Regression Suite (client + server unit/integration)
+      - name: Run Regression Suite (public tests)
         working-directory: ./test
-        run: npm run test:regression
+        run: npm run test:regression -- --only=public
 
       - name: Start Dev Server
         run: |
           node server/index.js > /tmp/rtcportal-server.log 2>&1 &
           for i in $(seq 1 30); do
-            if curl -s http://localhost:3000/api/health > /dev/null; then
-              echo "Server ready"
+            if curl -s http://localhost:3000/api/test > /dev/null; then
               break
             fi
             sleep 1

@@ -28,6 +28,7 @@ class WebRTCManager {
 
     this.peerConnection = null;
     this.dataChannel = null;
+    this.controlChannel = null;
     this.pendingPeerConnection = null;
     this.pendingDataChannel = null;
     this.activePeerId = null;
@@ -50,7 +51,8 @@ class WebRTCManager {
       handshakeStarted: false,
       handshakeResolvers: [],
     };
-    this._pendingEncryptedChunks = [];
+    this._pendingOutgoingChunks = [];
+    this._pendingIncomingChunks = [];
 
     this._pendingCandidates = new Map();
 
@@ -121,6 +123,11 @@ class WebRTCManager {
   }
 
   _resetEncryptionState() {
+    if (this.encryption?.handshakeResolvers) {
+      for (const resolve of this.encryption.handshakeResolvers) {
+        resolve();
+      }
+    }
     this.encryption = {
       enabled: true,
       sessionKey: null,
@@ -129,7 +136,8 @@ class WebRTCManager {
       handshakeStarted: false,
       handshakeResolvers: [],
     };
-    this._pendingEncryptedChunks = [];
+    this._pendingOutgoingChunks = [];
+    this._pendingIncomingChunks = [];
   }
 
   _isHandshakeMessage(message) {
@@ -199,7 +207,7 @@ class WebRTCManager {
         publicKey: Array.from(new Uint8Array(publicRaw)),
       });
 
-      this._flushPendingEncryptedChunks();
+      await this._flushPendingEncryptedChunks();
       this._resolveHandshake();
     } catch (error) {
       console.warn("Encryption handshake (hello) failed:", error);
@@ -233,7 +241,7 @@ class WebRTCManager {
       );
       this.encryption.sessionKey = sessionKey;
 
-      this._flushPendingEncryptedChunks();
+      await this._flushPendingEncryptedChunks();
       this._resolveHandshake();
     } catch (error) {
       console.warn("Encryption handshake (key) failed:", error);
@@ -250,57 +258,55 @@ class WebRTCManager {
     }
   }
 
-  _flushPendingEncryptedChunks() {
-    const pending = this._pendingEncryptedChunks;
-    this._pendingEncryptedChunks = [];
-    for (const { payload, tag } of pending) {
-      this._sendEncryptedPayload(payload, tag);
+  async _flushPendingEncryptedChunks() {
+    const outgoing = this._pendingOutgoingChunks;
+    this._pendingOutgoingChunks = [];
+    for (const payload of outgoing) {
+      this._sendEncryptedPayload(payload);
+    }
+    const chunks = [...this._pendingIncomingChunks];
+    this._pendingIncomingChunks = [];
+    for (const chunk of chunks) {
+      try {
+        await this._processEncryptedWrapper(chunk);
+      } catch (err) {
+        console.error("Failed to process pending encrypted chunk:", err);
+      }
     }
   }
 
-  _sendEncryptedPayload(payload, tag) {
+  _sendEncryptedPayload(payload) {
     const channel =
       this.controlChannel && this.controlChannel.readyState === "open"
         ? this.controlChannel
         : this.dataChannel && this.dataChannel.readyState === "open"
           ? this.dataChannel
           : null;
+
     if (!channel) {
+      this._pendingOutgoingChunks.push(payload);
       return;
     }
-    const wrapper = JSON.stringify({
-      type: "e2e-chunk",
-      tag,
-      payload: Array.from(new Uint8Array(payload)),
-    });
+
     try {
-      channel.send(wrapper);
+      channel.send(payload);
     } catch (error) {
       console.warn("Failed to send encrypted payload:", error);
     }
   }
 
-  async _processEncryptedWrapper(wrapper) {
-    if (
-      !wrapper ||
-      wrapper.type !== "e2e-chunk" ||
-      !Array.isArray(wrapper.payload)
-    ) {
-      return;
-    }
-    const payload = new Uint8Array(wrapper.payload).buffer;
+  async _processEncryptedWrapper(payload) {
     if (!this.encryption.sessionKey) {
-      this._pendingEncryptedChunks.push({
-        payload,
-        tag: wrapper.tag,
-      });
+      this._pendingIncomingChunks.push(payload);
       return;
     }
+
     try {
       const { tag, plaintext } = await decryptTaggedPayload(
         this.encryption.sessionKey,
         payload,
       );
+
       if (tag === ENCRYPTION_TAGS.CONTROL) {
         const text = new TextDecoder().decode(plaintext);
         const json = appUtils.safeJsonParse(text);
@@ -331,7 +337,7 @@ class WebRTCManager {
 
   _handleSocketReady() {
     uiManager.clearAlert();
-    statsService.requestConnectionStats({ force: true });
+    statsService.requestConnectionStats();
   }
 
   _isStaleAttempt(attemptId) {
@@ -512,9 +518,16 @@ class WebRTCManager {
           }
         } else if (sourcePeer) {
           if (!this._pendingCandidates.has(sourcePeer)) {
+            if (this._pendingCandidates.size >= 50) {
+              const oldestPeer = this._pendingCandidates.keys().next().value;
+              this._pendingCandidates.delete(oldestPeer);
+            }
             this._pendingCandidates.set(sourcePeer, []);
           }
-          this._pendingCandidates.get(sourcePeer).push(data.candidate);
+          const queue = this._pendingCandidates.get(sourcePeer);
+          if (queue.length < 500) {
+            queue.push(data.candidate);
+          }
         }
       }
     });
@@ -831,6 +844,7 @@ class WebRTCManager {
         conn._candidateQueue.length = 0;
       }
       await conn.setRemoteDescription(data.sdp);
+      await this.drainCandidateQueue(conn);
       const ans = await conn.createAnswer();
       await conn.setLocalDescription(ans);
 
@@ -970,7 +984,7 @@ class WebRTCManager {
           this.peerConnection._successEmitted = true;
           this._pendingSuccessEmit = false;
           this.socket.emit("connection-success");
-          statsService.requestConnectionStats({ force: true });
+          statsService.requestConnectionStats();
         }
       }
     };
@@ -1026,7 +1040,7 @@ class WebRTCManager {
       if (!conn._successEmitted) {
         conn._successEmitted = true;
         this.socket.emit("connection-success");
-        statsService.requestConnectionStats({ force: true });
+        statsService.requestConnectionStats();
       }
     } else {
       this._pendingSuccessEmit = true;
@@ -1081,7 +1095,9 @@ class WebRTCManager {
           } catch (error) {
             console.error("ICE Restart failed:", error);
             conn._failureHandling = false;
-            this.resetCurrentConnection();
+            if (this.peerConnection === conn) {
+              this.resetCurrentConnection();
+            }
           }
         } else {
           console.warn(
@@ -1101,9 +1117,11 @@ class WebRTCManager {
               sdp: conn.localDescription,
             });
           } catch (error) {
-            console.error("Responder ICE Restart failed:", error);
+            console.error("ICE Restart failed:", error);
             conn._failureHandling = false;
-            this.resetCurrentConnection();
+            if (this.peerConnection === conn) {
+              this.resetCurrentConnection();
+            }
           }
         }
       } else {
@@ -1306,14 +1324,10 @@ class WebRTCManager {
       }
     }
   }
-
   processIncomingChannelMessage(rawMessage) {
     if (typeof rawMessage !== "string") {
-      if (this.encryption.sessionKey) {
-        this._processEncryptedWrapper({
-          type: "e2e-chunk",
-          payload: Array.from(new Uint8Array(rawMessage)),
-        });
+      if (this.encryption.enabled) {
+        this._processEncryptedWrapper(rawMessage);
         return;
       }
       fileTransferManager?.handleIncomingData(rawMessage);
@@ -1321,11 +1335,6 @@ class WebRTCManager {
     }
 
     const message = appUtils.safeJsonParse(rawMessage);
-
-    if (message && message.type === "e2e-chunk") {
-      this._processEncryptedWrapper(message);
-      return;
-    }
 
     if (this._isHandshakeMessage(message)) {
       if (message.type === "e2e-hello") {
@@ -1359,26 +1368,37 @@ class WebRTCManager {
     fileTransferManager?.handleIncomingData(rawMessage);
   }
 
-  sendControlMessage(msgObj) {
+  async _awaitHandshake() {
+    if (!this.encryption.enabled || this.encryption.sessionKey) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.encryption.handshakeResolvers.push(resolve);
+    });
+  }
+
+  async sendControlMessage(msgObj) {
     if (this._isHandshakeMessage(msgObj)) {
       this._sendPlaintextControlMessage(JSON.stringify(msgObj));
       return;
     }
 
-    if (this.encryption.enabled && this.encryption.sessionKey) {
-      if (msgObj.type === "disconnect") {
-        this._sendPlaintextControlMessage(JSON.stringify(msgObj));
-        return;
-      }
-      encryptMessage(this.encryption.sessionKey, msgObj)
-        .then((payload) =>
-          this._sendEncryptedPayload(payload, ENCRYPTION_TAGS.CONTROL),
-        )
-        .catch((error) => {
+    if (this.encryption.enabled) {
+      await this._awaitHandshake();
+      if (this.encryption.sessionKey) {
+        if (msgObj.type === "disconnect") {
+          this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+          return;
+        }
+        try {
+          const payload = await encryptMessage(this.encryption.sessionKey, msgObj);
+          this._sendEncryptedPayload(payload);
+        } catch (error) {
           console.warn("Failed to encrypt control message:", error);
           this._sendPlaintextControlMessage(JSON.stringify(msgObj));
-        });
-      return;
+        }
+        return;
+      }
     }
 
     this._sendPlaintextControlMessage(JSON.stringify(msgObj));
@@ -1401,6 +1421,7 @@ class WebRTCManager {
         this._handleE2EKey(this.activePeerId, message);
         return true;
       case "disconnect":
+        uiManager.showIdError("Peer disconnected");
         this.resetCurrentConnection({ notifyPeer: false });
         return true;
       case "ping":
@@ -1453,7 +1474,8 @@ class WebRTCManager {
   }
 
   handleEndConnection() {
-    this._resolveConnectionTeardown();
+    console.warn("End Session button clicked, executing cleanup");
+    this.cleanup({ disposeSocket: false });
   }
 
   abortPendingConnection(emitUserFail = true, options = {}) {
@@ -1480,7 +1502,7 @@ class WebRTCManager {
       this.socket.emit("connection-user-failed");
     }
 
-    statsService.requestConnectionStats({ force: true });
+    statsService.requestConnectionStats();
     this._pendingSuccessEmit = false;
     this._disposePeerConnection(this.pendingPeerConnection);
     this.pendingPeerConnection = null;
@@ -1507,7 +1529,6 @@ class WebRTCManager {
     this._clearNewConnectionTimer();
     this.pendingServerDisconnect = null;
     this._pendingCandidates.clear();
-    this._resetEncryptionState();
 
     this._cleanupFileTransfer({ clearSelection: true });
 
@@ -1518,6 +1539,8 @@ class WebRTCManager {
     ) {
       this.sendControlMessage({ type: "disconnect" });
     }
+    this._resetEncryptionState();
+    
     this._disposePeerConnection(this.peerConnection);
     this.peerConnection = null;
 
@@ -1527,10 +1550,18 @@ class WebRTCManager {
     this._disposeChannel(this.controlChannel);
     this.controlChannel = null;
 
-    if (this.activePeerId) {
-      if (notifyPeer) {
+    if (notifyPeer) {
+      if (this.activePeerId) {
         this.socket.emit("peer-disconnected", { target: this.activePeerId });
       }
+      try {
+        this.sendControlMessage({ type: "disconnect" });
+      } catch (e) {
+        // Ignore if channel is not open
+      }
+    }
+
+    if (this.activePeerId) {
       this.activePeerId = null;
     }
 
@@ -1539,7 +1570,7 @@ class WebRTCManager {
       this.socket.emit("connection-user-failed");
     }
 
-    statsService.requestConnectionStats({ force: true });
+    statsService.requestConnectionStats();
     uiManager.updateToIdle();
   }
 

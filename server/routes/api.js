@@ -98,9 +98,6 @@ router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
     );
   }
 
-  // Global pool check: only block IPs that have already used some TURN bandwidth.
-  // Brand-new users (zero usage) can always connect so the system stays usable
-  // even when the pool is nearly exhausted.
   if (
     GLOBAL_BANDWIDTH_QUOTA_BYTES > 0 &&
     connectionStats.getIpBandwidth(clientIp) > 0 &&
@@ -139,7 +136,6 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
     );
   }
 
-  // Global pool check: only block IPs that have already used some TURN bandwidth.
   if (
     GLOBAL_BANDWIDTH_QUOTA_BYTES > 0 &&
     connectionStats.getIpBandwidth(clientIp) > 0 &&

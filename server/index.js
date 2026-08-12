@@ -95,7 +95,7 @@ if (!isProd) {
   app.use(express.static("public"));
 }
 
-app.get("/api/health", (req, res) => {
+app.get("/api/test", (req, res) => {
   res.status(200).json({
     status: "ok",
     uptime: process.uptime(),

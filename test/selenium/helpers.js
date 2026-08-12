@@ -181,6 +181,27 @@ async function transferFile(
   console.log(`File verified on receiver: ${fileName}`);
 }
 
+async function sendChatMessage(driver, text) {
+  const chatInput = await driver.findElement(By.id("chat-input"));
+  await chatInput.clear();
+  await chatInput.sendKeys(text);
+  const sendBtn = await driver.findElement(By.id("send-chat-btn"));
+  await sendBtn.click();
+}
+
+async function verifyChatMessage(driver, text) {
+  await driver.wait(
+    async () => {
+      const chatBox = await driver.findElement(By.id("chat-box"));
+      const content = await chatBox.getText();
+      return content.includes(text);
+    },
+    15000,
+    `Waiting for chat message: ${text}`,
+  );
+  console.log(`Chat message verified: ${text}`);
+}
+
 module.exports = {
   EXPECTED_TITLE,
   buildDriver,
@@ -191,6 +212,8 @@ module.exports = {
   waitForPeerConnection,
   connectPeers,
   transferFile,
+  sendChatMessage,
+  verifyChatMessage,
   By,
   until,
 };
