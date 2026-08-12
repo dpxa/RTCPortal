@@ -1,13 +1,15 @@
 name: Selenium Tests (Browser E2E)
 
+env:
+  FRONTEND_URL: "https://dpxa.github.io/RTCPortal/"
+
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "public/**"
-      - "server/**"
-      - "test/**"
+  workflow_run:
+    workflows:
+      - "Deploy Frontend to GitHub Pages"
+      - "Deploy Backend to Deploy Branch"
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       test_url:
@@ -15,7 +17,7 @@ on:
         required: false
         default: "https://dpxa.github.io/RTCPortal/"
       wait_seconds:
-        description: "Seconds to wait for deployment before testing"
+        description: "Manual dispatch only: extra seconds to wait for deployment before testing (deploy-triggered runs always wait 300s)"
         required: false
         default: "0"
 
@@ -25,6 +27,7 @@ concurrency:
 
 jobs:
   selenium-e2e:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -56,18 +59,20 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.test_url }}" ]; then
             URL="${{ github.event.inputs.test_url }}"
           else
-            URL="https://dpxa.github.io/RTCPortal/"
+            URL="$FRONTEND_URL"
           fi
           echo "TEST_URL=$URL" >> "$GITHUB_ENV"
           echo "Using TEST_URL: $URL"
 
-      - name: Wait for deployment (optional)
+      - name: Wait for deployment (deploy-triggered runs)
         shell: bash
         run: |
-          WAIT="${{ github.event.inputs.wait_seconds }}"
-          if [ -n "$WAIT" ] && [ "$WAIT" -gt 0 ]; then
-            echo "Waiting ${WAIT}s for deployment..."
-            sleep "$WAIT"
+
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Deploy-triggered run — waiting 300s for deployment to settle..."
+            sleep 300
+          else
+            echo "Manual dispatch — skipping deployment wait"
           fi
 
       - name: Run Selenium UI Test (single peer)

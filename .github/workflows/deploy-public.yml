@@ -9,7 +9,59 @@ on:
   workflow_dispatch:
 
 jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            test/package-lock.json
+
+      - name: Install Root Dependencies
+        run: npm ci || npm install
+
+      - name: Install Test Dependencies
+        working-directory: ./test
+        run: npm install
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v2.1.1
+
+      - name: Install ChromeDriver
+        uses: nanasess/setup-chromedriver@v2.4.0
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run Regression Suite (client + server unit/integration)
+        working-directory: ./test
+        run: npm run test:regression
+
+      - name: Start Dev Server
+        run: |
+          node server/index.js > /tmp/rtcportal-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000/api/health > /dev/null; then
+              echo "Server ready"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run Selenium E2E against local dev server
+        working-directory: ./test
+        run: npm run test:selenium:local
+
   deploy:
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository

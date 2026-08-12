@@ -1,7 +1,3 @@
-/**
- * Incremental SHA-256 implementation in vanilla JS.
- * Adapted for stream hashing without keeping the whole file in memory.
- */
 export class IncrementalSHA256 {
   constructor() {
     this.h = new Uint32Array([
@@ -50,8 +46,6 @@ export class IncrementalSHA256 {
     view.setUint32(60, lengthBits >>> 0, false);
     this._processBlock(finalBuffer);
 
-    // Extract the hash bytes big-endian (Uint32Array uses platform endianness,
-    // so we write each 32-bit word explicitly via DataView).
     const result = new Uint8Array(32);
     const resultView = new DataView(result.buffer);
     for (let i = 0; i < 8; i++) {

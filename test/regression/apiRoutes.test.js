@@ -1,10 +1,3 @@
-// Regression tests for server/routes/api.js
-//
-// Mounts the API router on a minimal Express app backed by a real
-// ConnectionStats instance, then exercises each endpoint over HTTP using
-// Node's built-in fetch. Covers TURN token, TURN credentials, and
-// connection-stats endpoints including quota/authorization edge cases.
-
 const { test, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
@@ -24,11 +17,8 @@ let originalFetch;
 let originalTurnSecret;
 let originalMeteredKey;
 
-// The router is mounted under ROUTES.API ("/api"), so endpoint paths are
-// relative to that prefix.
 const apiPath = (endpoint) => `${ROUTES.API}${endpoint}`;
 
-// Reloads the api router fresh so it picks up current env vars.
 function loadRouter() {
   const apiPathResolved = require.resolve("../../server/routes/api");
   delete require.cache[apiPathResolved];
@@ -59,7 +49,6 @@ after(() => {
 });
 
 beforeEach(() => {
-  // Reset stats between tests for isolation.
   stats.totalAttempts = 0;
   stats.successfulConnections = 0;
   stats.totalBytesTransferred = 0;
@@ -86,8 +75,6 @@ test("GET /api/connection-stats returns stats with quota fields", async () => {
 });
 
 test("GET /api/turn-token returns 500 when TURN secret not configured", async () => {
-  // In the test environment TURN_TOKEN_SECRET is unset, so the token
-  // generator returns null -> 500.
   const res = await fetch(`${baseUrl}${apiPath(API_ENDPOINTS.TURN_TOKEN)}`);
   assert.equal(res.status, HTTP_STATUS.INTERNAL_SERVER_ERROR);
   const body = await res.json();
@@ -96,7 +83,7 @@ test("GET /api/turn-token returns 500 when TURN secret not configured", async ()
 
 test("GET /api/turn-token returns a token when TURN secret is configured", async () => {
   process.env.TURN_TOKEN_SECRET = "test-secret";
-  // Reload router so it picks up the secret.
+
   const app = express();
   app.set("connectionStats", stats);
   app.use(express.json());
@@ -119,8 +106,6 @@ test("GET /api/turn-token returns a token when TURN secret is configured", async
 });
 
 test("GET /api/turn-token returns 403 when per-IP quota exhausted", async () => {
-  // Simulate an IP that has used all its bandwidth. Cover the loopback
-  // variants Express may report for req.ip.
   for (const ip of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
     stats.addIpBandwidth(ip, Number.MAX_SAFE_INTEGER);
   }
@@ -130,7 +115,6 @@ test("GET /api/turn-token returns 403 when per-IP quota exhausted", async () => 
   assert.match(body.error, /quota/i);
 });
 
-// Builds a fresh app+server with a TURN secret and returns { url, token }.
 async function setupTurnServer(secret = "test-secret") {
   process.env.TURN_TOKEN_SECRET = secret;
   const app = express();
@@ -140,7 +124,7 @@ async function setupTurnServer(secret = "test-secret") {
   const srv = http.createServer(app);
   await new Promise((resolve) => srv.listen(0, resolve));
   const url = `http://127.0.0.1:${srv.address().port}`;
-  // Obtain a valid token.
+
   const tokenRes = await fetch(`${url}${apiPath(API_ENDPOINTS.TURN_TOKEN)}`);
   const { token } = await tokenRes.json();
   return { url, token, srv };
@@ -153,7 +137,7 @@ test("GET /api/turn-credentials accepts bearer token in Authorization header", a
       `${url}${apiPath(API_ENDPOINTS.TURN_CREDENTIALS)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    // No METERED_API_KEY -> 500 after passing auth, proving token accepted.
+
     assert.equal(res.status, HTTP_STATUS.INTERNAL_SERVER_ERROR);
     const body = await res.json();
     assert.match(body.error, /API key not configured/i);
@@ -183,7 +167,7 @@ test("GET /api/turn-credentials rejects a tampered signature", async () => {
 test("GET /api/turn-credentials rejects a token with no signature", async () => {
   const { url, srv } = await setupTurnServer();
   try {
-    const noSig = "1699999999999:127.0.0.1"; // no dot -> no signature
+    const noSig = "1699999999999:127.0.0.1";
     const res = await fetch(
       `${url}${apiPath(API_ENDPOINTS.TURN_CREDENTIALS)}?token=${encodeURIComponent(noSig)}`,
     );
@@ -197,7 +181,6 @@ test("GET /api/turn-credentials rejects a token with no signature", async () => 
 test("GET /api/turn-credentials rejects an expired token", async () => {
   const { url, srv } = await setupTurnServer();
   try {
-    // Hand-craft an expired token signed correctly but with a past expiry.
     const crypto = require("crypto");
     const payload = `${Date.now() - 60000}:127.0.0.1`;
     const sig = crypto
@@ -244,7 +227,6 @@ test("GET /api/turn-credentials returns 403 when per-IP quota exhausted", async 
 });
 
 test("GET /api/turn-credentials returns 500 when API key not configured", async () => {
-  // Provide a valid token but no METERED_API_KEY.
   process.env.TURN_TOKEN_SECRET = "test-secret";
   const app = express();
   app.set("connectionStats", stats);
@@ -255,7 +237,6 @@ test("GET /api/turn-credentials returns 500 when API key not configured", async 
   const url = `http://127.0.0.1:${srv.address().port}`;
 
   try {
-    // Generate a valid token via the token endpoint.
     const tokenRes = await fetch(`${url}${apiPath(API_ENDPOINTS.TURN_TOKEN)}`);
     const { token } = await tokenRes.json();
     const res = await fetch(
@@ -273,7 +254,7 @@ test("GET /api/turn-credentials returns 500 when API key not configured", async 
 test("GET /api/turn-credentials returns servers when Metered API succeeds", async () => {
   process.env.TURN_TOKEN_SECRET = "test-secret";
   process.env.METERED_API_KEY = "metered-key";
-  // Only intercept the external Metered call; pass through local fetches.
+
   globalThis.fetch = async (input) => {
     if (String(input).includes("metered.live")) {
       return {
@@ -313,7 +294,7 @@ test("GET /api/turn-credentials returns servers when Metered API succeeds", asyn
 test("GET /api/turn-credentials returns 500 when Metered API fails", async () => {
   process.env.TURN_TOKEN_SECRET = "test-secret";
   process.env.METERED_API_KEY = "metered-key";
-  // Only intercept the external Metered call; pass through local fetches.
+
   globalThis.fetch = async (input) => {
     if (String(input).includes("metered.live")) {
       return {
@@ -354,7 +335,7 @@ test("GET /api/turn-credentials returns 500 when Metered API fails", async () =>
 test("GET /api/turn-credentials returns 500 when Metered fetch throws", async () => {
   process.env.TURN_TOKEN_SECRET = "test-secret";
   process.env.METERED_API_KEY = "metered-key";
-  // Only intercept the external Metered call; pass through local fetches.
+
   globalThis.fetch = async (input) => {
     if (String(input).includes("metered.live")) {
       throw new Error("socket hang up");
@@ -414,7 +395,6 @@ test("GET /api/turn-credentials returns empty array when Metered returns none", 
 });
 
 test("GET /api/turn-credentials returns 403 when global quota exhausted", async () => {
-  // Give the requesting IP usage, then fill the map past the global quota.
   for (const ip of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
     stats.addIpBandwidth(ip, 1000);
   }

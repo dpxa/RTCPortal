@@ -40,41 +40,21 @@ class ConnectionStats {
     }
   }
 
-  /**
-   * Record bandwidth usage for a specific IP address.
-   * @param {string} ip - The client IP address.
-   * @param {number} bytes - The number of bytes transferred.
-   */
   addIpBandwidth(ip, bytes) {
     if (!ip || !Number.isFinite(bytes) || bytes <= 0) return;
     const current = this.ipBandwidth.get(ip) || 0;
     this.ipBandwidth.set(ip, current + Math.round(bytes));
   }
 
-  /**
-   * Get the total bandwidth used by a specific IP address.
-   * @param {string} ip - The client IP address.
-   * @returns {number} Bytes transferred by this IP.
-   */
   getIpBandwidth(ip) {
     return this.ipBandwidth.get(ip) || 0;
   }
 
-  /**
-   * Check if an IP has exceeded the bandwidth quota.
-   * @param {string} ip - The client IP address.
-   * @param {number} quotaBytes - The quota limit in bytes.
-   * @returns {boolean} True if the IP has exceeded the quota.
-   */
   isIpOverQuota(ip, quotaBytes) {
     if (!ip || !quotaBytes || quotaBytes <= 0) return false;
     return this.getIpBandwidth(ip) >= quotaBytes;
   }
 
-  /**
-   * Get the total bandwidth used across all IPs (sum of all per-IP usage).
-   * @returns {number} Total bytes transferred by all IPs.
-   */
   getGlobalBandwidth() {
     let total = 0;
     for (const bytes of this.ipBandwidth.values()) {
@@ -83,11 +63,6 @@ class ConnectionStats {
     return total;
   }
 
-  /**
-   * Check if the global bandwidth pool has been exhausted.
-   * @param {number} quotaBytes - The global quota limit in bytes.
-   * @returns {boolean} True if total usage across all IPs has exceeded the quota.
-   */
   isGlobalOverQuota(quotaBytes) {
     if (!quotaBytes || quotaBytes <= 0) return false;
     return this.getGlobalBandwidth() >= quotaBytes;

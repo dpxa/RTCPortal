@@ -13,6 +13,7 @@ const {
   RATE_LIMIT,
   API_ENDPOINTS,
   STATS_RATE_LIMIT,
+  CSP_DIRECTIVES,
 } = require("./config/constants");
 
 const environment = process.env.NODE_ENV || "development";
@@ -44,17 +45,9 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        "script-src": [
-          "'self'",
-          "https://cdnjs.cloudflare.com",
-          "https://cdn.jsdelivr.net",
-        ],
-        "style-src": [
-          "'self'",
-          "https://fonts.googleapis.com",
-          "'unsafe-inline'",
-        ],
-        "font-src": ["'self'", "https://fonts.gstatic.com"],
+        "script-src": CSP_DIRECTIVES.SCRIPT_SRC,
+        "style-src": CSP_DIRECTIVES.STYLE_SRC,
+        "font-src": CSP_DIRECTIVES.FONT_SRC,
         "img-src": ["'self'", "data:", "blob:"],
         "worker-src": ["'self'"],
       },
@@ -111,14 +104,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-
-
-// NOTE: TURN credential/token limiters are applied per-path inside the
-// ROUTES.API router middleware below. Applying them here as well would
-// consume two tokens per request (halving the effective limit), so they
-// are intentionally NOT registered a second time.
-
-// Stats endpoint rate limiter (token bucket, per-IP)
 const statsBuckets = new Map();
 const STATS_BUCKET_MAX_SIZE = 10000;
 setInterval(() => {
@@ -214,7 +199,7 @@ const getBucket = (socketId) => {
       console.warn(
         "Socket rate-limit bucket map at capacity, evicting oldest entry",
       );
-      // Evict the oldest entry to make room, rather than permanently blocking
+
       const oldestKey = socketBuckets.keys().next().value;
       if (oldestKey) socketBuckets.delete(oldestKey);
     }
@@ -239,8 +224,7 @@ io.use((socket, next) => {
   const originalOnevent = socket.onevent.bind(socket);
   socket.onevent = (packet) => {
     const eventName = packet.data[0];
-    // Never rate-limit Socket.IO internal events — blocking these
-    // prevents disconnect/reconnect/heartbeat from working.
+
     const internalEvents = new Set([
       "connect",
       "disconnect",
@@ -255,7 +239,17 @@ io.use((socket, next) => {
       "ping",
       "pong",
     ]);
-    if (!internalEvents.has(eventName)) {
+
+    const signalingEvents = new Set([
+      "offer",
+      "answer",
+      "candidate",
+      "connection-attempt",
+      "connection-success",
+      "connection-user-failed",
+    ]);
+
+    if (!internalEvents.has(eventName) && !signalingEvents.has(eventName)) {
       const bucket = getBucket(socket.id);
       if (bucket.tokens < 1) {
         console.warn(

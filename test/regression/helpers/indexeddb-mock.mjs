@@ -1,14 +1,3 @@
-// In-memory IndexedDB mock for unit testing client modules that use
-// indexedDB (e.g. historyService). Implements the subset of the IndexedDB
-// API the app uses: open, createObjectStore, createIndex, transaction,
-// objectStore (add/getAll/clear), and index (getAll).
-//
-// Usage:
-//   import { installIndexedDBMock, resetIndexedDBMock } from "./indexeddb-mock.mjs";
-//   installIndexedDBMock();
-//   // ... run tests ...
-//   resetIndexedDBMock();
-
 class MockRequest {
   constructor() {
     this.result = undefined;
@@ -47,7 +36,7 @@ class MockObjectStore {
     this.name = name;
     this.keyPath = keyPath;
     this.autoIncrement = autoIncrement;
-    this.records = new Map(); // key -> record
+    this.records = new Map();
     this.indexes = new Map();
     this._nextId = 1;
   }
@@ -67,7 +56,7 @@ class MockObjectStore {
       record[this.keyPath] = key;
     }
     this.records.set(key, record);
-    // Defer so the caller can attach onsuccess before it fires.
+
     queueMicrotask(() => req._succeed(key));
     return req;
   }
@@ -120,7 +109,7 @@ class MockOpenRequest extends MockRequest {
   }
 }
 
-let dbRegistry = new Map(); // name -> MockDatabase
+let dbRegistry = new Map();
 
 export function installIndexedDBMock() {
   globalThis.indexedDB = {
@@ -130,9 +119,9 @@ export function installIndexedDBMock() {
       if (!db) {
         db = new MockDatabase(name, version);
         dbRegistry.set(name, db);
-        // Simulate onupgradeneeded for a fresh DB.
+
         req.onupgradeneeded = null;
-        // Fire upgrade synchronously-ish via microtask.
+
         queueMicrotask(() => {
           if (req.onupgradeneeded) {
             req.onupgradeneeded({ target: { result: db } });

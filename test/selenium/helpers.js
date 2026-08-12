@@ -1,8 +1,3 @@
-// Shared helpers for RTCPortal Selenium tests.
-//
-// Provides driver construction, PIN/peer setup, connection waiting, and
-// visibility helpers used by both connection-test.js and ui-test.js.
-
 const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const { DEFAULT_PORT } = require("../../server/config/constants");
@@ -77,8 +72,6 @@ async function setupPeer({ driver, url, expectedTitle, label }) {
   return peerId;
 }
 
-// Waits until an element is both present and visible (display != none,
-// visibility != hidden, opacity != 0).
 async function waitForVisible(
   driver,
   locator,
@@ -120,8 +113,6 @@ async function waitForPeerConnection(driver, expectedPeerId, label) {
   return container;
 }
 
-// Connects peer1 (initiator) to peer2 (responder) by entering peer2's ID
-// and clicking Connect. Waits for both sides to show the connection.
 async function connectPeers(driver1, driver2, peer2Id, peer1Id) {
   const partnerIdField1 = await driver1.findElement(By.id("partner-id-field"));
   const connectButton1 = await driver1.findElement(By.id("connect-btn"));
@@ -137,8 +128,6 @@ async function connectPeers(driver1, driver2, peer2Id, peer1Id) {
   await waitForPeerConnection(driver2, peer1Id, "Peer 2");
 }
 
-// Sends the given file from sender to receiver and verifies it appears in
-// the receiver's incoming files.
 async function transferFile(
   driverFrom,
   driverTo,

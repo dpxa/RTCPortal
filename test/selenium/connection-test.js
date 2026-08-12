@@ -1,12 +1,3 @@
-// End-to-end P2P connection and file transfer test for RTCPortal.
-//
-// Uses two headless Chrome instances to verify: PIN assignment, P2P connect,
-// bidirectional file transfer, chat messaging, history entries, and clean
-// disconnect. Built on the shared Selenium helpers.
-//
-// Usage:
-//   TEST_URL=http://localhost:3000 node selenium/connection-test.js
-
 const fs = require("fs");
 const path = require("path");
 const {
@@ -79,7 +70,6 @@ async function runConnectionTest() {
     console.log("Establishing P2P Connection");
     await connectPeers(driver1, driver2, peer2Id, peer1Id);
 
-    // Verify file transfer sections are visible on both peers.
     await waitForVisible(
       driver1,
       By.id("file-transfer-section"),
@@ -94,7 +84,6 @@ async function runConnectionTest() {
     );
     console.log("File transfer sections visible on both peers");
 
-    // 1. Test chat messaging (both directions).
     console.log("Testing chat both directions");
     const chatToggle1 = await driver1.findElement(By.id("toggle-chat-btn"));
     await driver1.wait(until.elementIsVisible(chatToggle1), 10000);
@@ -114,7 +103,6 @@ async function runConnectionTest() {
     await verifyChatMessage(driver1, "hi peer2 here");
     console.log("Chat round-trip verified");
 
-    // 2. Test file transfer: Peer 1 -> Peer 2.
     console.log("Testing File Transfer (Peer 1 -> Peer 2)");
     await transferFile(driver1, driver2, testFilePath, testFileName);
 
@@ -130,7 +118,6 @@ async function runConnectionTest() {
     }
     console.log("File verified in receiver history");
 
-    // 3. Test file transfer reverse: Peer 2 -> Peer 1.
     console.log("Testing File Transfer (Peer 2 -> Peer 1)");
     await transferFile(driver2, driver1, testFilePath2, testFileName2);
 
@@ -145,7 +132,6 @@ async function runConnectionTest() {
     }
     console.log("Reverse file verified in receiver history");
 
-    // 4. End the connection and verify both peers return to idle.
     console.log("Testing disconnect");
     const endBtn = await driver1.findElement(By.id("end-btn"));
     await driver1.wait(until.elementIsVisible(endBtn), 10000);

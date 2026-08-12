@@ -1,10 +1,3 @@
-// Unit tests for public/js/utils/commonUtils.js
-//
-// Pure ESM module (no relative imports). Loaded via the temp-fixture helper
-// (see helpers/load-client-module.mjs) which copies it to a .mjs file so
-// Node's ESM loader accepts it. Globals (fetch, document, crypto) are
-// stubbed per test for isolation.
-
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { loadPureModule } from "./helpers/load-client-module.mjs";
@@ -23,21 +16,17 @@ beforeEach(async () => {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.document = originalDocument;
-  // globalThis.crypto is a read-only getter in Node; restore its `subtle`
-  // property instead of reassigning the whole object.
+
   try {
     Object.defineProperty(globalThis, "crypto", {
       value: { subtle: originalSubtle },
       configurable: true,
       writable: true,
     });
-  } catch {
-    // Not critical for tests that don't stub crypto.
-  }
+  } catch {}
   console.warn = originalWarn;
 });
 
-// Helper: stub crypto.subtle for a single test.
 function stubCryptoSubtle(subtle) {
   Object.defineProperty(globalThis, "crypto", {
     value: { subtle },
@@ -45,8 +34,6 @@ function stubCryptoSubtle(subtle) {
     writable: true,
   });
 }
-
-// --- safeJsonParse ---------------------------------------------------------
 
 test("safeJsonParse returns parsed object for valid JSON string", () => {
   const result = appUtils.safeJsonParse('{"a":1}');
@@ -70,8 +57,6 @@ test("safeJsonParse returns null and warns on malformed JSON", () => {
   assert.equal(warnings.length, 1);
 });
 
-// --- formatBytes -----------------------------------------------------------
-
 test("formatBytes returns '0 Bytes' for <= 0 input", () => {
   assert.equal(appUtils.formatBytes(0), "0 Bytes");
   assert.equal(appUtils.formatBytes(-5), "0 Bytes");
@@ -91,8 +76,6 @@ test("formatBytes handles non-numeric input as 0", () => {
   assert.equal(appUtils.formatBytes("abc"), "0 Bytes");
   assert.equal(appUtils.formatBytes(null), "0 Bytes");
 });
-
-// --- formatUptime ----------------------------------------------------------
 
 test("formatUptime returns seconds for sub-minute durations", () => {
   assert.equal(appUtils.formatUptime(5000), "5 seconds");
@@ -118,11 +101,8 @@ test("formatUptime handles non-numeric input as 0 seconds", () => {
 });
 
 test("formatUptime floors negative input (no clamping)", () => {
-  // The implementation floors the seconds without clamping negatives.
   assert.equal(appUtils.formatUptime(-1), "-1 seconds");
 });
-
-// --- wait ------------------------------------------------------------------
 
 test("wait resolves after approximately the given delay", async () => {
   const start = Date.now();
@@ -137,8 +117,6 @@ test("wait clamps negative/NaN delays to 0", async () => {
   const elapsed = Date.now() - start;
   assert.ok(elapsed < 50);
 });
-
-// --- requestJson -----------------------------------------------------------
 
 test("requestJson returns parsed JSON on success", async () => {
   globalThis.fetch = async () => ({
@@ -187,8 +165,6 @@ test("requestJson propagates network errors", async () => {
   );
 });
 
-// --- isPageHidden ----------------------------------------------------------
-
 test("isPageHidden returns document.hidden when available", () => {
   globalThis.document = { hidden: true };
   assert.equal(appUtils.isPageHidden(), true);
@@ -200,8 +176,6 @@ test("isPageHidden returns false when document throws", () => {
   globalThis.document = undefined;
   assert.equal(appUtils.isPageHidden(), false);
 });
-
-// --- sha256 ----------------------------------------------------------------
 
 test("sha256 returns hex digest for a buffer", async () => {
   const digest = await appUtils.sha256(new Uint8Array([65]));
@@ -217,8 +191,6 @@ test("sha256 returns null when crypto.subtle is unavailable", async () => {
   });
   assert.equal(await appUtils.sha256(new Uint8Array([1])), null);
 });
-
-// --- sha256Blob ------------------------------------------------------------
 
 test("sha256Blob hashes a blob via arrayBuffer", async () => {
   const blob = {

@@ -1,14 +1,3 @@
-// Regression test suite runner for RTCPortal.
-//
-// Discovers and runs every *.test.js / *.test.mjs file under test/regression/
-// using Node's built-in test runner, then reports a consolidated summary.
-// Exits non-zero if any test fails, so it can gate a deploy or run in CI.
-//
-// Usage:
-//   node run-regression-suite.js
-//   node run-regression-suite.js --only=signaling   # run one file by name
-//   node run-regression-suite.js --coverage         # also emit coverage
-
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");

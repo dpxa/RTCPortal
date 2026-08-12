@@ -1,5 +1,3 @@
-// Unit tests for server/config/constants.js and the dev/prod config files.
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 

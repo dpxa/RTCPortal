@@ -1,16 +1,8 @@
-// Regression tests for server/utils/connectionStats.js
-//
-// Covers the full public API of the ConnectionStats class: attempt/success
-// accounting, transfer aggregation, per-IP and global bandwidth quotas, and
-// stats reporting. Uses Node's built-in test runner (node:test).
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
 const ConnectionStats = require("../../server/utils/connectionStats");
 
-// The module exports a singleton; clone its shape into a fresh instance for
-// isolated tests.
 function freshStats() {
   return new ConnectionStats.constructor();
 }
@@ -28,7 +20,7 @@ test("incrementSuccesses never exceeds totalAttempts", () => {
   stats.incrementAttempts();
   stats.incrementSuccesses();
   stats.incrementSuccesses();
-  stats.incrementSuccesses(); // extra should be clamped
+  stats.incrementSuccesses();
   assert.equal(stats.successfulConnections, 2);
 });
 
@@ -59,10 +51,10 @@ test("addTransfer aggregates bytes and file count", () => {
 
 test("addTransfer ignores invalid/negative bytes but keeps valid file counts", () => {
   const stats = freshStats();
-  stats.addTransfer(-100, 5); // negative bytes ignored, fileCount kept
-  stats.addTransfer(NaN, 5); // NaN bytes ignored, fileCount kept
-  stats.addTransfer(0, 5); // zero bytes ignored, fileCount kept
-  stats.addTransfer(100, -2); // valid bytes kept, negative fileCount ignored
+  stats.addTransfer(-100, 5);
+  stats.addTransfer(NaN, 5);
+  stats.addTransfer(0, 5);
+  stats.addTransfer(100, -2);
   assert.equal(stats.totalBytesTransferred, 100);
   assert.equal(stats.totalFilesTransferred, 15);
 });

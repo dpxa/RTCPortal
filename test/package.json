@@ -4,13 +4,17 @@
   "description": "Selenium tests for RTCPortal",
   "private": true,
   "main": "selenium/connection-test.js",
+  "config": {
+    "local_url": "http://localhost:3000",
+    "prod_url": "https://dpxa.github.io/RTCPortal/"
+  },
   "scripts": {
     "test:regression": "node run-regression-suite.js",
     "test:coverage": "node run-regression-suite.js --coverage",
-    "test:connection:local": "cross-env TEST_URL=http://localhost:3000 node selenium/connection-test.js",
-    "test:connection:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/connection-test.js",
-    "test:ui:local": "cross-env TEST_URL=http://localhost:3000 node selenium/ui-test.js",
-    "test:ui:prod": "cross-env TEST_URL=https://dpxa.github.io/RTCPortal/ node selenium/ui-test.js",
+    "test:connection:local": "cross-env TEST_URL=$npm_package_config_local_url node selenium/connection-test.js",
+    "test:connection:prod": "cross-env TEST_URL=$npm_package_config_prod_url node selenium/connection-test.js",
+    "test:ui:local": "cross-env TEST_URL=$npm_package_config_local_url node selenium/ui-test.js",
+    "test:ui:prod": "cross-env TEST_URL=$npm_package_config_prod_url node selenium/ui-test.js",
     "test:selenium:local": "npm run test:connection:local && npm run test:ui:local",
     "test:all": "npm run test:regression && npm run test:selenium:local",
     "lint": "npm --prefix .. run lint -- test/**/*.js",

@@ -17,12 +17,15 @@ import {
   UI_UPDATE_INTERVAL,
 } from "../config/constants.js";
 import { appUtils } from "../utils/commonUtils.js";
+import { IncrementalSHA256 } from "../utils/incrementalSha256.js";
+import {
+  encryptFileChunk,
+  decryptTaggedPayload,
+  ENCRYPTION_TAGS,
+} from "../utils/encryption.js";
 import { uiManager } from "../ui/uiManager.js";
 import { webrtcManager } from "./webrtcManager.js";
 
-// Received files are persisted in OPFS under this prefix so they survive
-// page refreshes and their history entries stay downloadable until the user
-// clears history.
 const PERSISTED_FILE_PREFIX = "persist_";
 
 class TokenBucket {
@@ -166,6 +169,11 @@ class FileTransferManager {
     this.receiveSessionId = 0;
     this.totalBytesReceived = 0;
 
+    this._incomingHashWorker = null;
+    this._incomingHashWorkerPending = null;
+    this._incomingHashWorkerFailed = false;
+    this._incomingHasher = null;
+
     this.configureUIBindings();
 
     this.sweepOrphanedOpfsFiles();
@@ -206,7 +214,6 @@ class FileTransferManager {
       console.warn("Failed to refresh stats after transfer completion", e);
     }
 
-    // Notify WebRTC manager to handle any deferred server-initiated disconnect
     try {
       this.webrtcManager?.handleLocalTransferCompleteForPendingDisconnect?.();
     } catch (e) {
@@ -230,9 +237,6 @@ class FileTransferManager {
       }
 
       for await (const [name] of root.entries()) {
-        // Persistent downloaded files (prefix `persist_`) are kept across
-        // refreshes so their history entries stay downloadable. Only delete
-        // orphaned temp files, not persisted downloads.
         if (name.startsWith(PERSISTED_FILE_PREFIX)) {
           continue;
         }
@@ -529,8 +533,6 @@ class FileTransferManager {
 
     const opfsRemovals = [];
 
-    // Only delete persisted OPFS files when explicitly clearing history.
-    // On page exit, leave them on disk so they survive a refresh.
     for (const handle of this._opfsBlobUrlHandles) {
       this.activeOpfsHandles.delete(handle);
       if (deletePersisted) {
@@ -544,8 +546,6 @@ class FileTransferManager {
     }
     this._opfsBlobUrlHandles.clear();
 
-    // When deleting persisted downloads (history clear), remove ALL persisted
-    // OPFS files. On normal page exit, persist them so they survive refresh.
     if (deletePersisted) {
       try {
         const root = await navigator.storage.getDirectory();
@@ -575,7 +575,7 @@ class FileTransferManager {
             Promise.allSettled(
               [...this.activeOpfsHandles].map((handle) =>
                 deletePersisted
-                  ? root.removeEntry(handle.name) // already fully cleared above
+                  ? root.removeEntry(handle.name)
                   : Promise.resolve(),
               ),
             ),
@@ -649,8 +649,6 @@ class FileTransferManager {
   }
 
   async _waitForTransferResume({ visibleInterval, hiddenInterval }) {
-    // If paused due to ICE failure, wait up to CONNECTION_TIMEOUT for recovery.
-    // After that, abort the transfer rather than hanging indefinitely.
     const isIcePause = this.isPaused && !this.isStopped;
     const deadline = isIcePause ? Date.now() + CONNECTION_TIMEOUT : Infinity;
     while (this.isPaused || this.isAutoThrottled) {
@@ -790,8 +788,6 @@ class FileTransferManager {
           }),
         );
 
-        // Reset resume offset for each new file — it must not carry
-        // over from a previous file in the batch.
         this._resumeOffset = null;
 
         try {
@@ -804,8 +800,6 @@ class FileTransferManager {
             this._batchStartTime,
           );
         } catch (err) {
-          // sendFileSlicesPromise already called cleanupSentTransfer()
-          // internally — just update state and return.
           console.warn("Transfer aborted or failed:", err);
           this.isSending = false;
           this.isStopped = false;
@@ -1103,6 +1097,12 @@ class FileTransferManager {
       (Number.isFinite(metadata.totalBatchSize) &&
         metadata.totalBatchSize >= 0 &&
         metadata.totalBatchSize <= MAX_RECEIVE_BATCH_SIZE);
+    const resumeOffsetIsValid =
+      metadata.resumeOffset === undefined ||
+      metadata.resumeOffset === null ||
+      (Number.isFinite(Number(metadata.resumeOffset)) &&
+        Number(metadata.resumeOffset) >= 0 &&
+        Number(metadata.resumeOffset) <= MAX_RECEIVE_FILE_SIZE);
 
     return (
       fileNameIsValid &&
@@ -1110,7 +1110,8 @@ class FileTransferManager {
       batchIndexIsValid &&
       batchTotalIsValid &&
       sha256IsValid &&
-      totalBatchSizeIsValid
+      totalBatchSizeIsValid &&
+      resumeOffsetIsValid
     );
   }
 
@@ -1143,6 +1144,10 @@ class FileTransferManager {
         try {
           let offset = 0;
           let position = 0;
+          const currentFileNameForResume =
+            fileObj.customRelativePath ||
+            fileObj.webkitRelativePath ||
+            fileObj.name;
           const stream = fileObj.stream();
           const reader = stream.getReader();
 
@@ -1175,7 +1180,7 @@ class FileTransferManager {
                   this._resumeOffset = offset;
                 }
                 console.warn(
-                  "Transfer paused due to ICE failure, waiting for restart...",
+                  `Transfer paused due to ICE failure, waiting for restart... (resume offset: ${offset})`,
                 );
               }
             }
@@ -1199,22 +1204,43 @@ class FileTransferManager {
               this._resumeOffset !== undefined &&
               this._resumeOffset > position
             ) {
-              // To resume, we would need to read chunks and discard them until we hit resumeOffset.
-              // But since _resumeOffset is fundamentally broken by ICE failures killing the SCTP channel,
-              // proper resumption needs to be implemented. For now, we skip forward in the stream.
+              console.warn(
+                `Resuming ${fileObj.name} from byte offset ${this._resumeOffset}`,
+              );
               while (position < this._resumeOffset) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 position += value.byteLength;
               }
               offset = position;
+
+              if (
+                webrtcManager.dataChannel &&
+                webrtcManager.dataChannel.readyState === "open"
+              ) {
+                webrtcManager.dataChannel.send(
+                  JSON.stringify({
+                    type: "metadata",
+                    fileName: currentFileNameForResume,
+                    fileSize: fileObj.size,
+                    lastModified: fileObj.lastModified ?? Date.now(),
+                    batchIndex: currentIdx,
+                    batchTotal: totalCount,
+                    totalBatchSize,
+                    isDirectoryMarker: false,
+                    rootDirectoryName: this.rootDirectoryName || null,
+                    sha256: null,
+                    resumeOffset: offset,
+                  }),
+                );
+              }
+
               this._resumeOffset = null;
             }
 
             const { done, value } = await reader.read();
 
             if (done) {
-              // File read complete
               if (
                 currentIdx === totalCount ||
                 Date.now() - this.lastSentUIUpdate > 100
@@ -1252,7 +1278,6 @@ class FileTransferManager {
               return;
             }
 
-            // We got a chunk. We should send it in SLICE_SIZE slices if it's large.
             let chunkOffset = 0;
             while (chunkOffset < value.byteLength) {
               const slice_end = Math.min(
@@ -1302,7 +1327,24 @@ class FileTransferManager {
                 return;
               }
 
-              webrtcManager.dataChannel.send(chunk_slice);
+              if (
+                webrtcManager.encryption?.enabled &&
+                webrtcManager.encryption?.sessionKey
+              ) {
+                const encrypted = await encryptFileChunk(
+                  webrtcManager.encryption.sessionKey,
+                  chunk_slice,
+                );
+                webrtcManager.dataChannel.send(
+                  JSON.stringify({
+                    type: "e2e-chunk",
+                    tag: ENCRYPTION_TAGS.BINARY,
+                    payload: Array.from(new Uint8Array(encrypted)),
+                  }),
+                );
+              } else {
+                webrtcManager.dataChannel.send(chunk_slice);
+              }
               offset += chunk_slice.byteLength;
               position += chunk_slice.byteLength;
 
@@ -1367,8 +1409,8 @@ class FileTransferManager {
   }
 
   sendResumeOffsetSync() {
-    if (this.isReceiving && this.currentFileDetails) {
-      const offset = this.currentFileBytesReceived || 0;
+    if (this.isReceiving && this.receivedFileDetails) {
+      const offset = this.receivedBytes || 0;
       console.warn("Sending resume-offset-sync for offset", offset);
       if (
         webrtcManager.dataChannel &&
@@ -1451,10 +1493,7 @@ class FileTransferManager {
       this.receiveBuffer = new SimpleQueue();
       this.receiveBufferSize = 0;
     }
-    if (data === null || data === undefined) {
-      // Null is used as a "kick" to trigger processing of remaining items.
-      // Don't push it onto the buffer — it would crash on byteLength access.
-    } else {
+    if (data !== null && data !== undefined) {
       this.receiveBuffer.push(data);
       this.receiveBufferSize += data.byteLength || data.length || 0;
       if (this.receiveBufferSize > 50 * 1024 * 1024) {
@@ -1555,6 +1594,38 @@ class FileTransferManager {
 
   async _processIncomingBufferItem(data) {
     if (typeof data === "string") {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(data);
+      } catch {}
+
+      if (
+        parsed &&
+        parsed.type === "e2e-chunk" &&
+        Array.isArray(parsed.payload)
+      ) {
+        if (
+          !webrtcManager.encryption?.sessionKey ||
+          !webrtcManager.encryption?.enabled
+        ) {
+          console.warn(
+            "Received encrypted chunk without an active session key",
+          );
+          return;
+        }
+        try {
+          const { plaintext } = await decryptTaggedPayload(
+            webrtcManager.encryption.sessionKey,
+            new Uint8Array(parsed.payload).buffer,
+          );
+          await this.processIncomingChunk(plaintext);
+          return;
+        } catch (error) {
+          console.warn("Failed to decrypt incoming file chunk:", error);
+          return;
+        }
+      }
+
       await this.processControlInstruction(data);
     } else {
       await this.processIncomingChunk(data);
@@ -1590,6 +1661,21 @@ class FileTransferManager {
         case "resume-transfer":
           this.handleTransferResume();
           break;
+        case "resume-offset-sync": {
+          const resumeOffset = Number(controlMessage.offset);
+          if (
+            Number.isFinite(resumeOffset) &&
+            resumeOffset > 0 &&
+            this.isSending &&
+            this._resumeOffset === null
+          ) {
+            this._resumeOffset = resumeOffset;
+            console.warn(
+              `Sender honoring resume-offset-sync at byte ${resumeOffset}`,
+            );
+          }
+          break;
+        }
         case "throttle-pause":
           this.isAutoThrottled = true;
           if (this.isSending) {
@@ -1611,7 +1697,7 @@ class FileTransferManager {
 
         case "batch-received":
           this._reportTransferCompleteIfPending();
-          // Immediately refresh stats so the receiver's UI reflects the transfer
+
           try {
             if (statsService) {
               statsService.requestConnectionStats({ force: true });
@@ -1641,8 +1727,6 @@ class FileTransferManager {
   }
 
   handleTransferPause() {
-    // Set the paused flag so the sender (if this peer is the sender) stops
-    // streaming. Harmless on the receiver, where sending is not gated on it.
     this.isPaused = true;
     this.currentPauseStartReceived = Date.now();
     uiManager.setReceivedStatus("Transfer Paused");
@@ -1679,9 +1763,6 @@ class FileTransferManager {
     uiManager.ensureReceivedContainer();
 
     if (info.batchIndex === 1) {
-      // Finalize any previous incomplete batch before starting a new one.
-      // Only mark as Incomplete if we were actively receiving — otherwise
-      // the previous batch may have been a duplicate/spurious metadata.
       if (this.receivedBatch && this.receivedBatch.length > 0) {
         const wasActive = this.isReceiving && this.receivedFileDetails;
         this._queueReceivedBatchHistory(wasActive ? "Incomplete" : null);
@@ -1698,8 +1779,6 @@ class FileTransferManager {
       this.isAutoThrottled = false;
       this.isThrottlingSender = false;
 
-      // Reset the receive buffer to discard any stale chunks from a
-      // previous batch that may still be queued.
       this.receiveBuffer = new SimpleQueue();
       this.receiveBufferSize = 0;
       this.receiveSessionId += 1;
@@ -1717,15 +1796,43 @@ class FileTransferManager {
       totalBatchSize: info.totalBatchSize ?? info.fileSize,
       isDirectoryMarker: info.isDirectoryMarker || false,
       expectedHash: info.sha256 || null,
+      resumeOffset: Number.isFinite(Number(info.resumeOffset))
+        ? Math.max(0, Number(info.resumeOffset))
+        : 0,
     };
 
     this.collectedChunks = [];
-    this.receivedBytes = 0;
+    this.receivedBytes = this.receivedFileDetails.resumeOffset || 0;
+    this.totalBatchBytesReceived = this.receivedFileDetails.resumeOffset || 0;
     this.isReceiving = true;
     this.isStopped = false;
     this.isAutoThrottled = false;
     this.lastReceivedUIUpdate = 0;
     this.opfsReady = false;
+
+    if (this.receivedFileDetails.resumeOffset > 0) {
+      if (this.opfsWritable) {
+        try {
+          await this.opfsWritable.abort();
+        } catch (error) {
+          console.error("Failed to abort stale OPFS writer:", error);
+        }
+        this.opfsWritable = null;
+      }
+      if (this.opfsFileHandle) {
+        const staleName = this.opfsFileHandle.name;
+        this.opfsFileHandle = null;
+        try {
+          const root = await navigator.storage.getDirectory();
+          await root.removeEntry(staleName, { recursive: true });
+        } catch (error) {
+          console.error("Failed to remove stale OPFS file:", error);
+        }
+      }
+      console.warn(
+        `Receiver resuming "${info.fileName}" from byte offset ${this.receivedFileDetails.resumeOffset}`,
+      );
+    }
 
     uiManager.ensureReceivedContainer();
     uiManager.setReceivedStatus(
@@ -1740,6 +1847,8 @@ class FileTransferManager {
     if (!info.isDirectoryMarker) {
       await this.initializeOPFSForIncomingFile(info.fileName);
     }
+
+    this._initIncomingHasher(info);
   }
 
   async initializeOPFSForIncomingFile(fileName) {
@@ -1762,8 +1871,7 @@ class FileTransferManager {
       this.opfsReady = true;
     } catch (e) {
       console.error("OPFS setup failed, falling back to memory storage.", e);
-      // Restore collected chunks so they are not lost when falling back
-      // to in-memory storage.
+
       this.collectedChunks = chunksToWrite.concat(this.collectedChunks);
       this.opfsFileHandle = null;
       this.opfsWritable = null;
@@ -1771,12 +1879,120 @@ class FileTransferManager {
     }
   }
 
+  _initIncomingHasher(info) {
+    this._disposeIncomingHasher();
+
+    const expectedHash = info.sha256 || null;
+    if (!expectedHash || info.isDirectoryMarker || info.fileSize === 0) {
+      return;
+    }
+
+    const useWorker =
+      typeof Worker !== "undefined" &&
+      typeof Blob !== "undefined" &&
+      typeof Uint8Array !== "undefined";
+
+    if (useWorker) {
+      try {
+        const worker = new Worker("js/workers/hashWorker.js");
+        this._incomingHashWorker = worker;
+        this._incomingHashWorkerPending = null;
+        this._incomingHashWorkerFailed = false;
+
+        worker.addEventListener("message", (event) => {
+          const payload = event?.data || {};
+          if (payload.type === "error") {
+            this._incomingHashWorkerFailed = true;
+            if (this._incomingHashWorkerPending) {
+              const { reject } = this._incomingHashWorkerPending;
+              this._incomingHashWorkerPending = null;
+              reject(new Error(payload.error || "Hash worker error"));
+            }
+            return;
+          }
+          if (payload.type === "ready") {
+            return;
+          }
+          if (payload.type === "result" && this._incomingHashWorkerPending) {
+            const { resolve } = this._incomingHashWorkerPending;
+            this._incomingHashWorkerPending = null;
+            resolve(payload.hash || null);
+          }
+        });
+        worker.addEventListener("error", () => {
+          this._incomingHashWorkerFailed = true;
+          if (this._incomingHashWorkerPending) {
+            const { reject } = this._incomingHashWorkerPending;
+            this._incomingHashWorkerPending = null;
+            reject(new Error("Hash worker failed"));
+          }
+        });
+
+        worker.postMessage({ type: "init" });
+        return;
+      } catch (error) {
+        console.warn(
+          "Hash worker unavailable, falling back to main thread hashing.",
+          error,
+        );
+        this._incomingHashWorker = null;
+      }
+    }
+
+    this._incomingHasher = new IncrementalSHA256();
+  }
+
+  _feedIncomingHasher(arrayBuffer) {
+    if (this._incomingHashWorker && !this._incomingHashWorkerFailed) {
+      try {
+        this._incomingHashWorker.postMessage(
+          { type: "chunk", data: arrayBuffer },
+          [arrayBuffer],
+        );
+        return;
+      } catch (error) {
+        this._incomingHashWorkerFailed = true;
+      }
+    }
+    if (this._incomingHasher) {
+      this._incomingHasher.update(arrayBuffer);
+    }
+  }
+
+  _digestIncomingHasher() {
+    if (this._incomingHashWorker && !this._incomingHashWorkerFailed) {
+      return new Promise((resolve, reject) => {
+        this._incomingHashWorkerPending = { resolve, reject };
+        try {
+          this._incomingHashWorker.postMessage({ type: "digest" });
+        } catch (error) {
+          this._incomingHashWorkerPending = null;
+          reject(error);
+        }
+      });
+    }
+    if (this._incomingHasher) {
+      return Promise.resolve(this._incomingHasher.digest());
+    }
+    return Promise.resolve(null);
+  }
+
+  _disposeIncomingHasher() {
+    if (this._incomingHashWorker) {
+      try {
+        this._incomingHashWorker.terminate();
+      } catch (error) {
+        console.warn("Failed to terminate hash worker:", error);
+      }
+      this._incomingHashWorker = null;
+    }
+    this._incomingHashWorkerPending = null;
+    this._incomingHashWorkerFailed = false;
+    this._incomingHasher = null;
+  }
+
   async processIncomingChunk(arrayBuffer) {
     if (!this.receivedFileDetails) return;
-    // isStopped is only set by stopTransfer (sender-side UI). On the
-    // receiver, cancellation arrives via cancel-transfer control message
-    // which calls cleanupReceivedTransfer directly. Checking isStopped
-    // here would be redundant and could block legitimate receives.
 
     this.totalBytesReceived += arrayBuffer.byteLength;
     if (this.totalBytesReceived > MAX_RECEIVE_BATCH_SIZE) {
@@ -1798,9 +2014,7 @@ class FileTransferManager {
         await this.opfsWritable.write(arrayBuffer);
       } catch (err) {
         console.error("OPFS write error, aborting transfer:", err);
-        // Abort OPFS for this file — prior chunks written to the now-deleted
-        // OPFS file are irrecoverable, so falling back to in-memory would
-        // produce a silently corrupted file.
+
         try {
           await this.opfsWritable.abort();
         } catch (_abortErr) {}
@@ -1808,7 +2022,7 @@ class FileTransferManager {
         const name = this.opfsFileHandle?.name;
         this.opfsFileHandle = null;
         this.opfsReady = false;
-        // Clean up the abandoned OPFS temp file
+
         if (name) {
           try {
             const root = await navigator.storage.getDirectory();
@@ -1835,7 +2049,8 @@ class FileTransferManager {
     this.receivedBytes += arrayBuffer.byteLength;
     this.totalBatchBytesReceived += arrayBuffer.byteLength;
 
-    // Guard against sender sending more data than declared.
+    this._feedIncomingHasher(arrayBuffer);
+
     if (this.receivedBytes > this.receivedFileDetails.fileSize) {
       console.error(
         `Received more data than expected for ${this.receivedFileDetails.fileName}: ` +
@@ -1949,10 +2164,7 @@ class FileTransferManager {
             "Error reading OPFS file after close failure:",
             getFileErr,
           );
-          // currentChunks is empty when OPFS was in use (chunks were streamed
-          // to disk). Falling back to new Blob(currentChunks) would produce a
-          // 0-byte file. Create a Blob with the chunks we have (if any) but
-          // warn the user about potential corruption.
+
           fileBlob = new Blob(currentChunks);
           uiManager.showFileWarning(
             `File "${currentDetails.fileName}" may be empty or corrupted (storage finalization failed)`,
@@ -1963,7 +2175,6 @@ class FileTransferManager {
       }
     }
 
-    // Verify received file size matches expected size
     if (
       !currentDetails.isDirectoryMarker &&
       currentDetails.fileSize > 0 &&
@@ -1986,12 +2197,8 @@ class FileTransferManager {
       size: currentDetails.fileSize,
     });
 
-    if (
-      currentDetails.expectedHash &&
-      currentDetails.hasher &&
-      !currentDetails.isDirectoryMarker
-    ) {
-      const computedHash = currentDetails.hasher.digest();
+    if (currentDetails.expectedHash && !currentDetails.isDirectoryMarker) {
+      const computedHash = await this._digestIncomingHasher();
       if (computedHash && computedHash !== currentDetails.expectedHash) {
         console.error(
           `SHA-256 mismatch for ${currentDetails.fileName}: expected ${currentDetails.expectedHash}, got ${computedHash}`,
@@ -2062,6 +2269,8 @@ class FileTransferManager {
     this.receivedFileDetails = null;
     this.collectedChunks = [];
     this.receivedBytes = 0;
+
+    this._disposeIncomingHasher();
   }
 
   createBatchHistoryUI(batch, direction, rootDirectoryName, options = {}) {
@@ -2094,9 +2303,6 @@ class FileTransferManager {
     }
 
     if (typeof historyService !== "undefined") {
-      // OPFS handles are not serializable, so persist each file's OPFS
-      // filename. On a later page load these names let us re-open the
-      // files and rebuild working download links.
       historyService
         .addRecord({
           batch: batch.map((f) => ({
@@ -2279,13 +2485,7 @@ class FileTransferManager {
     this.currentPauseStartSent = 0;
   }
 
-  _scheduleOpfsCleanup(_handle) {
-    // Intentionally disabled. Deleting the OPFS backing file here
-    // causes silent data corruption or download failures if the
-    // user attempts to download the file/batch later from history.
-    // OPFS cleanup is handled cleanly during revokeAllBlobUrls
-    // (on page exit or history clear) and sweepOrphanedOpfsFiles.
-  }
+  _scheduleOpfsCleanup(_handle) {}
 
   async cleanupReceivedTransfer(options = {}) {
     const { statusSuffix = null } = options;
@@ -2312,6 +2512,8 @@ class FileTransferManager {
 
     this.totalPausedTimeReceived = 0;
     this.currentPauseStartReceived = 0;
+
+    this._disposeIncomingHasher();
 
     if (this.receivedCleanupTimer) {
       clearTimeout(this.receivedCleanupTimer);
@@ -2341,14 +2543,11 @@ class FileTransferManager {
     uiManager.resetReceivedTransferUI();
   }
 
-  // Reopens persisted OPFS files referenced by history records and renders
-  // them again, so entries restored after a page refresh still have working
-  // download links. Files whose OPFS backing is gone are skipped.
   async restorePersistedHistory() {
     try {
       const root = await navigator.storage.getDirectory();
       const records = await historyService.getHistory();
-      // Oldest first so the history renders in chronological order.
+
       for (const record of [...records].reverse()) {
         if (record?.direction !== "from" || !Array.isArray(record.batch)) {
           continue;
@@ -2380,9 +2579,6 @@ class FileTransferManager {
               lastModified: record.timestamp,
             });
           } catch (err) {
-            // File was deleted/evicted. Skip the entry entirely — it is no
-            // longer downloadable, so re-rendering it would just show a
-            // broken/expired entry the user does not want.
             console.warn(
               "Skipping history entry: persisted file not found",
               item.name,
@@ -2410,8 +2606,6 @@ class FileTransferManager {
     }
   }
 
-  // Nearly identical to the single-file download construction used at
-  // receive-time, but driven by persisted OPFS blobs.
   _buildSingleFileDownload(batch) {
     const files = batch.filter((f) => !f.isDirectoryMarker);
     if (batch.length !== 1 || !files[0]?.blob) return null;
@@ -2423,7 +2617,6 @@ class FileTransferManager {
     return { url: blobUrl, fileName: files[0].name };
   }
 
-  // Restores stored chat messages into the chat-history UI.
   async restoreChatHistory() {
     try {
       const chatRecords = await historyService.getChatHistory();
@@ -2464,9 +2657,6 @@ const init = () => {
     DEFAULT_SEND_RATE_LIMIT_BYTES_PER_SEC,
   );
 
-  // Restore persisted received files and chat from the previous session.
-  // Persisted OPFS files are re-opened and rendered with working download
-  // links; chat messages are re-rendered exactly as they were.
   fileTransferManager.restorePersistedHistory().catch(console.warn);
   fileTransferManager.restoreChatHistory().catch(console.warn);
 };

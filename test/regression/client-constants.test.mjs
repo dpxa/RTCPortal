@@ -1,9 +1,3 @@
-// Unit tests for public/js/config/constants.js
-//
-// The module reads `window.location.hostname` at import time to derive
-// environment flags. We load it via the temp-fixture helper after stubbing
-// `window` so we can test both local and production hostname branches.
-
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -20,8 +14,6 @@ const originalWindow = globalThis.window;
 
 let loadCounter = 0;
 
-// Loads constants with a given hostname stubbed on globalThis.window.
-// A unique filename per call avoids Node's ESM module cache.
 async function loadConstants(hostname) {
   globalThis.window = { location: { hostname } };
   const dest = path.join(tempDir, `constants-${loadCounter++}.mjs`);

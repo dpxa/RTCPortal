@@ -52,11 +52,6 @@ const NOUNS = [
 const crypto = require("crypto");
 const proxyaddr = require("proxy-addr");
 
-// Resolve the real client IP from a Socket.IO socket using the same library
-// Express uses internally for `req.ip`. Trusting the single immediate proxy
-// (the socket's own direct address) mirrors `app.set("trust proxy", 1)`, so
-// the IP recorded here matches the IP checked against the per-IP quota on the
-// HTTP API — even when running behind a reverse proxy.
 const getClientIpFromSocket = (socket) => {
   if (!socket) return "unknown";
   const req = socket.request;
@@ -111,12 +106,6 @@ const emitPeerNotFound = (socket, target) => {
 
 const getSocketIdentity = (socket) => socket.pin || socket.id;
 
-// Evicts a peer from its pairing and notifies it that it has been replaced.
-// Used when an offer makes an existing pairing obsolete (either the target
-// is being taken over, or the sender is abandoning its current peer).
-// `pairedWithId` is the other half of the pairing being torn down, and
-// `replacementSocket` is the socket that is taking over (used for the
-// notification identity).
 const evictPeerAndNotify = (
   io,
   evictedPeerId,
@@ -144,7 +133,6 @@ const handleSocketConnection = (io, connectionStats) => {
       const toDelete = [];
       const seen = new Set();
       for (const [socketId] of activePairings) {
-        // Skip duplicate entries (activePairings is bidirectional)
         if (seen.has(socketId)) continue;
         const targetId = activePairings.get(socketId);
         if (!targetId) {
@@ -159,8 +147,6 @@ const handleSocketConnection = (io, connectionStats) => {
           const s = io.sockets.sockets.get(socketId);
           const t = io.sockets.sockets.get(targetId);
 
-          // If both sockets are still connected, notify them immediately
-          // rather than creating a pendingDisconnect that may never resolve.
           if (s && t) {
             s.emit("peer-disconnected", {
               from: t.pin || t.id,
@@ -171,8 +157,6 @@ const handleSocketConnection = (io, connectionStats) => {
               reason: "ttl-expired",
             });
           } else {
-            // One or both sockets are gone — defer notification in case
-            // they reconnect and complete a transfer.
             const key = pairKey(socketId, targetId);
             const completed = new Set();
             if (!s) completed.add(socketId);
@@ -192,11 +176,8 @@ const handleSocketConnection = (io, connectionStats) => {
         pairingTimestamps.delete(id);
       }
 
-      // Clean up stale pendingDisconnects entries to prevent memory leaks.
       const pendingCutoff = now - PENDING_DISCONNECT_TTL_MS;
       for (const [key, info] of pendingDisconnects) {
-        // Remove entries older than the TTL, or entries where all sockets
-        // are disconnected (orphaned).
         const allDisconnected = info.sockets.every(
           (sId) => !io.sockets.sockets.get(sId),
         );
@@ -380,13 +361,12 @@ const handleSocketConnection = (io, connectionStats) => {
       }
       statsRateTracker.set(key, now);
 
-      // Cap total entries to prevent memory growth from many event types
       if (statsRateTracker.size > STATS_TRACKER_MAX_SIZE) {
         const cutoff = now - STATS_RATE_LIMIT.windowMs;
         for (const [k, v] of statsRateTracker) {
           if (v < cutoff) statsRateTracker.delete(k);
         }
-        // If still over cap after pruning expired, remove oldest entries
+
         if (statsRateTracker.size > STATS_TRACKER_MAX_SIZE) {
           const sorted = [...statsRateTracker.entries()].sort(
             (a, b) => a[1] - b[1],
@@ -412,10 +392,6 @@ const handleSocketConnection = (io, connectionStats) => {
       }
       cleanupSocketState();
 
-      // Clean up any pendingDisconnects entries involving this socket.
-      // If the socket was part of a deferred TTL disconnect, the other
-      // side needs to be notified since this socket can no longer send
-      // transfer-complete to resolve the pending entry.
       for (const [key, info] of pendingDisconnects) {
         if (!Array.isArray(info.sockets)) continue;
         if (!info.sockets.includes(socket.id)) continue;
@@ -463,8 +439,6 @@ const handleSocketConnection = (io, connectionStats) => {
 
     socket.on("connection-attempt", () => {
       if (isStatsRateLimited("connection-attempt")) return;
-      // Only count if not already pending — prevents stat manipulation
-      // by spamming connection-attempt events.
       if (!socket._hasPendingAttempt) {
         socket._hasPendingAttempt = true;
         connectionStats.incrementAttempts();
@@ -485,8 +459,6 @@ const handleSocketConnection = (io, connectionStats) => {
 
     socket.on("connection-user-failed", () => {
       if (isStatsRateLimited("connection-user-failed")) return;
-      // Only decrement if this socket had a pending attempt — prevents
-      // stat manipulation by spamming connection-user-failed.
       if (socket._hasPendingAttempt) {
         socket._hasPendingAttempt = false;
         connectionStats.decrementAttempts();
@@ -510,27 +482,18 @@ const handleSocketConnection = (io, connectionStats) => {
             : 1;
         connectionStats.addTransfer(payload.fileSize, fileCount);
 
-        // Track per-IP bandwidth for quota enforcement.
-        // Only count from the sender (initiator) to avoid double-counting
-        // in case both peers emit transfer-complete.
         if (payload.isSender) {
-          // Use the same client-IP extraction as the HTTP API so the
-          // recorded IP matches what isChecked against the quota. Behind a
-          // proxy this resolves the real client IP from X-Forwarded-For.
           const clientIp = getClientIpFromSocket(socket);
           connectionStats.addIpBandwidth(clientIp, payload.fileSize);
         }
       }
 
-      // If this socket was part of any pending TTL-triggered disconnects,
-      // mark it completed and, if all sides have completed, notify peers.
       for (const [key, info] of pendingDisconnects) {
         if (!Array.isArray(info.sockets)) continue;
         if (!info.sockets.includes(socket.id)) continue;
 
         info.completed.add(socket.id);
 
-        // If all expected sockets are completed, emit peer-disconnected to connected sockets
         const allCompleted = info.sockets.every((sId) =>
           info.completed.has(sId),
         );
@@ -550,7 +513,6 @@ const handleSocketConnection = (io, connectionStats) => {
           }
           pendingDisconnects.delete(key);
         } else {
-          // update stored info
           pendingDisconnects.set(key, info);
         }
       }
@@ -568,19 +530,11 @@ const handleSocketConnection = (io, connectionStats) => {
         requireLiveSocket: true,
       },
       beforeRelay: (targetId, _payload) => {
-        // Notify + drop peers that become obsolete when an offer arrives.
-        //
-        // Case 1: the TARGET (targetId) is already paired with a different
-        // peer. That existing peer is being replaced by the caller, so it
-        // must be evicted so the new peer can connect seamlessly.
         const existingTargetPair = activePairings.get(targetId);
         if (existingTargetPair && existingTargetPair !== socket.id) {
           evictPeerAndNotify(io, existingTargetPair, targetId, socket);
         }
 
-        // Case 2: the SENDER (socket) is currently paired with someone else
-        // and is now initiating a fresh connection elsewhere. That old peer
-        // is being abandoned, so evict it and let it clean up gracefully.
         const existingSenderPair = activePairings.get(socket.id);
         if (existingSenderPair && existingSenderPair !== targetId) {
           evictPeerAndNotify(io, existingSenderPair, socket.id, socket);

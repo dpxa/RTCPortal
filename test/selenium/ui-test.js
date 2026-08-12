@@ -1,12 +1,3 @@
-// Single-peer UI test for RTCPortal.
-//
-// Covers frontend UI behaviors that don't require a second peer: theme
-// toggle, QR code generation, invalid input handling, file input presence,
-// and page refresh. Uses one headless Chrome instance.
-//
-// Usage:
-//   TEST_URL=http://localhost:3000 node selenium/ui-test.js
-
 const {
   EXPECTED_TITLE,
   buildDriver,
@@ -31,7 +22,6 @@ async function runUITest() {
     });
     console.log(`UI Peer ID: ${peerId}`);
 
-    // 1. Theme toggle: click toggles dark-mode class on body.
     console.log("Testing theme toggle");
     const themeToggle = await driver.findElement(By.id("theme-toggle"));
     const bodyClassBefore = await driver
@@ -53,7 +43,6 @@ async function runUITest() {
       `Theme toggled: dark-mode before=${bodyClassBefore.includes("dark-mode")}, after=${bodyClassAfter.includes("dark-mode")}`,
     );
 
-    // 2. QR code: clicking show-qr-btn renders a canvas in qr-code-container.
     console.log("Testing QR code generation");
     const showQrBtn = await driver.findElement(By.id("show-qr-btn"));
     await showQrBtn.click();
@@ -63,11 +52,9 @@ async function runUITest() {
       return canvases.length > 0;
     }, 10000);
     console.log("QR code canvas rendered");
-    // Toggle back off.
+
     await showQrBtn.click();
 
-    // 3. Invalid partner ID handling: entering a bad ID and connecting
-    //    should show an error message (not crash).
     console.log("Testing invalid partner ID");
     const partnerField = await driver.findElement(By.id("partner-id-field"));
     const connectBtn = await driver.findElement(By.id("connect-btn"));
@@ -82,15 +69,10 @@ async function runUITest() {
     }, 10000);
     console.log("Invalid ID produced a status message");
 
-    // 4. File selection is covered by connection-test.js (which has an active
-    //    connection). Here we only verify the upload input is present in the
-    //    DOM (it lives in the hidden-until-connected transfer section).
     console.log("Testing file input presence");
     await driver.findElement(By.id("upload-field"));
     console.log("File upload input present in DOM");
 
-    // 5. History persistence: after a refresh, the page reloads cleanly and
-    //    a new PIN is assigned (no crash).
     console.log("Testing page refresh");
     await driver.navigate().refresh();
     await driver.wait(until.titleIs(EXPECTED_TITLE), 20000);

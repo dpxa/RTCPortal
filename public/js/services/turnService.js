@@ -25,9 +25,7 @@ class TurnService {
   }
 
   async _refreshTurnCredentials() {
-    // Guard against concurrent refreshes: if a refresh is already in
-    // flight, reuse its promise so we don't fetch credentials twice
-    // (which would duplicate TURN servers in the ICE config).
+
     if (this._refreshPromise) {
       return this._refreshPromise;
     }
@@ -65,8 +63,7 @@ class TurnService {
           "Could not retrieve premium TURN servers. Using default STUN servers only.",
           refreshError,
         );
-        // Reset token expiry so the next attempt triggers a fresh credential fetch
-        // rather than waiting for the (possibly stale) token to expire.
+
         this._tokenExpiresAt = 0;
       } finally {
         this._refreshPromise = null;

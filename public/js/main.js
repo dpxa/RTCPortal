@@ -1,4 +1,3 @@
-
 import { BASE_API_URL } from "./config/constants.js";
 import { uiManager } from "./ui/uiManager.js";
 
@@ -39,4 +38,3 @@ function loadScript(src) {
     }
   }
 })();
-

@@ -1,6 +1,5 @@
 import {
-  PROD_API_URL,
-  environmentIsProd,
+  BASE_API_URL,
   DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD,
   CONNECTION_TIMEOUT,
   CONNECTION_RECOVERY_DELAY,
@@ -8,6 +7,14 @@ import {
   SOCKET_TRANSPORTS,
 } from "../config/constants.js";
 import { appUtils } from "../utils/commonUtils.js";
+import {
+  deriveSessionKey,
+  generateKeyPair,
+  exportPublicKey,
+  decryptTaggedPayload,
+  encryptMessage,
+  ENCRYPTION_TAGS,
+} from "../utils/encryption.js";
 import { uiManager } from "../ui/uiManager.js";
 import { statsService } from "../services/statsService.js";
 import { turnService } from "../services/turnService.js";
@@ -15,13 +22,9 @@ import { fileTransferManager } from "./fileTransferManager.js";
 
 class WebRTCManager {
   constructor() {
-    this.socket = environmentIsProd
-      ? io(PROD_API_URL, {
-          transports: SOCKET_TRANSPORTS,
-        })
-      : io({
-          transports: SOCKET_TRANSPORTS,
-        });
+    this.socket = io(BASE_API_URL, {
+      transports: SOCKET_TRANSPORTS,
+    });
 
     this.peerConnection = null;
     this.dataChannel = null;
@@ -38,6 +41,18 @@ class WebRTCManager {
     this.disconnectTimer = null;
     this._pendingSuccessEmit = false;
     this._lastPongAt = null;
+
+    this.encryption = {
+      enabled: true,
+      sessionKey: null,
+      localKeyPair: null,
+      remotePublicRaw: null,
+      handshakeStarted: false,
+      handshakeResolvers: [],
+    };
+    this._pendingEncryptedChunks = [];
+
+    this._pendingCandidates = new Map();
 
     this.bindUIHandlers();
     this.initializeSocketEvents();
@@ -103,6 +118,204 @@ class WebRTCManager {
 
   _clearDisconnectTimer() {
     this._clearTimer("disconnectTimer");
+  }
+
+  _resetEncryptionState() {
+    this.encryption = {
+      enabled: true,
+      sessionKey: null,
+      localKeyPair: null,
+      remotePublicRaw: null,
+      handshakeStarted: false,
+      handshakeResolvers: [],
+    };
+    this._pendingEncryptedChunks = [];
+  }
+
+  _isHandshakeMessage(message) {
+    return (
+      message &&
+      typeof message.type === "string" &&
+      (message.type === "e2e-hello" || message.type === "e2e-key")
+    );
+  }
+
+  async _beginEncryptionHandshake(_peerId) {
+    if (
+      this.encryption.sessionKey ||
+      this.encryption.handshakeStarted ||
+      !this.encryption.enabled
+    ) {
+      return;
+    }
+
+    this.encryption.handshakeStarted = true;
+    try {
+      const keyPair = await generateKeyPair();
+      this.encryption.localKeyPair = keyPair;
+      const publicRaw = await exportPublicKey(keyPair.publicKey);
+
+      this.sendControlMessage({
+        type: "e2e-hello",
+        publicKey: Array.from(new Uint8Array(publicRaw)),
+      });
+    } catch (error) {
+      console.warn("Failed to start encryption handshake:", error);
+      this.encryption.handshakeStarted = false;
+      this.encryption.enabled = false;
+    }
+  }
+
+  async _handleE2EHello(_peerId, message) {
+    if (
+      this.encryption.sessionKey ||
+      !this.encryption.enabled ||
+      !Array.isArray(message.publicKey) ||
+      message.publicKey.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      this.encryption.remotePublicRaw = new Uint8Array(
+        message.publicKey,
+      ).buffer;
+
+      if (!this.encryption.localKeyPair) {
+        this.encryption.localKeyPair = await generateKeyPair();
+      }
+
+      const sessionKey = await deriveSessionKey(
+        this.encryption.localKeyPair.privateKey,
+        this.encryption.remotePublicRaw,
+      );
+      this.encryption.sessionKey = sessionKey;
+
+      const publicRaw = await exportPublicKey(
+        this.encryption.localKeyPair.publicKey,
+      );
+      this.sendControlMessage({
+        type: "e2e-key",
+        publicKey: Array.from(new Uint8Array(publicRaw)),
+      });
+
+      this._flushPendingEncryptedChunks();
+      this._resolveHandshake();
+    } catch (error) {
+      console.warn("Encryption handshake (hello) failed:", error);
+      this.encryption.enabled = false;
+      this._resolveHandshake();
+    }
+  }
+
+  async _handleE2EKey(_peerId, message) {
+    if (
+      this.encryption.sessionKey ||
+      !this.encryption.enabled ||
+      !Array.isArray(message.publicKey) ||
+      message.publicKey.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      this.encryption.remotePublicRaw = new Uint8Array(
+        message.publicKey,
+      ).buffer;
+
+      if (!this.encryption.localKeyPair) {
+        this.encryption.localKeyPair = await generateKeyPair();
+      }
+
+      const sessionKey = await deriveSessionKey(
+        this.encryption.localKeyPair.privateKey,
+        this.encryption.remotePublicRaw,
+      );
+      this.encryption.sessionKey = sessionKey;
+
+      this._flushPendingEncryptedChunks();
+      this._resolveHandshake();
+    } catch (error) {
+      console.warn("Encryption handshake (key) failed:", error);
+      this.encryption.enabled = false;
+      this._resolveHandshake();
+    }
+  }
+
+  _resolveHandshake() {
+    const resolvers = this.encryption.handshakeResolvers;
+    this.encryption.handshakeResolvers = [];
+    for (const resolve of resolvers) {
+      resolve();
+    }
+  }
+
+  _flushPendingEncryptedChunks() {
+    const pending = this._pendingEncryptedChunks;
+    this._pendingEncryptedChunks = [];
+    for (const { payload, tag } of pending) {
+      this._sendEncryptedPayload(payload, tag);
+    }
+  }
+
+  _sendEncryptedPayload(payload, tag) {
+    const channel =
+      this.controlChannel && this.controlChannel.readyState === "open"
+        ? this.controlChannel
+        : this.dataChannel && this.dataChannel.readyState === "open"
+          ? this.dataChannel
+          : null;
+    if (!channel) {
+      return;
+    }
+    const wrapper = JSON.stringify({
+      type: "e2e-chunk",
+      tag,
+      payload: Array.from(new Uint8Array(payload)),
+    });
+    try {
+      channel.send(wrapper);
+    } catch (error) {
+      console.warn("Failed to send encrypted payload:", error);
+    }
+  }
+
+  async _processEncryptedWrapper(wrapper) {
+    if (
+      !wrapper ||
+      wrapper.type !== "e2e-chunk" ||
+      !Array.isArray(wrapper.payload)
+    ) {
+      return;
+    }
+    const payload = new Uint8Array(wrapper.payload).buffer;
+    if (!this.encryption.sessionKey) {
+      this._pendingEncryptedChunks.push({
+        payload,
+        tag: wrapper.tag,
+      });
+      return;
+    }
+    try {
+      const { tag, plaintext } = await decryptTaggedPayload(
+        this.encryption.sessionKey,
+        payload,
+      );
+      if (tag === ENCRYPTION_TAGS.CONTROL) {
+        const text = new TextDecoder().decode(plaintext);
+        const json = appUtils.safeJsonParse(text);
+        if (json && this.handleControlMessage(json)) {
+          return;
+        }
+        if (json) {
+          fileTransferManager?.handleIncomingData(JSON.stringify(json));
+        }
+      } else {
+        fileTransferManager?.handleIncomingData(plaintext);
+      }
+    } catch (error) {
+      console.warn("Failed to decrypt e2e chunk:", error);
+    }
   }
 
   _cleanupFileTransfer({ clearSelection = false } = {}) {
@@ -220,14 +433,22 @@ class WebRTCManager {
     this._registerSocketHandler("offer", "handleOffer");
     this._registerSocketHandler("answer", "handleAnswer");
 
-    // The server tells us another peer has taken over our connection
-    // (someone else connected to our partner). Drop our current connection
-    // so the new peer can negotiate with the partner seamlessly.
-    this.socket.on("peer-replaced", () => {
-      if (this.activePeerId || this.pendingPeerConnection) {
-        this.resetCurrentConnection({ notifyPeer: false });
-        uiManager.showIdError("Your connection was replaced by another peer");
+    this.socket.on("peer-replaced", (data) => {
+      if (!this.activePeerId && !this.pendingPeerConnection) return;
+
+      if (
+        typeof fileTransferManager !== "undefined" &&
+        (fileTransferManager.isSending || fileTransferManager.isReceiving)
+      ) {
+        this.pendingServerDisconnect = data;
+        uiManager.setLocalPinStatus("Peer will disconnect after transfer");
+        return;
       }
+
+      this.resetCurrentConnection({ notifyPeer: false });
+      uiManager.showIdError(
+        "The peer disconnected: they connected to another peer",
+      );
     });
 
     this.socket.on("peer-disconnected", (data) => {
@@ -237,7 +458,6 @@ class WebRTCManager {
 
       if (!relevant) return;
 
-      // If a transfer is active, defer UI teardown until transfer completes
       if (
         typeof fileTransferManager !== "undefined" &&
         (fileTransferManager.isSending || fileTransferManager.isReceiving)
@@ -251,8 +471,6 @@ class WebRTCManager {
       uiManager.showIdError("Peer disconnected");
     });
 
-    // Called by fileTransferManager when a local transfer finishes and the
-    // UI should process any pending server-initiated disconnect.
     this.handleLocalTransferCompleteForPendingDisconnect = () => {
       if (!this.pendingServerDisconnect) return;
       this.resetCurrentConnection({ notifyPeer: false });
@@ -262,36 +480,42 @@ class WebRTCManager {
 
     this.socket.on("candidate", async (data) => {
       const targetConnection = this._getCandidateConnection(data);
-      if (!targetConnection || data?.candidate === undefined) {
-        return;
-      }
+      const sourcePeer = data?.from || data?.caller || data?.callee || null;
 
-      if (
-        ["closed", "failed"].includes(targetConnection.connectionState) ||
-        targetConnection.signalingState === "closed"
-      ) {
-        return;
-      }
+      if (data?.candidate !== undefined) {
+        if (targetConnection) {
+          if (
+            ["closed", "failed"].includes(targetConnection.connectionState) ||
+            targetConnection.signalingState === "closed"
+          ) {
+            return;
+          }
+          if (!this._isCandidateForConnection(targetConnection, data)) {
+            return;
+          }
 
-      if (!this._isCandidateForConnection(targetConnection, data)) {
-        return;
-      }
+          const addCandidate = async (candidate) => {
+            try {
+              await targetConnection.addIceCandidate(candidate || null);
+            } catch (error) {
+              console.error("Failed to add ICE candidate:", error);
+            }
+          };
 
-      const addCandidate = async (candidate) => {
-        try {
-          await targetConnection.addIceCandidate(candidate || null);
-        } catch (error) {
-          console.error("Failed to add ICE candidate:", error);
+          if (targetConnection.remoteDescription?.type) {
+            await addCandidate(data.candidate);
+          } else {
+            if (!Array.isArray(targetConnection._candidateQueue)) {
+              targetConnection._candidateQueue = [];
+            }
+            targetConnection._candidateQueue.push(data.candidate);
+          }
+        } else if (sourcePeer) {
+          if (!this._pendingCandidates.has(sourcePeer)) {
+            this._pendingCandidates.set(sourcePeer, []);
+          }
+          this._pendingCandidates.get(sourcePeer).push(data.candidate);
         }
-      };
-
-      if (targetConnection.remoteDescription?.type) {
-        await addCandidate(data.candidate);
-      } else {
-        if (!Array.isArray(targetConnection._candidateQueue)) {
-          targetConnection._candidateQueue = [];
-        }
-        targetConnection._candidateQueue.push(data.candidate);
       }
     });
 
@@ -372,12 +596,23 @@ class WebRTCManager {
       .catch((error) => console.error(`Error copying ${errorContext}:`, error));
   }
 
+  buildShareLink() {
+    if (!this.selfId) {
+      return null;
+    }
+    return `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+  }
+
   copyId() {
     this._copyToClipboard(this.selfId, "ID");
   }
 
   copyLink() {
-    const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+    const url = this.buildShareLink();
+    if (!url) {
+      uiManager.showIdError("No ID to share yet");
+      return;
+    }
     this._copyToClipboard(url, "Link");
   }
 
@@ -387,7 +622,7 @@ class WebRTCManager {
       return;
     }
 
-    const shown = uiManager.toggleQrCodeForId(this.selfId);
+    const shown = uiManager.toggleQrCodeForId(this.buildShareLink());
     if (!shown && typeof QRCode === "undefined") {
       console.warn("QRCode library is missing (blocked by network).");
     }
@@ -475,35 +710,22 @@ class WebRTCManager {
       (this.peerConnection.iceConnectionState === "failed" ||
         this.peerConnection.iceConnectionState === "disconnected");
 
-    // Also treat as ICE restart if we have an active connection to this
-    // peer and receive a new offer while our ICE state is still connected.
-    // This handles one-way ICE failures where only the remote peer detected
-    // the failure and is attempting a restart.
     const isLikelyIceRestart =
       this.peerConnection &&
       this.peerConnection._peerId === data.caller &&
       data.sdp?.type === "offer" &&
+      this.peerConnection.connectionState === "connected" &&
       this.peerConnection.iceConnectionState !== "failed" &&
       this.peerConnection.iceConnectionState !== "disconnected" &&
       this.peerConnection.signalingState === "stable";
 
-    // A fresh offer from a DIFFERENT peer replaces the current connection
-    // (the server drops the old peer on the signaling side). Accept it so
-    // the new peer can connect seamlessly.
-    const isReplacementOffer =
+    const hasFullyConnectedSamePeer =
       this.peerConnection &&
-      this.peerConnection._peerId !== data.caller &&
-      data.sdp?.type === "offer";
+      this.peerConnection._peerId === data.caller &&
+      this.peerConnection.connectionState === "connected";
 
-    if (
-      this.peerConnection &&
-      (this.peerConnection.connectionState === "connected" ||
-        this.peerConnection.connectionState === "connecting") &&
-      !isIceRestart &&
-      !isLikelyIceRestart &&
-      !isReplacementOffer
-    ) {
-      console.warn("Ignoring offer: currently in an active connection.");
+    if (hasFullyConnectedSamePeer && !isIceRestart && !isLikelyIceRestart) {
+      console.warn("Ignoring offer: already connected to this peer.");
       return;
     }
 
@@ -532,9 +754,7 @@ class WebRTCManager {
     }
 
     uiManager.clearAlert();
-    // Abort any pending connection attempt. Emit connection-user-failed so the
-    // server's totalAttempts counter stays accurate. Suppress the attemptId
-    // increment since handleOffer assigns its own attemptId below.
+
     const hadPending = Boolean(
       this.pendingPeerConnection ||
       this.pendingDataChannel ||
@@ -607,8 +827,6 @@ class WebRTCManager {
     }
 
     try {
-      // Clear any stale ICE candidates from the previous negotiation
-      // before setting the new remote description.
       if (Array.isArray(conn._candidateQueue)) {
         conn._candidateQueue.length = 0;
       }
@@ -627,7 +845,6 @@ class WebRTCManager {
   }
 
   async handleAnswer(data) {
-    // ICE restart answer: applies to the active peerConnection, not pendingPeerConnection
     if (!this.pendingPeerConnection) {
       return this._handleIceRestartAnswer(data);
     }
@@ -649,7 +866,6 @@ class WebRTCManager {
       return;
     }
 
-    // Validate SDP type before applying — must be an answer, not an offer
     if (data.sdp?.type !== "answer") {
       console.warn("Ignoring answer: expected SDP answer, got", data.sdp?.type);
       return;
@@ -683,8 +899,6 @@ class WebRTCManager {
       return;
     }
 
-    // Verify pendingPeerConnection still exists — abortPendingConnection
-    // may have been called during drainCandidateQueue.
     if (!this.pendingPeerConnection) {
       return;
     }
@@ -698,7 +912,6 @@ class WebRTCManager {
       return;
     }
 
-    // Final stale check before promoting pending → active
     if (this._isStaleAttempt(currentAttemptId)) {
       return;
     }
@@ -719,11 +932,9 @@ class WebRTCManager {
     const conn = this.peerConnection;
     if (!conn) return;
 
-    // Only process answers that match our active peer
     const sourcePeer = data.callee || data.from || null;
     if (!sourcePeer || conn._peerId !== sourcePeer) return;
 
-    // Validate SDP type before applying
     if (data.sdp?.type !== "answer") {
       console.warn(
         "Ignoring ICE restart answer: expected SDP answer, got",
@@ -732,14 +943,12 @@ class WebRTCManager {
       return;
     }
 
-    // Only process if we're expecting an answer (have-local-offer from ICE restart)
     if (conn.signalingState !== "have-local-offer") return;
 
     try {
       await conn.setRemoteDescription(data.sdp);
       await this.drainCandidateQueue(conn);
-      // ICE restart succeeded — clear the failure-handling guard so
-      // that a future ICE failure can be handled afresh.
+
       conn._failureHandling = false;
     } catch (error) {
       console.error("ICE restart answer failed:", error);
@@ -766,6 +975,18 @@ class WebRTCManager {
       }
     };
 
+    const tryStartHandshake = () => {
+      if (
+        this.encryption.enabled &&
+        !this.encryption.sessionKey &&
+        this.dataChannel?.readyState === "open" &&
+        this.controlChannel?.readyState === "open" &&
+        this.activePeerId
+      ) {
+        this._beginEncryptionHandshake(this.activePeerId);
+      }
+    };
+
     if (dataChannel) {
       if (dataChannel.readyState === "open") {
         tryEmitSuccess();
@@ -778,6 +999,21 @@ class WebRTCManager {
         tryEmitSuccess();
       } else {
         controlChannel.addEventListener("open", tryEmitSuccess);
+      }
+    }
+
+    if (dataChannel) {
+      if (dataChannel.readyState === "open") {
+        tryStartHandshake();
+      } else {
+        dataChannel.addEventListener("open", tryStartHandshake);
+      }
+    }
+    if (controlChannel) {
+      if (controlChannel.readyState === "open") {
+        tryStartHandshake();
+      } else {
+        controlChannel.addEventListener("open", tryStartHandshake);
       }
     }
   }
@@ -819,9 +1055,6 @@ class WebRTCManager {
   }
 
   async handleConnectionFailure(conn) {
-    // Guard against re-entry: if we're already handling a failure on this
-    // connection, ignore subsequent calls (e.g. onconnectionstatechange
-    // firing during an async ICE restart).
     if (conn._failureHandling) return;
     conn._failureHandling = true;
 
@@ -831,8 +1064,6 @@ class WebRTCManager {
       conn._failureHandling = false;
     } else if (conn === this.peerConnection) {
       if (conn.iceConnectionState === "failed") {
-        // Clear any pending disconnect recovery timer to avoid duplicate
-        // recovery actions (timer would also call handleConnectionFailure).
         this._clearDisconnectTimer();
         if (conn._isInitiator) {
           console.warn(
@@ -841,8 +1072,7 @@ class WebRTCManager {
           try {
             const offer = await conn.createOffer({ iceRestart: true });
             await conn.setLocalDescription(offer);
-            // Reset the guard before emitting so that connection-state
-            // change events during the restart can be handled.
+
             conn._failureHandling = false;
             this.socket.emit("offer", {
               target: conn._peerId,
@@ -858,18 +1088,13 @@ class WebRTCManager {
             "ICE Connection failed on responder. Attempting ICE Restart...",
           );
           try {
-            // Temporarily mark as initiator for this ICE restart negotiation.
-            // Save the original role so we can restore it before any async
-            // operations that could trigger onconnectionstatechange.
             const originalIsInitiator = conn._isInitiator;
             conn._isInitiator = true;
             const offer = await conn.createOffer({ iceRestart: true });
             await conn.setLocalDescription(offer);
-            // Reset the guard before restoring role and emitting so that
-            // connection-state change events during the restart can be handled.
+
             conn._failureHandling = false;
-            // Restore original role before emitting so that any
-            // connection-state change events see the correct role.
+
             conn._isInitiator = originalIsInitiator;
             this.socket.emit("offer", {
               target: conn._peerId,
@@ -894,6 +1119,12 @@ class WebRTCManager {
     conn._peerId = targetId;
     conn._isInitiator = isInitiator;
     conn._candidateQueue = [];
+
+    const earlyCandidates = this._pendingCandidates.get(targetId);
+    if (Array.isArray(earlyCandidates) && earlyCandidates.length > 0) {
+      conn._candidateQueue.push(...earlyCandidates);
+      this._pendingCandidates.delete(targetId);
+    }
 
     conn.onicecandidate = (evt) => {
       this.socket.emit("candidate", {
@@ -928,8 +1159,6 @@ class WebRTCManager {
       this._clearDisconnectTimer();
 
       if (conn.connectionState === "connected") {
-        // Connection (re)established — clear the failure-handling guard
-        // so that a future failure can be handled.
         conn._failureHandling = false;
         this.startHeartbeat();
         this._checkAndEmitSuccess(conn);
@@ -959,9 +1188,6 @@ class WebRTCManager {
           }
         }, CONNECTION_RECOVERY_DELAY);
       } else if (conn.connectionState === "failed") {
-        // Connection is terminal — reset the guard so handleConnectionFailure
-        // can proceed to tear it down (an in-progress ICE restart clearly
-        // didn't save the connection).
         conn._failureHandling = false;
         this.handleConnectionFailure(conn);
       }
@@ -995,12 +1221,11 @@ class WebRTCManager {
         conn.iceConnectionState === "completed"
       ) {
         this._clearDisconnectTimer();
-        // ICE recovery succeeded — clear the failure-handling guard so
-        // that a future ICE failure can be handled afresh.
+
         if (conn._failureHandling) {
           conn._failureHandling = false;
         }
-        // If a transfer was paused due to ICE failure, auto-resume
+
         if (
           typeof fileTransferManager !== "undefined" &&
           fileTransferManager &&
@@ -1014,9 +1239,6 @@ class WebRTCManager {
             fileTransferManager.sendResumeOffsetSync();
         }
       } else if (conn.iceConnectionState === "failed") {
-        // If an ICE restart was in progress, its guard would block us.
-        // Reset it so handleConnectionFailure can attempt a fresh restart
-        // or fall through to resetCurrentConnection.
         conn._failureHandling = false;
         this.handleConnectionFailure(conn);
       }
@@ -1061,9 +1283,6 @@ class WebRTCManager {
       channel === this.pendingDataChannel ||
       channel === this.pendingControlChannel
     ) {
-      // Ignore channel closes during active ICE restart, connection
-      // teardown, or when the connection has already failed — the
-      // connection state handlers already cover those cases.
       if (
         this.peerConnection &&
         this.peerConnection.connectionState !== "closed" &&
@@ -1089,18 +1308,38 @@ class WebRTCManager {
   }
 
   processIncomingChannelMessage(rawMessage) {
-    // Binary data (non-string) is always file data.
     if (typeof rawMessage !== "string") {
+      if (this.encryption.sessionKey) {
+        this._processEncryptedWrapper({
+          type: "e2e-chunk",
+          payload: Array.from(new Uint8Array(rawMessage)),
+        });
+        return;
+      }
       fileTransferManager?.handleIncomingData(rawMessage);
       return;
     }
 
     const message = appUtils.safeJsonParse(rawMessage);
+
+    if (message && message.type === "e2e-chunk") {
+      this._processEncryptedWrapper(message);
+      return;
+    }
+
+    if (this._isHandshakeMessage(message)) {
+      if (message.type === "e2e-hello") {
+        this._handleE2EHello(this.activePeerId, message);
+      } else if (message.type === "e2e-key") {
+        this._handleE2EKey(this.activePeerId, message);
+      }
+      return;
+    }
+
     if (message && this.handleControlMessage(message)) {
       return;
     }
 
-    // Fast-track flow control messages to bypass receiveBuffer queue
     const outOfBandTypes = [
       "throttle-pause",
       "throttle-resume",
@@ -1109,7 +1348,6 @@ class WebRTCManager {
       "cancel-transfer",
     ];
     if (message && outOfBandTypes.includes(message.type)) {
-      // Execute immediately instead of putting in receiveBuffer
       if (fileTransferManager) {
         fileTransferManager
           .processControlInstruction(rawMessage)
@@ -1122,7 +1360,31 @@ class WebRTCManager {
   }
 
   sendControlMessage(msgObj) {
-    const payload = JSON.stringify(msgObj);
+    if (this._isHandshakeMessage(msgObj)) {
+      this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+      return;
+    }
+
+    if (this.encryption.enabled && this.encryption.sessionKey) {
+      if (msgObj.type === "disconnect") {
+        this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+        return;
+      }
+      encryptMessage(this.encryption.sessionKey, msgObj)
+        .then((payload) =>
+          this._sendEncryptedPayload(payload, ENCRYPTION_TAGS.CONTROL),
+        )
+        .catch((error) => {
+          console.warn("Failed to encrypt control message:", error);
+          this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+        });
+      return;
+    }
+
+    this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+  }
+
+  _sendPlaintextControlMessage(payload) {
     if (this.controlChannel && this.controlChannel.readyState === "open") {
       this.controlChannel.send(payload);
     } else if (this.dataChannel && this.dataChannel.readyState === "open") {
@@ -1132,6 +1394,12 @@ class WebRTCManager {
 
   handleControlMessage(message) {
     switch (message.type) {
+      case "e2e-hello":
+        this._handleE2EHello(this.activePeerId, message);
+        return true;
+      case "e2e-key":
+        this._handleE2EKey(this.activePeerId, message);
+        return true;
       case "disconnect":
         this.resetCurrentConnection({ notifyPeer: false });
         return true;
@@ -1203,11 +1471,9 @@ class WebRTCManager {
       this.connectionAttemptId++;
     }
 
-    // Only clean up transfers if there is no active connection.
-    // If we're aborting a pending attempt while already connected,
-    // the active transfer must not be disturbed.
     if (!this.peerConnection) {
       this._cleanupFileTransfer();
+      this._resetEncryptionState();
     }
 
     if (emitUserFail && hadPendingAttempt) {
@@ -1240,6 +1506,8 @@ class WebRTCManager {
     uiManager.clearAlert();
     this._clearNewConnectionTimer();
     this.pendingServerDisconnect = null;
+    this._pendingCandidates.clear();
+    this._resetEncryptionState();
 
     this._cleanupFileTransfer({ clearSelection: true });
 

@@ -25,7 +25,7 @@ export class HistoryService {
             autoIncrement: true,
           });
           store.createIndex("timestamp", "timestamp", { unique: false });
-          store.createIndex("type", "type", { unique: false }); // 'sent' or 'received'
+          store.createIndex("type", "type", { unique: false }); 
         }
         if (!db.objectStoreNames.contains(this.chatStoreName)) {
           const chatStore = db.createObjectStore(this.chatStoreName, {
@@ -77,7 +77,7 @@ export class HistoryService {
       const index = store.index("timestamp");
       const request = index.getAll();
 
-      request.onsuccess = () => resolve(request.result.reverse()); // Newest first
+      request.onsuccess = () => resolve(request.result.reverse()); 
       request.onerror = (event) => reject(event.target.error);
     });
   }
@@ -104,8 +104,6 @@ export class HistoryService {
       requestA.onerror = (event) => reject(event.target.error);
     });
   }
-
-  // --- Chat persistence -------------------------------------------------
 
   async addChatRecord(record) {
     await this.initPromise;
@@ -141,7 +139,7 @@ export class HistoryService {
       const index = store.index("timestamp");
       const request = index.getAll();
 
-      request.onsuccess = () => resolve(request.result); // chronological
+      request.onsuccess = () => resolve(request.result); 
       request.onerror = (event) => reject(event.target.error);
     });
   }

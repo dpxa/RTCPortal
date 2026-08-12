@@ -1,10 +1,3 @@
-// Regression tests for the Socket.IO signaling handlers
-// (server/socket/handlers.js).
-//
-// Boots the real server on an ephemeral port and drives it with
-// socket.io-client, verifying the connect/disconnect/replace pairing logic
-// end to end without needing a browser or WebRTC.
-
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("child_process");
@@ -110,8 +103,6 @@ function waitForEvent(client, event, { windowMs = 2500 } = {}) {
   });
 }
 
-// Emits an offer from `from` to `to` and resolves with any peer-replaced
-// event received by `expectReplaced` during the window (or null).
 function sendOffer(from, to, { expectReplaced, windowMs = 2500 } = {}) {
   return new Promise((resolve) => {
     let onPeerReplaced = null;
@@ -152,7 +143,7 @@ test("pairing A<->B establishes without evicting anyone", async () => {
   await sendOffer(a, b);
   b.emit("answer", { target: a.pin, sdp: { type: "answer", sdp: "ans" } });
   await delay(300);
-  // No assertion of eviction here; just ensure no crash and pairing works.
+
   assert.ok(a.pin && b.pin);
 });
 
@@ -210,7 +201,7 @@ test("malformed offer (missing sdp) is not relayed", async () => {
       clearTimeout(timer);
       resolve(true);
     });
-    c.emit("offer", { target: d.pin }); // missing sdp -> rejected
+    c.emit("offer", { target: d.pin });
   });
   assert.equal(relayed, false, "malformed offer should not be relayed");
 });

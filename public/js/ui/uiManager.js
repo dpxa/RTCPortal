@@ -670,14 +670,14 @@ class UIManager {
     return this._isVisible(this.qrCodeWrapper);
   }
 
-  showQrCodeForId(selfId) {
+  showQrCodeForId(shareUrl) {
     if (typeof QRCode === "undefined") {
       this.showIdError("QR Code library failed to load");
       return false;
     }
 
     if (
-      !selfId ||
+      !shareUrl ||
       !this.qrCodeContainer ||
       !this.qrCodeWrapper ||
       !this.showQrBtn
@@ -685,14 +685,12 @@ class UIManager {
       return false;
     }
 
-    const url = `${window.location.origin}${window.location.pathname}?peer=${selfId}`;
-
     this._setHidden(this.qrCodeWrapper, false);
     this.showQrBtn.textContent = "Hide QR";
     this.qrCodeContainer.innerHTML = "";
 
     new QRCode(this.qrCodeContainer, {
-      text: url,
+      text: shareUrl,
       width: 128,
       height: 128,
       colorDark: "#000000",
@@ -1346,7 +1344,6 @@ class UIManager {
     this.chatBox.appendChild(messageDiv);
     this.chatBox.scrollTop = this.chatBox.scrollHeight;
 
-    // Persist chat so it can be restored after a page refresh.
     const peerId =
       this.activeConnectionStatus?.getAttribute("data-peer-id") || null;
     if (typeof historyService !== "undefined") {
@@ -1362,8 +1359,6 @@ class UIManager {
     }
   }
 
-  // Builds a peer display label consistent with getPeerDisplay, or falls
-  // back to the raw peer id if nicknames are unavailable.
   getPeerDisplayLabel(peerId) {
     if (!peerId) return peerId || null;
     const peerName = this.getNickname ? this.getNickname(peerId) : peerId;
@@ -1371,9 +1366,6 @@ class UIManager {
     return `${peerName} (${peerId})`;
   }
 
-  // Renders stored chat records (restored after refresh) into the
-  // chat-history section, grouped per session/peer with their original
-  // per-message timestamps.
   renderStoredChatHistory(records) {
     if (
       !this.chatHistoryList ||
@@ -1383,9 +1375,6 @@ class UIManager {
       return;
     }
 
-    // Group into session blocks, breaking a new block whenever the peer
-    // changes so distinct sessions stay visually separate (matching how
-    // archiveChat groups messages at connection teardown).
     const sessions = [];
     let currentKey = null;
     for (const record of records) {

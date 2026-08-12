@@ -1,6 +1,3 @@
-// Minimal DOM fixture matching the element IDs uiManager.js looks up, so
-// UIManager can be constructed under jsdom.
-
 export const UI_MANAGER_HTML = `
 <div id="my-id-display">Waiting for PIN...</div>
 <div id="pin-action-buttons" hidden></div>
@@ -48,5 +45,4 @@ export const UI_MANAGER_HTML = `
 <button id="edit-nickname-btn" hidden></button>
 `;
 
-// Elements expected to affect document.title updates.
 export const EXPECTED_TITLE = "RTCPortal - P2P Transfer Hub";

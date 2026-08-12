@@ -1,16 +1,10 @@
-// Regression tests for the server health endpoint (/api/health).
-//
-// Boots the real server on an ephemeral port and verifies the health route
-// responds correctly, including the static frontend serving in dev mode.
-
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("child_process");
 const path = require("path");
 
 const SERVER_ENTRY = path.resolve(__dirname, "../../server/index.js");
-// The server serves static files from a relative "public" path, so it must
-// be launched with the project root as its working directory.
+
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const TEST_PORT = 3198;
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;

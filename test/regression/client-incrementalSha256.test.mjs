@@ -1,9 +1,3 @@
-// Unit tests for public/js/utils/incrementalSha256.js
-//
-// Pure ESM class (no relative imports). Loaded via the temp-fixture helper.
-// Verifies the streaming SHA-256 implementation against known digests,
-// including chunked updates, empty input, and boundary conditions.
-
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { loadPureModule } from "./helpers/load-client-module.mjs";
@@ -14,7 +8,6 @@ beforeEach(async () => {
   ({ IncrementalSHA256 } = await loadPureModule("incrementalSha256"));
 });
 
-// Known SHA-256 digests (hex) for reference inputs.
 const KNOWN = {
   "": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   abc: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -69,7 +62,6 @@ test("handles input spanning multiple blocks (128 bytes)", () => {
 });
 
 test("handles input just under the 56-byte padding boundary", () => {
-  // 55 bytes: fits in one block with padding.
   const input = "c".repeat(55);
   const hasher = new IncrementalSHA256();
   hasher.update(new TextEncoder().encode(input));
@@ -89,13 +81,13 @@ test("digest is deterministic across instances", () => {
 
 test("accepts Uint8Array and ArrayBuffer-like chunks", () => {
   const hasher = new IncrementalSHA256();
-  hasher.update(new Uint8Array([104, 105])); // "hi"
+  hasher.update(new Uint8Array([104, 105]));
   assert.equal(hasher.digest().length, 64);
 });
 
 test("large input (1MB) produces a valid 64-char digest", () => {
   const big = new Uint8Array(1024 * 1024);
-  big.fill(0x61); // 'a'
+  big.fill(0x61);
   const hasher = new IncrementalSHA256();
   hasher.update(big);
   const digest = hasher.digest();

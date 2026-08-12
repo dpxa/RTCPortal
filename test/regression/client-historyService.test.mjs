@@ -1,9 +1,3 @@
-// Unit tests for public/js/services/historyService.js
-//
-// The module exports a singleton that calls init() (indexedDB.open) at
-// import time. We install an in-memory IndexedDB mock, then load the module
-// via a unique temp fixture per test to avoid ESM caching and shared state.
-
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -61,7 +55,7 @@ test("getHistory returns newest-first", async () => {
   await historyService.addRecord({ direction: "to", batch: [], timestamp: 2 });
   const history = await historyService.getHistory();
   assert.equal(history.length, 2);
-  assert.equal(history[0].direction, "to"); // newest first
+  assert.equal(history[0].direction, "to");
 });
 
 test("addChatRecord and getChatHistory round-trip", async () => {
@@ -98,7 +92,6 @@ test("clearChatHistory clears only the chat store", async () => {
 });
 
 test("getHistory returns [] when db is not initialized", async () => {
-  // Force db to null to exercise the guard branch.
   historyService.db = null;
   const history = await historyService.getHistory();
   assert.deepEqual(history, []);

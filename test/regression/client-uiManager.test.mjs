@@ -1,10 +1,3 @@
-// Unit tests for public/js/ui/uiManager.js
-//
-// Uses jsdom to provide a DOM, an in-memory IndexedDB mock for the
-// historyService import, and stubs for browser APIs (QRCode, matchMedia,
-// URL.createObjectURL). The module is bundled (with relative deps) to .mjs
-// via helpers/bundle-client-module.mjs.
-
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -27,12 +20,10 @@ let bundleDir;
 let uiManager;
 
 beforeEach(async () => {
-  // Full DOM for element lookups.
   dom = new JSDOM(UI_MANAGER_HTML, { url: "http://localhost/" });
   window = dom.window;
   document = window.document;
 
-  // Expose DOM globals the module uses.
   globalThis.window = window;
   globalThis.document = document;
   Object.defineProperty(globalThis, "navigator", {
@@ -46,7 +37,6 @@ beforeEach(async () => {
   globalThis.QRCode = function () {};
   globalThis.QRCode.CorrectLevel = { H: 0 };
 
-  // IndexedDB mock for historyService import.
   installIndexedDBMock();
 
   bundleDir = createBundleDir();
@@ -54,7 +44,7 @@ beforeEach(async () => {
     path.join(PUBLIC_JS, "ui/uiManager.js"),
     bundleDir,
   );
-  // The module constructs the singleton on import against the jsdom DOM.
+
   uiManager = mod.uiManager;
 });
 
@@ -159,7 +149,7 @@ test("setNickname stores and deletes nicknames", () => {
 test("toggleChat shows and hides chat section", () => {
   const ui = uiManager;
   const section = document.getElementById("chat-section");
-  // Fixture starts visible, so first toggle hides it.
+
   ui.toggleChat();
   assert.equal(section.hidden, true);
   ui.toggleChat();
@@ -184,7 +174,7 @@ test("formatBytes via render helpers not needed; updateConnectionStats updates d
     totalData: 1024,
     totalFiles: 3,
   });
-  // Verify no crash and display updated (format-specific).
+
   assert.ok(
     document.getElementById("success-rate-display").textContent.length > 0,
   );
@@ -192,7 +182,7 @@ test("formatBytes via render helpers not needed; updateConnectionStats updates d
 
 test("triggerDownload creates and clicks an anchor", () => {
   const ui = uiManager;
-  // Spy on document.body.appendChild
+
   let appended = null;
   const origAppend = document.body.appendChild.bind(document.body);
   document.body.appendChild = (el) => {
