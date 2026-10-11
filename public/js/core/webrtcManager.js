@@ -30,6 +30,7 @@ class WebRTCManager {
     this.dataChannel = null;
     this.controlChannel = null;
     this.pendingPeerConnection = null;
+    this._connectionGeneration = 0;
     this.pendingDataChannel = null;
     this.activePeerId = null;
     this.selfId = null;
@@ -80,13 +81,16 @@ class WebRTCManager {
     if (!channel) return;
 
     try {
+      // Mark intentionally closing so _handleChannelClose ignores the event.
+      channel._intentionalClose = true;
       channel.onopen = null;
-      channel.onclose = null;
       channel.onerror = null;
       channel.onmessage = null;
       if (typeof channel.close === "function") {
         channel.close();
       }
+      // Null the close handler after close() to be safe.
+      channel.onclose = null;
     } catch (error) {
       console.warn("Failed to dispose data channel:", error);
     }
@@ -776,7 +780,13 @@ class WebRTCManager {
     );
     this.abortPendingConnection(hadPending, { incrementAttemptId: false });
     if (this.peerConnection) {
-      this.resetCurrentConnection();
+      // Preserve early ICE candidates from the new caller before
+      // resetCurrentConnection() wipes _pendingCandidates entirely.
+      const savedCallerCandidates = this._pendingCandidates.get(data.caller);
+      this.resetCurrentConnection({ suppressIdleUI: true });
+      if (savedCallerCandidates?.length) {
+        this._pendingCandidates.set(data.caller, savedCallerCandidates);
+      }
     }
 
     const attemptId = ++this.connectionAttemptId;
@@ -886,7 +896,7 @@ class WebRTCManager {
     }
 
     if (this.activePeerId) {
-      this.resetCurrentConnection();
+      this.resetCurrentConnection({ suppressIdleUI: true });
     }
 
     this.answerReceivedTime = performance.now();
@@ -1279,6 +1289,7 @@ class WebRTCManager {
 
   initializeControlChannel(channel) {
     this._attachChannelMessageHandler(channel);
+    channel._connectionGeneration = this._connectionGeneration;
     channel.onclose = () => {
       this._handleChannelClose(channel);
     };
@@ -1289,29 +1300,56 @@ class WebRTCManager {
       DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD;
     channel.binaryType = "arraybuffer";
     this._attachChannelMessageHandler(channel);
+    channel._connectionGeneration = this._connectionGeneration;
     channel.onclose = () => {
       this._handleChannelClose(channel);
     };
   }
 
   _handleChannelClose(channel) {
+    // If the channel was closed intentionally by _disposeChannel, ignore.
+    if (channel._intentionalClose) return;
+
+    // Ignore close events from channels that belong to a previous
+    // connection generation. This prevents stale close events from
+    // tearing down a newly established replacement connection.
     if (
-      channel === this.dataChannel ||
-      channel === this.controlChannel ||
-      channel === this.pendingDataChannel ||
-      channel === this.pendingControlChannel
+      channel._connectionGeneration !== undefined &&
+      channel._connectionGeneration !== this._connectionGeneration
     ) {
+      return;
+    }
+
+    const isActiveChannel =
+      channel === this.dataChannel || channel === this.controlChannel;
+    const isPendingChannel =
+      channel === this.pendingDataChannel ||
+      channel === this.pendingControlChannel;
+
+    if (isActiveChannel) {
       if (
         this.peerConnection &&
         this.peerConnection.connectionState !== "closed" &&
         this.peerConnection.connectionState !== "failed" &&
         !this.peerConnection._failureHandling
       ) {
-        console.warn(
-          "Data channel closed unexpectedly, treating connection as failed",
-        );
-        this.handleConnectionFailure(this.peerConnection);
-      } else if (
+        // If a new connection is already being negotiated, the old peer
+        // was evicted and closed from the remote side. Just clean up the
+        // stale connection without triggering the failure/reconnect path.
+        if (this.pendingPeerConnection) {
+          console.warn(
+            "Old active channel closed while replacing connection — cleaning up stale peer.",
+          );
+          this.resetCurrentConnection({ notifyPeer: false, suppressIdleUI: true });
+        } else {
+          console.warn(
+            "Data channel closed unexpectedly, treating connection as failed",
+          );
+          this.handleConnectionFailure(this.peerConnection);
+        }
+      }
+    } else if (isPendingChannel) {
+      if (
         this.pendingPeerConnection &&
         this.pendingPeerConnection.connectionState !== "closed" &&
         this.pendingPeerConnection.connectionState !== "failed" &&
@@ -1521,7 +1559,7 @@ class WebRTCManager {
   }
 
   resetCurrentConnection(options = {}) {
-    const { notifyPeer = true } = options;
+    const { notifyPeer = true, suppressIdleUI = false } = options;
 
     this.stopHeartbeat();
     this._clearDisconnectTimer();
@@ -1540,24 +1578,26 @@ class WebRTCManager {
       this.sendControlMessage({ type: "disconnect" });
     }
     this._resetEncryptionState();
-    
-    this._disposePeerConnection(this.peerConnection);
-    this.peerConnection = null;
 
+    // Dispose channels BEFORE the peer connection so that
+    // _intentionalClose is set on each channel before closing
+    // the peer connection triggers their onclose events.
     this._disposeChannel(this.dataChannel);
     this.dataChannel = null;
 
     this._disposeChannel(this.controlChannel);
     this.controlChannel = null;
 
+    this._disposePeerConnection(this.peerConnection);
+    this.peerConnection = null;
+
+    // Bump connection generation so any stale channel close
+    // events from the old connection are ignored.
+    this._connectionGeneration++;
+
     if (notifyPeer) {
       if (this.activePeerId) {
         this.socket.emit("peer-disconnected", { target: this.activePeerId });
-      }
-      try {
-        this.sendControlMessage({ type: "disconnect" });
-      } catch (e) {
-        // Ignore if channel is not open
       }
     }
 
@@ -1571,7 +1611,9 @@ class WebRTCManager {
     }
 
     statsService.requestConnectionStats();
-    uiManager.updateToIdle();
+    if (!suppressIdleUI) {
+      uiManager.updateToIdle();
+    }
   }
 
   resetConnectionTiming() {
