@@ -1,25 +1,61 @@
+import {
+  BASE_API_URL,
+  DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD,
+  CONNECTION_TIMEOUT,
+  CONNECTION_RECOVERY_DELAY,
+  HEARTBEAT_INTERVAL,
+  SOCKET_TRANSPORTS,
+} from "../config/constants.js";
+import { appUtils } from "../utils/commonUtils.js";
+import {
+  deriveSessionKey,
+  generateKeyPair,
+  exportPublicKey,
+  decryptTaggedPayload,
+  encryptMessage,
+  ENCRYPTION_TAGS,
+} from "../utils/encryption.js";
+import { uiManager } from "../ui/uiManager.js";
+import { statsService } from "../services/statsService.js";
+import { turnService } from "../services/turnService.js";
+import { fileTransferManager } from "./fileTransferManager.js";
+
 class WebRTCManager {
   constructor() {
-    this.socket = environmentIsProd
-      ? io(PROD_API_URL, {
-          transports: SOCKET_TRANSPORTS,
-        })
-      : io({
-          transports: SOCKET_TRANSPORTS,
-        });
+    this.socket = io(BASE_API_URL, {
+      transports: SOCKET_TRANSPORTS,
+    });
 
     this.peerConnection = null;
     this.dataChannel = null;
+    this.controlChannel = null;
     this.pendingPeerConnection = null;
+    this._connectionGeneration = 0;
     this.pendingDataChannel = null;
     this.activePeerId = null;
     this.selfId = null;
+    this.pendingServerDisconnect = null;
 
     this.newConnTimer = null;
     this.connectionAttemptId = 0;
 
     this.heartbeatInterval = null;
     this.disconnectTimer = null;
+    this._pendingSuccessEmit = false;
+    this._lastPongAt = null;
+
+    this.encryption = {
+      enabled: true,
+      sessionKey: null,
+      localKeyPair: null,
+      remotePublicRaw: null,
+      handshakeStarted: false,
+      handshakeResolvers: [],
+    };
+    this._pendingOutgoingChunks = [];
+    this._pendingIncomingChunks = [];
+
+    this._pendingCandidates = new Map();
 
     this.bindUIHandlers();
     this.initializeSocketEvents();
@@ -45,13 +81,16 @@ class WebRTCManager {
     if (!channel) return;
 
     try {
+      // Mark intentionally closing so _handleChannelClose ignores the event.
+      channel._intentionalClose = true;
       channel.onopen = null;
-      channel.onclose = null;
       channel.onerror = null;
       channel.onmessage = null;
       if (typeof channel.close === "function") {
         channel.close();
       }
+      // Null the close handler after close() to be safe.
+      channel.onclose = null;
     } catch (error) {
       console.warn("Failed to dispose data channel:", error);
     }
@@ -87,6 +126,208 @@ class WebRTCManager {
     this._clearTimer("disconnectTimer");
   }
 
+  _resetEncryptionState() {
+    if (this.encryption?.handshakeResolvers) {
+      for (const resolve of this.encryption.handshakeResolvers) {
+        resolve();
+      }
+    }
+    this.encryption = {
+      enabled: true,
+      sessionKey: null,
+      localKeyPair: null,
+      remotePublicRaw: null,
+      handshakeStarted: false,
+      handshakeResolvers: [],
+    };
+    this._pendingOutgoingChunks = [];
+    this._pendingIncomingChunks = [];
+  }
+
+  _isHandshakeMessage(message) {
+    return (
+      message &&
+      typeof message.type === "string" &&
+      (message.type === "e2e-hello" || message.type === "e2e-key")
+    );
+  }
+
+  async _beginEncryptionHandshake(_peerId) {
+    if (
+      this.encryption.sessionKey ||
+      this.encryption.handshakeStarted ||
+      !this.encryption.enabled
+    ) {
+      return;
+    }
+
+    this.encryption.handshakeStarted = true;
+    try {
+      const keyPair = await generateKeyPair();
+      this.encryption.localKeyPair = keyPair;
+      const publicRaw = await exportPublicKey(keyPair.publicKey);
+
+      this.sendControlMessage({
+        type: "e2e-hello",
+        publicKey: Array.from(new Uint8Array(publicRaw)),
+      });
+    } catch (error) {
+      console.warn("Failed to start encryption handshake:", error);
+      this.encryption.handshakeStarted = false;
+      this.encryption.enabled = false;
+    }
+  }
+
+  async _handleE2EHello(_peerId, message) {
+    if (
+      this.encryption.sessionKey ||
+      !this.encryption.enabled ||
+      !Array.isArray(message.publicKey) ||
+      message.publicKey.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      this.encryption.remotePublicRaw = new Uint8Array(
+        message.publicKey,
+      ).buffer;
+
+      if (!this.encryption.localKeyPair) {
+        this.encryption.localKeyPair = await generateKeyPair();
+      }
+
+      const sessionKey = await deriveSessionKey(
+        this.encryption.localKeyPair.privateKey,
+        this.encryption.remotePublicRaw,
+      );
+      this.encryption.sessionKey = sessionKey;
+
+      const publicRaw = await exportPublicKey(
+        this.encryption.localKeyPair.publicKey,
+      );
+      this.sendControlMessage({
+        type: "e2e-key",
+        publicKey: Array.from(new Uint8Array(publicRaw)),
+      });
+
+      await this._flushPendingEncryptedChunks();
+      this._resolveHandshake();
+    } catch (error) {
+      console.warn("Encryption handshake (hello) failed:", error);
+      this.encryption.enabled = false;
+      this._resolveHandshake();
+    }
+  }
+
+  async _handleE2EKey(_peerId, message) {
+    if (
+      this.encryption.sessionKey ||
+      !this.encryption.enabled ||
+      !Array.isArray(message.publicKey) ||
+      message.publicKey.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      this.encryption.remotePublicRaw = new Uint8Array(
+        message.publicKey,
+      ).buffer;
+
+      if (!this.encryption.localKeyPair) {
+        this.encryption.localKeyPair = await generateKeyPair();
+      }
+
+      const sessionKey = await deriveSessionKey(
+        this.encryption.localKeyPair.privateKey,
+        this.encryption.remotePublicRaw,
+      );
+      this.encryption.sessionKey = sessionKey;
+
+      await this._flushPendingEncryptedChunks();
+      this._resolveHandshake();
+    } catch (error) {
+      console.warn("Encryption handshake (key) failed:", error);
+      this.encryption.enabled = false;
+      this._resolveHandshake();
+    }
+  }
+
+  _resolveHandshake() {
+    const resolvers = this.encryption.handshakeResolvers;
+    this.encryption.handshakeResolvers = [];
+    for (const resolve of resolvers) {
+      resolve();
+    }
+  }
+
+  async _flushPendingEncryptedChunks() {
+    const outgoing = this._pendingOutgoingChunks;
+    this._pendingOutgoingChunks = [];
+    for (const payload of outgoing) {
+      this._sendEncryptedPayload(payload);
+    }
+    const chunks = [...this._pendingIncomingChunks];
+    this._pendingIncomingChunks = [];
+    for (const chunk of chunks) {
+      try {
+        await this._processEncryptedWrapper(chunk);
+      } catch (err) {
+        console.error("Failed to process pending encrypted chunk:", err);
+      }
+    }
+  }
+
+  _sendEncryptedPayload(payload) {
+    const channel =
+      this.controlChannel && this.controlChannel.readyState === "open"
+        ? this.controlChannel
+        : this.dataChannel && this.dataChannel.readyState === "open"
+          ? this.dataChannel
+          : null;
+
+    if (!channel) {
+      this._pendingOutgoingChunks.push(payload);
+      return;
+    }
+
+    try {
+      channel.send(payload);
+    } catch (error) {
+      console.warn("Failed to send encrypted payload:", error);
+    }
+  }
+
+  async _processEncryptedWrapper(payload) {
+    if (!this.encryption.sessionKey) {
+      this._pendingIncomingChunks.push(payload);
+      return;
+    }
+
+    try {
+      const { tag, plaintext } = await decryptTaggedPayload(
+        this.encryption.sessionKey,
+        payload,
+      );
+
+      if (tag === ENCRYPTION_TAGS.CONTROL) {
+        const text = new TextDecoder().decode(plaintext);
+        const json = appUtils.safeJsonParse(text);
+        if (json && this.handleControlMessage(json)) {
+          return;
+        }
+        if (json) {
+          fileTransferManager?.handleIncomingData(JSON.stringify(json));
+        }
+      } else {
+        fileTransferManager?.handleIncomingData(plaintext);
+      }
+    } catch (error) {
+      console.warn("Failed to decrypt e2e chunk:", error);
+    }
+  }
+
   _cleanupFileTransfer({ clearSelection = false } = {}) {
     if (!fileTransferManager) {
       return;
@@ -100,7 +341,7 @@ class WebRTCManager {
 
   _handleSocketReady() {
     uiManager.clearAlert();
-    statsService.requestConnectionStats({ force: true });
+    statsService.requestConnectionStats();
   }
 
   _isStaleAttempt(attemptId) {
@@ -116,7 +357,7 @@ class WebRTCManager {
     if (userMessage) {
       uiManager.showIdError(userMessage);
     }
-    this.abortPendingConnection(false);
+    this.abortPendingConnection(true);
     this.resetConnectionTiming();
     statsService.requestConnectionStats();
   }
@@ -178,7 +419,11 @@ class WebRTCManager {
       }
 
       if (this.pendingPeerConnection) {
-        this.abortPendingConnection(false);
+        const isReconnecting =
+          reason === "io server disconnect" ||
+          reason === "transport close" ||
+          reason === "transport error";
+        this.abortPendingConnection(!isReconnecting);
       }
     });
 
@@ -198,48 +443,96 @@ class WebRTCManager {
     this._registerSocketHandler("offer", "handleOffer");
     this._registerSocketHandler("answer", "handleAnswer");
 
-    this.socket.on("peer-disconnected", (data) => {
+    this.socket.on("peer-replaced", (data) => {
+      if (!this.activePeerId && !this.pendingPeerConnection) return;
+
       if (
-        this.activePeerId === data.from ||
-        (this.pendingPeerConnection && !this.activePeerId)
+        typeof fileTransferManager !== "undefined" &&
+        (fileTransferManager.isSending || fileTransferManager.isReceiving)
       ) {
-        this.resetCurrentConnection({ notifyPeer: false });
-        uiManager.showIdError("Peer disconnected");
+        this.pendingServerDisconnect = data;
+        uiManager.setLocalPinStatus("Peer will disconnect after transfer");
+        return;
       }
+
+      this.resetCurrentConnection({ notifyPeer: false });
+      uiManager.showIdError(
+        "The peer disconnected: they connected to another peer",
+      );
     });
+
+    this.socket.on("peer-disconnected", (data) => {
+      const relevant =
+        this.activePeerId === data.from ||
+        (this.pendingPeerConnection && !this.activePeerId);
+
+      if (!relevant) return;
+
+      if (
+        typeof fileTransferManager !== "undefined" &&
+        (fileTransferManager.isSending || fileTransferManager.isReceiving)
+      ) {
+        this.pendingServerDisconnect = data;
+        uiManager.setLocalPinStatus("Peer will disconnect after transfer");
+        return;
+      }
+
+      this.resetCurrentConnection({ notifyPeer: false });
+      uiManager.showIdError("Peer disconnected");
+    });
+
+    this.handleLocalTransferCompleteForPendingDisconnect = () => {
+      if (!this.pendingServerDisconnect) return;
+      this.resetCurrentConnection({ notifyPeer: false });
+      uiManager.showIdError("Peer disconnected");
+      this.pendingServerDisconnect = null;
+    };
 
     this.socket.on("candidate", async (data) => {
       const targetConnection = this._getCandidateConnection(data);
-      if (!targetConnection || data?.candidate === undefined) {
-        return;
-      }
+      const sourcePeer = data?.from || data?.caller || data?.callee || null;
 
-      if (
-        ["closed", "failed"].includes(targetConnection.connectionState) ||
-        targetConnection.signalingState === "closed"
-      ) {
-        return;
-      }
+      if (data?.candidate !== undefined) {
+        if (targetConnection) {
+          if (
+            ["closed", "failed"].includes(targetConnection.connectionState) ||
+            targetConnection.signalingState === "closed"
+          ) {
+            return;
+          }
+          if (!this._isCandidateForConnection(targetConnection, data)) {
+            return;
+          }
 
-      if (!this._isCandidateForConnection(targetConnection, data)) {
-        return;
-      }
+          const addCandidate = async (candidate) => {
+            try {
+              await targetConnection.addIceCandidate(candidate || null);
+            } catch (error) {
+              console.error("Failed to add ICE candidate:", error);
+            }
+          };
 
-      const addCandidate = async (candidate) => {
-        try {
-          await targetConnection.addIceCandidate(candidate || null);
-        } catch (error) {
-          console.error("Failed to add ICE candidate:", error);
+          if (targetConnection.remoteDescription?.type) {
+            await addCandidate(data.candidate);
+          } else {
+            if (!Array.isArray(targetConnection._candidateQueue)) {
+              targetConnection._candidateQueue = [];
+            }
+            targetConnection._candidateQueue.push(data.candidate);
+          }
+        } else if (sourcePeer) {
+          if (!this._pendingCandidates.has(sourcePeer)) {
+            if (this._pendingCandidates.size >= 50) {
+              const oldestPeer = this._pendingCandidates.keys().next().value;
+              this._pendingCandidates.delete(oldestPeer);
+            }
+            this._pendingCandidates.set(sourcePeer, []);
+          }
+          const queue = this._pendingCandidates.get(sourcePeer);
+          if (queue.length < 500) {
+            queue.push(data.candidate);
+          }
         }
-      };
-
-      if (targetConnection.remoteDescription?.type) {
-        await addCandidate(data.candidate);
-      } else {
-        if (!Array.isArray(targetConnection._candidateQueue)) {
-          targetConnection._candidateQueue = [];
-        }
-        targetConnection._candidateQueue.push(data.candidate);
       }
     });
 
@@ -294,7 +587,18 @@ class WebRTCManager {
       return false;
     }
 
-    return this.pendingPeerConnection._peerId === sourcePeer;
+    if (this.pendingPeerConnection._peerId === sourcePeer) {
+      return true;
+    }
+
+    if (
+      payload.targetSocketId &&
+      this.pendingPeerConnection._peerId === payload.targetSocketId
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   _copyToClipboard(text, errorContext) {
@@ -309,12 +613,23 @@ class WebRTCManager {
       .catch((error) => console.error(`Error copying ${errorContext}:`, error));
   }
 
+  buildShareLink() {
+    if (!this.selfId) {
+      return null;
+    }
+    return `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+  }
+
   copyId() {
     this._copyToClipboard(this.selfId, "ID");
   }
 
   copyLink() {
-    const url = `${window.location.origin}${window.location.pathname}?peer=${this.selfId}`;
+    const url = this.buildShareLink();
+    if (!url) {
+      uiManager.showIdError("No ID to share yet");
+      return;
+    }
     this._copyToClipboard(url, "Link");
   }
 
@@ -324,7 +639,7 @@ class WebRTCManager {
       return;
     }
 
-    const shown = uiManager.toggleQrCodeForId(this.selfId);
+    const shown = uiManager.toggleQrCodeForId(this.buildShareLink());
     if (!shown && typeof QRCode === "undefined") {
       console.warn("QRCode library is missing (blocked by network).");
     }
@@ -369,10 +684,19 @@ class WebRTCManager {
     this.newConnTimer = setTimeout(() => {
       if (attemptId !== this.connectionAttemptId) return;
       uiManager.showIdError("Connection timed out");
-      this.abortPendingConnection(false);
+      this.abortPendingConnection(true);
       statsService.requestConnectionStats();
     }, CONNECTION_TIMEOUT);
 
+    try {
+      await turnService.awaitReady();
+    } catch (err) {
+      console.warn(
+        "TURN credential refresh failed, using existing config:",
+        err,
+      );
+    }
+    if (this._isStaleAttempt(attemptId)) return;
     this.pendingPeerConnection = new RTCPeerConnection(
       turnService.getRtcConfig(),
     );
@@ -397,6 +721,40 @@ class WebRTCManager {
   }
 
   async handleOffer(data) {
+    const isIceRestart =
+      this.peerConnection &&
+      this.peerConnection._peerId === data.caller &&
+      (this.peerConnection.iceConnectionState === "failed" ||
+        this.peerConnection.iceConnectionState === "disconnected");
+
+    const isLikelyIceRestart =
+      this.peerConnection &&
+      this.peerConnection._peerId === data.caller &&
+      data.sdp?.type === "offer" &&
+      this.peerConnection.connectionState === "connected" &&
+      this.peerConnection.iceConnectionState !== "failed" &&
+      this.peerConnection.iceConnectionState !== "disconnected" &&
+      this.peerConnection.signalingState === "stable";
+
+    const hasFullyConnectedSamePeer =
+      this.peerConnection &&
+      this.peerConnection._peerId === data.caller &&
+      this.peerConnection.connectionState === "connected";
+
+    if (hasFullyConnectedSamePeer && !isIceRestart && !isLikelyIceRestart) {
+      console.warn("Ignoring offer: already connected to this peer.");
+      return;
+    }
+
+    if (isIceRestart || isLikelyIceRestart) {
+      return this._handleIceRestartOffer(data);
+    }
+
+    if (data.sdp?.type !== "offer") {
+      console.warn("Ignoring signal: expected SDP offer, got", data.sdp?.type);
+      return;
+    }
+
     const isGlare =
       this.pendingPeerConnection &&
       this.pendingPeerConnection._peerId === data.caller;
@@ -413,24 +771,48 @@ class WebRTCManager {
     }
 
     uiManager.clearAlert();
-    this.abortPendingConnection();
+
+    const hadPending = Boolean(
+      this.pendingPeerConnection ||
+      this.pendingDataChannel ||
+      this.pendingControlChannel ||
+      this.newConnTimer,
+    );
+    this.abortPendingConnection(hadPending, { incrementAttemptId: false });
     if (this.peerConnection) {
-      this.resetCurrentConnection();
+      // Preserve early ICE candidates from the new caller before
+      // resetCurrentConnection() wipes _pendingCandidates entirely.
+      const savedCallerCandidates = this._pendingCandidates.get(data.caller);
+      this.resetCurrentConnection({ suppressIdleUI: true });
+      if (savedCallerCandidates?.length) {
+        this._pendingCandidates.set(data.caller, savedCallerCandidates);
+      }
     }
 
     const attemptId = ++this.connectionAttemptId;
 
     const offerReceivedTime = performance.now();
 
+    try {
+      await turnService.awaitReady();
+    } catch (err) {
+      console.warn(
+        "TURN credential refresh failed, using existing config:",
+        err,
+      );
+    }
     this.peerConnection = new RTCPeerConnection(turnService.getRtcConfig());
     this.configureConnection(this.peerConnection, data.caller, false);
 
     try {
       await this.peerConnection.setRemoteDescription(data.sdp);
+      if (this._isStaleAttempt(attemptId)) return;
       await this.drainCandidateQueue(this.peerConnection);
+      if (this._isStaleAttempt(attemptId)) return;
       const ans = await this.peerConnection.createAnswer();
+      if (this._isStaleAttempt(attemptId)) return;
       await this.peerConnection.setLocalDescription(ans);
-      this.activePeerId = data.caller;
+      if (this._isStaleAttempt(attemptId)) return;
 
       if (!this.connectionStartTime) {
         this.connectionStartTime = offerReceivedTime;
@@ -443,6 +825,7 @@ class WebRTCManager {
         target: data.caller,
         sdp: this.peerConnection.localDescription,
       });
+      this.activePeerId = data.caller;
     } catch (err) {
       if (this._isStaleAttempt(attemptId)) {
         return;
@@ -453,9 +836,46 @@ class WebRTCManager {
     }
   }
 
+  async _handleIceRestartOffer(data) {
+    console.warn("Accepting ICE restart offer from active peer.");
+    const conn = this.peerConnection;
+    if (!conn) return;
+
+    if (data.sdp?.type !== "offer") {
+      console.warn(
+        "Ignoring ICE restart: expected SDP offer, got",
+        data.sdp?.type,
+      );
+      return;
+    }
+
+    try {
+      if (Array.isArray(conn._candidateQueue)) {
+        conn._candidateQueue.length = 0;
+      }
+      await conn.setRemoteDescription(data.sdp);
+      await this.drainCandidateQueue(conn);
+      const ans = await conn.createAnswer();
+      await conn.setLocalDescription(ans);
+
+      this.socket.emit("answer", {
+        target: data.caller,
+        sdp: conn.localDescription,
+      });
+    } catch (error) {
+      console.error("ICE restart on responder failed:", error);
+      this.resetCurrentConnection();
+    }
+  }
+
   async handleAnswer(data) {
-    const currentAttemptId = this.connectionAttemptId;
     if (!this.pendingPeerConnection) {
+      return this._handleIceRestartAnswer(data);
+    }
+
+    const currentAttemptId = this.connectionAttemptId;
+
+    if (this._isStaleAttempt(currentAttemptId)) {
       return;
     }
 
@@ -470,8 +890,13 @@ class WebRTCManager {
       return;
     }
 
+    if (data.sdp?.type !== "answer") {
+      console.warn("Ignoring answer: expected SDP answer, got", data.sdp?.type);
+      return;
+    }
+
     if (this.activePeerId) {
-      this.resetCurrentConnection();
+      this.resetCurrentConnection({ suppressIdleUI: true });
     }
 
     this.answerReceivedTime = performance.now();
@@ -484,19 +909,6 @@ class WebRTCManager {
     try {
       await this.pendingPeerConnection.setRemoteDescription(data.sdp);
       await this.drainCandidateQueue(this.pendingPeerConnection);
-
-      if (this._isStaleAttempt(currentAttemptId)) {
-        return;
-      }
-
-      this.activePeerId = data.callee;
-
-      this.peerConnection = this.pendingPeerConnection;
-      this.dataChannel = this.pendingDataChannel;
-      this.controlChannel = this.pendingControlChannel;
-      this.pendingPeerConnection = null;
-      this.pendingDataChannel = null;
-      this.pendingControlChannel = null;
     } catch (err) {
       this._handlePendingConnectionError({
         attemptId: currentAttemptId,
@@ -504,6 +916,144 @@ class WebRTCManager {
         logMessage: "Error applying remote description:",
         userMessage: "Failed to establish connection.",
       });
+      return;
+    }
+
+    if (this._isStaleAttempt(currentAttemptId)) {
+      return;
+    }
+
+    if (!this.pendingPeerConnection) {
+      return;
+    }
+
+    if (typeof data.callee !== "string" || data.callee.trim() === "") {
+      console.warn("Ignoring answer: invalid callee field");
+      return;
+    }
+    if (data.callee !== this.pendingPeerConnection._peerId) {
+      console.warn("Ignoring answer: callee does not match intended peer");
+      return;
+    }
+
+    if (this._isStaleAttempt(currentAttemptId)) {
+      return;
+    }
+
+    this.activePeerId = data.callee;
+
+    this.peerConnection = this.pendingPeerConnection;
+    this.dataChannel = this.pendingDataChannel;
+    this.controlChannel = this.pendingControlChannel;
+    this.pendingPeerConnection = null;
+    this.pendingDataChannel = null;
+    this.pendingControlChannel = null;
+
+    this._attachDataChannelOpenHandler(this.dataChannel, this.controlChannel);
+  }
+
+  async _handleIceRestartAnswer(data) {
+    const conn = this.peerConnection;
+    if (!conn) return;
+
+    const sourcePeer = data.callee || data.from || null;
+    if (!sourcePeer || conn._peerId !== sourcePeer) return;
+
+    if (data.sdp?.type !== "answer") {
+      console.warn(
+        "Ignoring ICE restart answer: expected SDP answer, got",
+        data.sdp?.type,
+      );
+      return;
+    }
+
+    if (conn.signalingState !== "have-local-offer") return;
+
+    try {
+      await conn.setRemoteDescription(data.sdp);
+      await this.drainCandidateQueue(conn);
+
+      conn._failureHandling = false;
+    } catch (error) {
+      console.error("ICE restart answer failed:", error);
+      this.resetCurrentConnection();
+    }
+  }
+
+  _attachDataChannelOpenHandler(dataChannel, controlChannel) {
+    const tryEmitSuccess = () => {
+      if (
+        this._pendingSuccessEmit &&
+        this.peerConnection &&
+        !this.peerConnection._successEmitted
+      ) {
+        if (
+          this.dataChannel?.readyState === "open" &&
+          this.controlChannel?.readyState === "open"
+        ) {
+          this.peerConnection._successEmitted = true;
+          this._pendingSuccessEmit = false;
+          this.socket.emit("connection-success");
+          statsService.requestConnectionStats();
+        }
+      }
+    };
+
+    const tryStartHandshake = () => {
+      if (
+        this.encryption.enabled &&
+        !this.encryption.sessionKey &&
+        this.dataChannel?.readyState === "open" &&
+        this.controlChannel?.readyState === "open" &&
+        this.activePeerId
+      ) {
+        this._beginEncryptionHandshake(this.activePeerId);
+      }
+    };
+
+    if (dataChannel) {
+      if (dataChannel.readyState === "open") {
+        tryEmitSuccess();
+      } else {
+        dataChannel.addEventListener("open", tryEmitSuccess);
+      }
+    }
+    if (controlChannel) {
+      if (controlChannel.readyState === "open") {
+        tryEmitSuccess();
+      } else {
+        controlChannel.addEventListener("open", tryEmitSuccess);
+      }
+    }
+
+    if (dataChannel) {
+      if (dataChannel.readyState === "open") {
+        tryStartHandshake();
+      } else {
+        dataChannel.addEventListener("open", tryStartHandshake);
+      }
+    }
+    if (controlChannel) {
+      if (controlChannel.readyState === "open") {
+        tryStartHandshake();
+      } else {
+        controlChannel.addEventListener("open", tryStartHandshake);
+      }
+    }
+  }
+
+  _checkAndEmitSuccess(conn) {
+    if (
+      this.dataChannel?.readyState === "open" &&
+      this.controlChannel?.readyState === "open"
+    ) {
+      if (!conn._successEmitted) {
+        conn._successEmitted = true;
+        this.socket.emit("connection-success");
+        statsService.requestConnectionStats();
+      }
+    } else {
+      this._pendingSuccessEmit = true;
     }
   }
 
@@ -528,19 +1078,81 @@ class WebRTCManager {
     }
   }
 
-  handleConnectionFailure(conn) {
+  async handleConnectionFailure(conn) {
+    if (conn._failureHandling) return;
+    conn._failureHandling = true;
+
     statsService.requestConnectionStats();
     if (conn === this.pendingPeerConnection) {
-      this.abortPendingConnection(false);
-    } else {
-      this.resetCurrentConnection();
+      this.abortPendingConnection(true);
+      conn._failureHandling = false;
+    } else if (conn === this.peerConnection) {
+      if (conn.iceConnectionState === "failed") {
+        this._clearDisconnectTimer();
+        if (conn._isInitiator) {
+          console.warn(
+            "ICE Connection failed on initiator. Attempting ICE Restart...",
+          );
+          try {
+            const offer = await conn.createOffer({ iceRestart: true });
+            await conn.setLocalDescription(offer);
+
+            conn._failureHandling = false;
+            this.socket.emit("offer", {
+              target: conn._peerId,
+              sdp: conn.localDescription,
+            });
+          } catch (error) {
+            console.error("ICE Restart failed:", error);
+            conn._failureHandling = false;
+            if (this.peerConnection === conn) {
+              this.resetCurrentConnection();
+            }
+          }
+        } else {
+          console.warn(
+            "ICE Connection failed on responder. Attempting ICE Restart...",
+          );
+          try {
+            const originalIsInitiator = conn._isInitiator;
+            conn._isInitiator = true;
+            const offer = await conn.createOffer({ iceRestart: true });
+            await conn.setLocalDescription(offer);
+
+            conn._failureHandling = false;
+
+            conn._isInitiator = originalIsInitiator;
+            this.socket.emit("offer", {
+              target: conn._peerId,
+              sdp: conn.localDescription,
+            });
+          } catch (error) {
+            console.error("ICE Restart failed:", error);
+            conn._failureHandling = false;
+            if (this.peerConnection === conn) {
+              this.resetCurrentConnection();
+            }
+          }
+        }
+      } else {
+        conn._failureHandling = false;
+        this.resetCurrentConnection();
+      }
     }
   }
 
   configureConnection(conn, targetId, isInitiator) {
     conn._successEmitted = false;
+    conn._failureHandling = false;
     conn._peerId = targetId;
+    conn._isInitiator = isInitiator;
     conn._candidateQueue = [];
+
+    const earlyCandidates = this._pendingCandidates.get(targetId);
+    if (Array.isArray(earlyCandidates) && earlyCandidates.length > 0) {
+      conn._candidateQueue.push(...earlyCandidates);
+      this._pendingCandidates.delete(targetId);
+    }
 
     conn.onicecandidate = (evt) => {
       this.socket.emit("candidate", {
@@ -562,24 +1174,28 @@ class WebRTCManager {
           this.dataChannel = channel;
         }
       }
+      if (!isInitiator) {
+        this._attachDataChannelOpenHandler(
+          this.dataChannel,
+          this.controlChannel,
+        );
+        this._checkAndEmitSuccess(conn);
+      }
     };
 
     conn.onconnectionstatechange = () => {
       this._clearDisconnectTimer();
 
       if (conn.connectionState === "connected") {
+        conn._failureHandling = false;
         this.startHeartbeat();
-        if (isInitiator && !conn._successEmitted) {
-          conn._successEmitted = true;
-          this.socket.emit("connection-success");
-        }
+        this._checkAndEmitSuccess(conn);
 
         if (this.connectionStartTime) {
           this.totalConnectionDuration =
             performance.now() - this.connectionStartTime;
 
-          if (this.signalingDuration) {
-          } else if (this.answerReceivedTime) {
+          if (!this.signalingDuration && this.answerReceivedTime) {
             this.signalingDuration =
               this.answerReceivedTime - this.connectionStartTime;
           }
@@ -600,6 +1216,7 @@ class WebRTCManager {
           }
         }, CONNECTION_RECOVERY_DELAY);
       } else if (conn.connectionState === "failed") {
+        conn._failureHandling = false;
         this.handleConnectionFailure(conn);
       }
     };
@@ -607,6 +1224,16 @@ class WebRTCManager {
     conn.oniceconnectionstatechange = () => {
       if (conn.iceConnectionState === "disconnected") {
         console.warn("ICE connection disconnected, attempting to recover...");
+        if (
+          typeof fileTransferManager !== "undefined" &&
+          fileTransferManager &&
+          (fileTransferManager.isSending || fileTransferManager.isReceiving) &&
+          !fileTransferManager.isPaused &&
+          !fileTransferManager.isStopped
+        ) {
+          fileTransferManager.isIcePaused = true;
+          fileTransferManager.isPaused = true;
+        }
         if (!this.disconnectTimer) {
           this.disconnectTimer = setTimeout(() => {
             if (
@@ -622,7 +1249,25 @@ class WebRTCManager {
         conn.iceConnectionState === "completed"
       ) {
         this._clearDisconnectTimer();
+
+        if (conn._failureHandling) {
+          conn._failureHandling = false;
+        }
+
+        if (
+          typeof fileTransferManager !== "undefined" &&
+          fileTransferManager &&
+          fileTransferManager.isIcePaused &&
+          !fileTransferManager.isStopped
+        ) {
+          console.warn("ICE connection recovered, auto-resuming transfer");
+          fileTransferManager.isIcePaused = false;
+          fileTransferManager.isPaused = false;
+          if (fileTransferManager.isReceiving)
+            fileTransferManager.sendResumeOffsetSync();
+        }
       } else if (conn.iceConnectionState === "failed") {
+        conn._failureHandling = false;
         this.handleConnectionFailure(conn);
       }
     };
@@ -644,6 +1289,10 @@ class WebRTCManager {
 
   initializeControlChannel(channel) {
     this._attachChannelMessageHandler(channel);
+    channel._connectionGeneration = this._connectionGeneration;
+    channel.onclose = () => {
+      this._handleChannelClose(channel);
+    };
   }
 
   initializeDataChannel(channel) {
@@ -651,28 +1300,149 @@ class WebRTCManager {
       DATA_CHANNEL_BUFFERED_AMOUNT_LOW_THRESHOLD;
     channel.binaryType = "arraybuffer";
     this._attachChannelMessageHandler(channel);
+    channel._connectionGeneration = this._connectionGeneration;
+    channel.onclose = () => {
+      this._handleChannelClose(channel);
+    };
   }
 
+  _handleChannelClose(channel) {
+    // If the channel was closed intentionally by _disposeChannel, ignore.
+    if (channel._intentionalClose) return;
+
+    // Ignore close events from channels that belong to a previous
+    // connection generation. This prevents stale close events from
+    // tearing down a newly established replacement connection.
+    if (
+      channel._connectionGeneration !== undefined &&
+      channel._connectionGeneration !== this._connectionGeneration
+    ) {
+      return;
+    }
+
+    const isActiveChannel =
+      channel === this.dataChannel || channel === this.controlChannel;
+    const isPendingChannel =
+      channel === this.pendingDataChannel ||
+      channel === this.pendingControlChannel;
+
+    if (isActiveChannel) {
+      if (
+        this.peerConnection &&
+        this.peerConnection.connectionState !== "closed" &&
+        this.peerConnection.connectionState !== "failed" &&
+        !this.peerConnection._failureHandling
+      ) {
+        // If a new connection is already being negotiated, the old peer
+        // was evicted and closed from the remote side. Just clean up the
+        // stale connection without triggering the failure/reconnect path.
+        if (this.pendingPeerConnection) {
+          console.warn(
+            "Old active channel closed while replacing connection — cleaning up stale peer.",
+          );
+          this.resetCurrentConnection({ notifyPeer: false, suppressIdleUI: true });
+        } else {
+          console.warn(
+            "Data channel closed unexpectedly, treating connection as failed",
+          );
+          this.handleConnectionFailure(this.peerConnection);
+        }
+      }
+    } else if (isPendingChannel) {
+      if (
+        this.pendingPeerConnection &&
+        this.pendingPeerConnection.connectionState !== "closed" &&
+        this.pendingPeerConnection.connectionState !== "failed" &&
+        !this.pendingPeerConnection._failureHandling
+      ) {
+        console.warn(
+          "Data channel closed unexpectedly during pending connection",
+        );
+        this.handleConnectionFailure(this.pendingPeerConnection);
+      }
+    }
+  }
   processIncomingChannelMessage(rawMessage) {
     if (typeof rawMessage !== "string") {
-      if (fileTransferManager) {
-        fileTransferManager.handleIncomingData(rawMessage);
+      if (this.encryption.enabled) {
+        this._processEncryptedWrapper(rawMessage);
+        return;
       }
+      fileTransferManager?.handleIncomingData(rawMessage);
       return;
     }
 
     const message = appUtils.safeJsonParse(rawMessage);
+
+    if (this._isHandshakeMessage(message)) {
+      if (message.type === "e2e-hello") {
+        this._handleE2EHello(this.activePeerId, message);
+      } else if (message.type === "e2e-key") {
+        this._handleE2EKey(this.activePeerId, message);
+      }
+      return;
+    }
+
     if (message && this.handleControlMessage(message)) {
       return;
     }
 
-    if (fileTransferManager) {
-      fileTransferManager.handleIncomingData(rawMessage);
+    const outOfBandTypes = [
+      "throttle-pause",
+      "throttle-resume",
+      "pause-transfer",
+      "resume-transfer",
+      "cancel-transfer",
+    ];
+    if (message && outOfBandTypes.includes(message.type)) {
+      if (fileTransferManager) {
+        fileTransferManager
+          .processControlInstruction(rawMessage)
+          .catch(console.error);
+      }
+      return;
     }
+
+    fileTransferManager?.handleIncomingData(rawMessage);
   }
 
-  sendControlMessage(msgObj) {
-    const payload = JSON.stringify(msgObj);
+  async _awaitHandshake() {
+    if (!this.encryption.enabled || this.encryption.sessionKey) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.encryption.handshakeResolvers.push(resolve);
+    });
+  }
+
+  async sendControlMessage(msgObj) {
+    if (this._isHandshakeMessage(msgObj)) {
+      this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+      return;
+    }
+
+    if (this.encryption.enabled) {
+      await this._awaitHandshake();
+      if (this.encryption.sessionKey) {
+        if (msgObj.type === "disconnect") {
+          this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+          return;
+        }
+        try {
+          const payload = await encryptMessage(this.encryption.sessionKey, msgObj);
+          this._sendEncryptedPayload(payload);
+        } catch (error) {
+          console.warn("Failed to encrypt control message:", error);
+          this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+        }
+        return;
+      }
+    }
+
+    this._sendPlaintextControlMessage(JSON.stringify(msgObj));
+  }
+
+  _sendPlaintextControlMessage(payload) {
     if (this.controlChannel && this.controlChannel.readyState === "open") {
       this.controlChannel.send(payload);
     } else if (this.dataChannel && this.dataChannel.readyState === "open") {
@@ -682,7 +1452,14 @@ class WebRTCManager {
 
   handleControlMessage(message) {
     switch (message.type) {
+      case "e2e-hello":
+        this._handleE2EHello(this.activePeerId, message);
+        return true;
+      case "e2e-key":
+        this._handleE2EKey(this.activePeerId, message);
+        return true;
       case "disconnect":
+        uiManager.showIdError("Peer disconnected");
         this.resetCurrentConnection({ notifyPeer: false });
         return true;
       case "ping":
@@ -693,6 +1470,7 @@ class WebRTCManager {
         }
         return true;
       case "pong":
+        this._lastPongAt = Date.now();
         return true;
       case "chat": {
         if (typeof message.text !== "string") {
@@ -734,10 +1512,12 @@ class WebRTCManager {
   }
 
   handleEndConnection() {
-    this._resolveConnectionTeardown();
+    console.warn("End Session button clicked, executing cleanup");
+    this.cleanup({ disposeSocket: false });
   }
 
-  abortPendingConnection(emitUserFail = true) {
+  abortPendingConnection(emitUserFail = true, options = {}) {
+    const { incrementAttemptId = true } = options;
     const hadPendingAttempt = Boolean(
       this.pendingPeerConnection ||
       this.pendingDataChannel ||
@@ -747,16 +1527,21 @@ class WebRTCManager {
 
     uiManager.clearAlert();
     this._clearNewConnectionTimer();
-    if (hadPendingAttempt) {
+    if (hadPendingAttempt && incrementAttemptId) {
       this.connectionAttemptId++;
     }
 
-    this._cleanupFileTransfer();
+    if (!this.peerConnection) {
+      this._cleanupFileTransfer();
+      this._resetEncryptionState();
+    }
 
-    if (this.pendingPeerConnection && emitUserFail) {
+    if (emitUserFail && hadPendingAttempt) {
       this.socket.emit("connection-user-failed");
     }
 
+    statsService.requestConnectionStats();
+    this._pendingSuccessEmit = false;
     this._disposePeerConnection(this.pendingPeerConnection);
     this.pendingPeerConnection = null;
 
@@ -774,12 +1559,14 @@ class WebRTCManager {
   }
 
   resetCurrentConnection(options = {}) {
-    const { notifyPeer = true } = options;
+    const { notifyPeer = true, suppressIdleUI = false } = options;
 
     this.stopHeartbeat();
     this._clearDisconnectTimer();
     uiManager.clearAlert();
     this._clearNewConnectionTimer();
+    this.pendingServerDisconnect = null;
+    this._pendingCandidates.clear();
 
     this._cleanupFileTransfer({ clearSelection: true });
 
@@ -790,22 +1577,43 @@ class WebRTCManager {
     ) {
       this.sendControlMessage({ type: "disconnect" });
     }
-    this._disposePeerConnection(this.peerConnection);
-    this.peerConnection = null;
+    this._resetEncryptionState();
 
+    // Dispose channels BEFORE the peer connection so that
+    // _intentionalClose is set on each channel before closing
+    // the peer connection triggers their onclose events.
     this._disposeChannel(this.dataChannel);
     this.dataChannel = null;
 
     this._disposeChannel(this.controlChannel);
     this.controlChannel = null;
 
-    if (this.activePeerId) {
-      if (notifyPeer) {
+    this._disposePeerConnection(this.peerConnection);
+    this.peerConnection = null;
+
+    // Bump connection generation so any stale channel close
+    // events from the old connection are ignored.
+    this._connectionGeneration++;
+
+    if (notifyPeer) {
+      if (this.activePeerId) {
         this.socket.emit("peer-disconnected", { target: this.activePeerId });
       }
+    }
+
+    if (this.activePeerId) {
       this.activePeerId = null;
     }
-    uiManager.updateToIdle();
+
+    if (this._pendingSuccessEmit) {
+      this._pendingSuccessEmit = false;
+      this.socket.emit("connection-user-failed");
+    }
+
+    statsService.requestConnectionStats();
+    if (!suppressIdleUI) {
+      uiManager.updateToIdle();
+    }
   }
 
   resetConnectionTiming() {
@@ -823,17 +1631,10 @@ class WebRTCManager {
       );
       const total = Math.round(this.totalConnectionDuration);
 
-      let peerDisplay = this.activePeerId;
-      if (typeof uiManager !== "undefined" && uiManager.getNickname) {
-        const nickname = uiManager.getNickname(this.activePeerId);
-        if (
-          nickname &&
-          nickname !== this.activePeerId &&
-          nickname !== String(this.activePeerId)
-        ) {
-          peerDisplay = `${nickname} (${this.activePeerId})`;
-        }
-      }
+      const peerDisplay =
+        typeof uiManager !== "undefined" && uiManager.getPeerDisplayLabel
+          ? uiManager.getPeerDisplayLabel(this.activePeerId)
+          : this.activePeerId;
 
       const signalingLabel = isInitiator
         ? "Signaling Duration (Round-Trip)"
@@ -848,8 +1649,24 @@ class WebRTCManager {
 
   startHeartbeat() {
     this.stopHeartbeat();
+    this._lastPongAt = Date.now();
+    this._pongTimeout = null;
+
     this.heartbeatInterval = setInterval(() => {
       try {
+        if (
+          this._lastPongAt &&
+          Date.now() - this._lastPongAt > HEARTBEAT_INTERVAL * 3
+        ) {
+          console.warn(
+            "No pong received for 3 heartbeat intervals, treating connection as dead",
+          );
+          this.stopHeartbeat();
+          if (this.peerConnection) {
+            this.handleConnectionFailure(this.peerConnection);
+          }
+          return;
+        }
         this.sendControlMessage({ type: "ping" });
       } catch (heartbeatError) {
         console.warn("Heartbeat failed", heartbeatError);
@@ -862,6 +1679,7 @@ class WebRTCManager {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    this._lastPongAt = null;
   }
 
   cleanup(options = {}) {
@@ -893,5 +1711,4 @@ class WebRTCManager {
   }
 }
 
-const webrtcManager = new WebRTCManager();
-window.webrtcManager = webrtcManager;
+export const webrtcManager = new WebRTCManager();

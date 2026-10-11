@@ -1,3 +1,11 @@
+import {
+  ALERT_TIMEOUT,
+  WARNING_TIMEOUT,
+  ID_UNDERLINE_TIMEOUT,
+} from "../config/constants.js";
+import { appUtils } from "../utils/commonUtils.js";
+import { historyService } from "../services/historyService.js";
+
 class UIManager {
   constructor() {
     this.idMsgTimer = null;
@@ -142,6 +150,7 @@ class UIManager {
     }
     if (this.endBtn) {
       this.endBtn.addEventListener("click", () => {
+        console.warn("UI Manager: endBtn click event fired natively");
         this._safeCall(this.webRtcHandlers.onDisconnect);
       });
     }
@@ -238,10 +247,10 @@ class UIManager {
       }
 
       this.pageExitTriggered = true;
-      this.dispose();
       clearTimeout(this.idMsgTimer);
       clearTimeout(this.newIdAlertTimer);
       clearTimeout(this.fileMsgTimer);
+      this.dispose();
 
       for (const handler of this.pageExitHandlers) {
         this._safeCall(handler);
@@ -662,14 +671,14 @@ class UIManager {
     return this._isVisible(this.qrCodeWrapper);
   }
 
-  showQrCodeForId(selfId) {
+  showQrCodeForId(shareUrl) {
     if (typeof QRCode === "undefined") {
       this.showIdError("QR Code library failed to load");
       return false;
     }
 
     if (
-      !selfId ||
+      !shareUrl ||
       !this.qrCodeContainer ||
       !this.qrCodeWrapper ||
       !this.showQrBtn
@@ -677,14 +686,12 @@ class UIManager {
       return false;
     }
 
-    const url = `${window.location.origin}${window.location.pathname}?peer=${selfId}`;
-
     this._setHidden(this.qrCodeWrapper, false);
     this.showQrBtn.textContent = "Hide QR";
     this.qrCodeContainer.innerHTML = "";
 
     new QRCode(this.qrCodeContainer, {
-      text: url,
+      text: shareUrl,
       width: 128,
       height: 128,
       colorDark: "#000000",
@@ -1337,6 +1344,84 @@ class UIManager {
 
     this.chatBox.appendChild(messageDiv);
     this.chatBox.scrollTop = this.chatBox.scrollHeight;
+
+    const peerId =
+      this.activeConnectionStatus?.getAttribute("data-peer-id") || null;
+    if (typeof historyService !== "undefined") {
+      historyService
+        .addChatRecord({
+          text,
+          isSelf: Boolean(isSelf),
+          peerId,
+          peerDisplay: this.getPeerDisplayLabel(peerId),
+          timestamp: Date.now(),
+        })
+        .catch((e) => console.warn("Chat history save failed:", e));
+    }
+  }
+
+  getPeerDisplayLabel(peerId) {
+    if (!peerId) return peerId || null;
+    const peerName = this.getNickname ? this.getNickname(peerId) : peerId;
+    if (!peerName || peerName === peerId) return peerId;
+    return `${peerName} (${peerId})`;
+  }
+
+  renderStoredChatHistory(records) {
+    if (
+      !this.chatHistoryList ||
+      !Array.isArray(records) ||
+      records.length === 0
+    ) {
+      return;
+    }
+
+    const sessions = [];
+    let currentKey = null;
+    for (const record of records) {
+      if (!record || typeof record.text !== "string") continue;
+      const key = record.peerId || "__unknown__";
+      if (key !== currentKey) {
+        currentKey = key;
+        sessions.push([]);
+      }
+      sessions[sessions.length - 1].push(record);
+    }
+
+    for (const recordsForPeer of sessions) {
+      const historyBlock = document.createElement("div");
+      historyBlock.className = "history-session-block";
+
+      const first = recordsForPeer[0];
+      const timestamp = document.createElement("div");
+      timestamp.className = "history-session-timestamp";
+      const peerLabel = first?.peerDisplay || first?.peerId || "";
+      timestamp.textContent = peerLabel
+        ? `Session with ${peerLabel}`
+        : "Session";
+      historyBlock.appendChild(timestamp);
+
+      for (const record of recordsForPeer) {
+        const msg = document.createElement("div");
+        msg.classList.add("chat-message", record.isSelf ? "self" : "peer");
+        msg.textContent = record.text;
+
+        const timeSpan = document.createElement("span");
+        timeSpan.className = "chat-message-time";
+        const d = record.timestamp ? new Date(record.timestamp) : new Date();
+        timeSpan.textContent = d.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        msg.appendChild(timeSpan);
+        historyBlock.appendChild(msg);
+      }
+
+      this.chatHistoryList.append(historyBlock);
+    }
+
+    this._setHidden(this.chatHistorySection, false);
+    this.ensureClearHistoryButton();
   }
 
   renderTransferHistoryBatch(payload) {
@@ -1592,5 +1677,7 @@ class UIManager {
   }
 }
 
-const uiManager = new UIManager();
-window.uiManager = uiManager;
+export const uiManager = new UIManager();
+if (typeof window !== "undefined") {
+  window.uiManager = uiManager;
+}

@@ -1,13 +1,16 @@
+const JSZIP_VERSION = "3.10.1";
+const LOCAL_JSZIP_URL = "../vendor/jszip.min.js";
+const JSZIP_CDN_URLS = [
+  `https://cdnjs.cloudflare.com/ajax/libs/jszip/${JSZIP_VERSION}/jszip.min.js`,
+  `https://cdn.jsdelivr.net/npm/jszip@${JSZIP_VERSION}/dist/jszip.min.js`,
+];
+
 function ensureJsZipLoaded() {
   if (typeof self.JSZip !== "undefined") {
     return;
   }
 
-  const scriptCandidates = [
-    "../vendor/jszip.min.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
-    "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
-  ];
+  const scriptCandidates = [LOCAL_JSZIP_URL, ...JSZIP_CDN_URLS];
 
   let lastError = null;
   for (const src of scriptCandidates) {
@@ -39,9 +42,12 @@ function buildZip(files) {
     }
 
     const isDirectoryMarker = Boolean(file?.isDirectoryMarker);
-    const fileDate = file?.lastModified
-      ? new Date(file.lastModified)
-      : new Date();
+    const fileDate =
+      file?.lastModified !== null &&
+      file.lastModified !== undefined &&
+      file.lastModified !== ""
+        ? new Date(file.lastModified)
+        : new Date();
     const pathParts = fileName.split("/");
     let currentPath = "";
 

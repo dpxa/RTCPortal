@@ -1,4 +1,4 @@
-const appUtils = {
+export const appUtils = {
   safeJsonParse(text) {
     if (typeof text !== "string") return null;
     try {
@@ -97,5 +97,3 @@ const appUtils = {
     }
   },
 };
-
-window.appUtils = appUtils;

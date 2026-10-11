@@ -1,3 +1,10 @@
+import { uiManager } from "../ui/uiManager.js";
+import {
+  BASE_API_URL,
+  API_ENDPOINTS,
+  STATS_FETCH_INTERVAL,
+} from "../config/constants.js";
+import { appUtils } from "../utils/commonUtils.js";
 class StatsService {
   constructor() {
     this.fetchInFlight = null;
@@ -7,15 +14,15 @@ class StatsService {
 
     this.requestConnectionStats({ force: true });
     this.statsIntervalId = setInterval(() => {
-      this.requestConnectionStats().catch((err) => {
-        console.error("Stats fetch failed:", err);
-      });
+      const req = this.requestConnectionStats();
+      if (req && typeof req.catch === "function") {
+        req.catch((err) => {
+          console.error("Stats fetch failed:", err);
+        });
+      }
     }, STATS_FETCH_INTERVAL);
 
-    if (
-      window.uiManager &&
-      typeof uiManager.registerPageExitHandler === "function"
-    ) {
+    if (uiManager && typeof uiManager.registerPageExitHandler === "function") {
       uiManager.registerPageExitHandler(() => this.cleanup());
     }
   }
@@ -65,5 +72,4 @@ class StatsService {
   }
 }
 
-const statsService = new StatsService();
-window.statsService = statsService;
+export const statsService = new StatsService();

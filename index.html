@@ -90,8 +90,8 @@
               <input
                 type="text"
                 id="partner-id-field"
-                placeholder="Enter peer PIN..."
-                aria-label="Enter peer PIN to connect"
+                placeholder="Enter peer phrases (e.g. fast-blue-horse)..."
+                aria-label="Enter peer phrase to connect"
               />
               <button id="connect-btn" disabled>Connect</button>
               <button id="end-btn" class="end-btn" hidden>Disconnect</button>
@@ -251,13 +251,7 @@
       </main>
     </div>
 
-    <script src="js/config/constants.js"></script>
-    <script src="js/utils/commonUtils.js"></script>
-    <script src="js/ui/uiManager.js"></script>
-    <script src="js/services/turnService.js"></script>
-    <script src="js/services/statsService.js"></script>
-
-    <script src="js/loadSocketIO.js"></script>
+    <script type="module" src="js/main.js"></script>
 
     <footer>
       <p>&copy; 2026 RTCPortal</p>
