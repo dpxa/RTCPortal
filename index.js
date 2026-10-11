@@ -3,6 +3,8 @@ const http = require("http");
 const socketIO = require("socket.io");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const fs = require("fs");
+const path = require("path");
 
 const apiRoutes = require("./routes/api");
 const connectionStats = require("./utils/connectionStats");
@@ -102,6 +104,17 @@ app.get("/api/test", (req, res) => {
     timestamp: Date.now(),
     environment: environment,
   });
+});
+
+app.get("/api/version", (req, res) => {
+  const versionFile = path.join(__dirname, "version.txt");
+  let version = "unknown";
+  try {
+    version = fs.readFileSync(versionFile, "utf8").trim();
+  } catch {
+    // version.txt missing — fall back to "unknown"
+  }
+  res.status(200).json({ version });
 });
 
 const statsBuckets = new Map();
