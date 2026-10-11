@@ -506,8 +506,14 @@ class FileTransferManager {
       await webrtcManager._awaitHandshake();
       if (webrtcManager.encryption.sessionKey) {
         try {
-          const encrypted = await encryptMessage(webrtcManager.encryption.sessionKey, msgObj);
-          if (webrtcManager.dataChannel && webrtcManager.dataChannel.readyState === "open") {
+          const encrypted = await encryptMessage(
+            webrtcManager.encryption.sessionKey,
+            msgObj,
+          );
+          if (
+            webrtcManager.dataChannel &&
+            webrtcManager.dataChannel.readyState === "open"
+          ) {
             webrtcManager.dataChannel.send(encrypted);
           }
           return;
@@ -516,7 +522,10 @@ class FileTransferManager {
         }
       }
     }
-    if (webrtcManager.dataChannel && webrtcManager.dataChannel.readyState === "open") {
+    if (
+      webrtcManager.dataChannel &&
+      webrtcManager.dataChannel.readyState === "open"
+    ) {
       webrtcManager.dataChannel.send(JSON.stringify(msgObj));
     }
   }
@@ -795,16 +804,16 @@ class FileTransferManager {
           throw new Error("Data channel closed before send");
         }
         await this._sendControlMessageOrdered({
-            type: "metadata",
-            fileName: currentFileName,
-            fileSize: fileToSend.size,
-            lastModified: fileToSend.lastModified ?? Date.now(),
-            batchIndex: i + 1,
-            batchTotal: this.selectedFiles.length,
-            totalBatchSize,
-            isDirectoryMarker: fileToSend.isDirectoryMarker || false,
-            rootDirectoryName: this.rootDirectoryName || null,
-            sha256: fileHash,
+          type: "metadata",
+          fileName: currentFileName,
+          fileSize: fileToSend.size,
+          lastModified: fileToSend.lastModified ?? Date.now(),
+          batchIndex: i + 1,
+          batchTotal: this.selectedFiles.length,
+          totalBatchSize,
+          isDirectoryMarker: fileToSend.isDirectoryMarker || false,
+          rootDirectoryName: this.rootDirectoryName || null,
+          sha256: fileHash,
         });
 
         this._resumeOffset = null;
@@ -1417,7 +1426,10 @@ class FileTransferManager {
     if (this.isReceiving && this.receivedFileDetails) {
       const offset = this.receivedBytes || 0;
       console.warn("Sending resume-offset-sync for offset", offset);
-      await this._sendControlMessageOrdered({ type: "resume-offset-sync", offset });
+      await this._sendControlMessageOrdered({
+        type: "resume-offset-sync",
+        offset,
+      });
     }
   }
 
@@ -1596,8 +1608,6 @@ class FileTransferManager {
       try {
         parsed = JSON.parse(data);
       } catch {}
-
-
 
       await this.processControlInstruction(data);
     } else {
@@ -1818,7 +1828,10 @@ class FileTransferManager {
       ),
     );
 
-    if (!info.isDirectoryMarker && this.receivedFileDetails.resumeOffset === 0) {
+    if (
+      !info.isDirectoryMarker &&
+      this.receivedFileDetails.resumeOffset === 0
+    ) {
       await this.initializeOPFSForIncomingFile(info.fileName);
     }
 
@@ -2425,6 +2438,7 @@ class FileTransferManager {
   cleanupSentTransfer() {
     if (this._pendingSentCompleteTimer) {
       clearTimeout(this._pendingSentCompleteTimer);
+      // test
       this._pendingSentCompleteTimer = null;
     }
     if (this._batchConfirmationTimer) {
@@ -2488,12 +2502,14 @@ class FileTransferManager {
     this.receiveBufferSize = 0;
     this.isThrottlingSender = false;
     this.receivedBytes = 0;
-    
+
     if (wasReceiving) {
       webrtcManager.reportTransferComplete(
         {
           bytes: this.totalBatchBytesReceived || 0,
-          count: this.receivedFileDetails ? this.receivedFileDetails.batchIndex - 1 : 0,
+          count: this.receivedFileDetails
+            ? this.receivedFileDetails.batchIndex - 1
+            : 0,
         },
         false,
       );
