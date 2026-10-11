@@ -1,13 +1,31 @@
+const DEFAULT_PORT = 3000;
+
 module.exports = {
-  DEFAULT_PORT: 3000,
+  DEFAULT_PORT,
+  DEFAULT_HOST: "0.0.0.0",
 
   ROUTES: {
-    TEST: "/test",
     API: "/api",
   },
 
+  FRONTEND_URL: "https://dpxa.github.io/RTCPortal/",
+
   CORS_ORIGINS: {
     GITHUB_PAGES: "https://dpxa.github.io",
+    LOCALHOST: [
+      `http://localhost:${DEFAULT_PORT}`,
+      `http://127.0.0.1:${DEFAULT_PORT}`,
+    ],
+  },
+
+  CSP_DIRECTIVES: {
+    SCRIPT_SRC: [
+      "'self'",
+      "https://cdnjs.cloudflare.com",
+      "https://cdn.jsdelivr.net",
+    ],
+    STYLE_SRC: ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
+    FONT_SRC: ["'self'", "https://fonts.gstatic.com"],
   },
 
   SOCKET_TRANSPORTS: ["websocket", "polling"],
@@ -33,7 +51,19 @@ module.exports = {
     },
   },
 
+  STATS_RATE_LIMIT: {
+    maxRequests: 5,
+    windowMs: 10000,
+  },
+
   METERED_API_BASE_URL: "https://rtcportal.metered.live/api/v1",
+
+  PER_IP_BANDWIDTH_QUOTA_BYTES:
+    parseInt(process.env.PER_IP_BANDWIDTH_QUOTA_BYTES, 10) || 500 * 1024 * 1024,
+
+  GLOBAL_BANDWIDTH_QUOTA_BYTES:
+    parseInt(process.env.GLOBAL_BANDWIDTH_QUOTA_BYTES, 10) ||
+    20 * 1024 * 1024 * 1024,
 
   HTTP_STATUS: {
     OK: 200,

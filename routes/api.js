@@ -4,18 +4,28 @@ const {
   METERED_API_BASE_URL,
   HTTP_STATUS,
   API_ENDPOINTS,
+  PER_IP_BANDWIDTH_QUOTA_BYTES,
+  GLOBAL_BANDWIDTH_QUOTA_BYTES,
 } = require("../config/constants");
 const router = express.Router();
 
 const sendError = (res, status, error) => res.status(status).json({ error });
 
+const isProd = process.env.NODE_ENV === "production";
 const TURN_TOKEN_SECRET = process.env.TURN_TOKEN_SECRET || null;
-const TURN_TOKEN_TTL_MS = 60000;
 
-const generateTurnToken = () => {
+if (isProd && !TURN_TOKEN_SECRET) {
+  console.error(
+    "FATAL: TURN_TOKEN_SECRET environment variable is not set. TURN relay will be unavailable.",
+  );
+}
+
+const TURN_TOKEN_TTL_MS = 300000;
+
+const generateTurnToken = (clientIp) => {
   if (!TURN_TOKEN_SECRET) return null;
   const expiresAt = Date.now() + TURN_TOKEN_TTL_MS;
-  const payload = `${expiresAt}`;
+  const payload = `${expiresAt}:${clientIp}`;
   const signature = crypto
     .createHmac("sha256", TURN_TOKEN_SECRET)
     .update(payload)
@@ -37,29 +47,70 @@ const isAuthorizedTurnRequest = (req) => {
   const dotIndex = token.lastIndexOf(".");
   if (dotIndex === -1) return false;
 
-  const expiresAtStr = token.slice(0, dotIndex);
+  const payload = token.slice(0, dotIndex);
   const providedSig = token.slice(dotIndex + 1);
 
   const expectedSig = crypto
     .createHmac("sha256", TURN_TOKEN_SECRET)
-    .update(expiresAtStr)
+    .update(payload)
     .digest("hex");
 
+  let providedBuf;
+  let expectedBuf;
+  try {
+    providedBuf = Buffer.from(providedSig, "hex");
+    expectedBuf = Buffer.from(expectedSig, "hex");
+  } catch {
+    return false;
+  }
   if (
-    !crypto.timingSafeEqual(
-      Buffer.from(providedSig, "hex"),
-      Buffer.from(expectedSig, "hex"),
-    )
+    providedBuf.length !== expectedBuf.length ||
+    !crypto.timingSafeEqual(providedBuf, expectedBuf)
   ) {
     return false;
   }
 
+  const colonIndex = payload.indexOf(":");
+  if (colonIndex === -1) return false;
+
+  const expiresAtStr = payload.slice(0, colonIndex);
+  const clientIp = payload.slice(colonIndex + 1);
+  const requestIp = req.ip || req.socket?.remoteAddress || "unknown";
+
   const expiresAt = parseInt(expiresAtStr, 10);
-  return Number.isFinite(expiresAt) && Date.now() <= expiresAt;
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
+
+  return clientIp === requestIp;
 };
 
 router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
-  const token = generateTurnToken();
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const connectionStats = req.app.get("connectionStats");
+
+  if (
+    PER_IP_BANDWIDTH_QUOTA_BYTES > 0 &&
+    connectionStats.isIpOverQuota(clientIp, PER_IP_BANDWIDTH_QUOTA_BYTES)
+  ) {
+    return sendError(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      "Your TURN bandwidth quota has been exhausted. TURN access disabled.",
+    );
+  }
+
+  if (
+    GLOBAL_BANDWIDTH_QUOTA_BYTES > 0 &&
+    connectionStats.getIpBandwidth(clientIp) > 0 &&
+    connectionStats.isGlobalOverQuota(GLOBAL_BANDWIDTH_QUOTA_BYTES)
+  ) {
+    return sendError(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      "TURN server capacity reached. Please try again later.",
+    );
+  }
+
+  const token = generateTurnToken(clientIp);
   if (!token) {
     return sendError(
       res,
@@ -71,6 +122,32 @@ router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
 });
 
 router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const connectionStats = req.app.get("connectionStats");
+
+  if (
+    PER_IP_BANDWIDTH_QUOTA_BYTES > 0 &&
+    connectionStats.isIpOverQuota(clientIp, PER_IP_BANDWIDTH_QUOTA_BYTES)
+  ) {
+    return sendError(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      "Your TURN bandwidth quota has been exhausted. TURN access disabled.",
+    );
+  }
+
+  if (
+    GLOBAL_BANDWIDTH_QUOTA_BYTES > 0 &&
+    connectionStats.getIpBandwidth(clientIp) > 0 &&
+    connectionStats.isGlobalOverQuota(GLOBAL_BANDWIDTH_QUOTA_BYTES)
+  ) {
+    return sendError(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      "TURN server capacity reached. Please try again later.",
+    );
+  }
+
   if (!isAuthorizedTurnRequest(req)) {
     return sendError(
       res,
@@ -80,7 +157,6 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
   }
 
   try {
-    const fetch = (await import("node-fetch")).default;
     const apiKey = process.env.METERED_API_KEY;
 
     if (!apiKey) {
@@ -121,7 +197,11 @@ router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
 
 router.get(API_ENDPOINTS.CONNECTION_STATS, (req, res) => {
   const connectionStats = req.app.get("connectionStats");
-  res.status(HTTP_STATUS.OK).json(connectionStats.getStats());
+  const stats = connectionStats.getStats();
+  stats.perIpBandwidthQuotaBytes = PER_IP_BANDWIDTH_QUOTA_BYTES;
+  stats.globalBandwidthQuotaBytes = GLOBAL_BANDWIDTH_QUOTA_BYTES;
+  stats.globalBandwidthUsedBytes = connectionStats.getGlobalBandwidth();
+  res.status(HTTP_STATUS.OK).json(stats);
 });
 
 module.exports = router;

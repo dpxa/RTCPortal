@@ -5,6 +5,7 @@ class ConnectionStats {
     this.startTime = Date.now();
     this.totalBytesTransferred = 0;
     this.totalFilesTransferred = 0;
+    this.ipBandwidth = new Map();
   }
 
   incrementAttempts() {
@@ -20,6 +21,9 @@ class ConnectionStats {
   decrementAttempts() {
     if (this.totalAttempts > 0) {
       this.totalAttempts--;
+      if (this.successfulConnections > this.totalAttempts) {
+        this.successfulConnections = this.totalAttempts;
+      }
     }
   }
 
@@ -36,10 +40,47 @@ class ConnectionStats {
     }
   }
 
+  addIpBandwidth(ip, bytes) {
+    if (!ip || !Number.isFinite(bytes) || bytes <= 0) return;
+    const current = this.ipBandwidth.get(ip) || 0;
+    this.ipBandwidth.set(ip, current + Math.round(bytes));
+    if (this.ipBandwidth.size > 10000) {
+      const oldestIp = this.ipBandwidth.keys().next().value;
+      this.ipBandwidth.delete(oldestIp);
+    }
+  }
+
+  getIpBandwidth(ip) {
+    return this.ipBandwidth.get(ip) || 0;
+  }
+
+  isIpOverQuota(ip, quotaBytes) {
+    if (!ip || !quotaBytes || quotaBytes <= 0) return false;
+    return this.getIpBandwidth(ip) >= quotaBytes;
+  }
+
+  getGlobalBandwidth() {
+    let total = 0;
+    for (const bytes of this.ipBandwidth.values()) {
+      total += bytes;
+    }
+    return total;
+  }
+
+  isGlobalOverQuota(quotaBytes) {
+    if (!quotaBytes || quotaBytes <= 0) return false;
+    return this.getGlobalBandwidth() >= quotaBytes;
+  }
+
   getStats() {
+    const safeAttempts = Math.max(0, this.totalAttempts);
+    const safeSuccesses = Math.max(
+      0,
+      Math.min(this.successfulConnections, safeAttempts),
+    );
     const successRate =
-      this.totalAttempts > 0
-        ? ((this.successfulConnections / this.totalAttempts) * 100).toFixed(1)
+      safeAttempts > 0
+        ? ((safeSuccesses / safeAttempts) * 100).toFixed(1)
         : "0.0";
 
     const uptimeMs = Date.now() - this.startTime;
