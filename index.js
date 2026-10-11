@@ -117,6 +117,19 @@ app.get("/api/version", (req, res) => {
   res.status(200).json({ version });
 });
 
+// TEMPORARY diagnostic — remove once proxy hop count is confirmed.
+app.get("/api/debug-ip", (req, res) => {
+  res.status(200).json({
+    ip: req.ip,
+    ips: req.ips,
+    ipsLength: req.ips.length,
+    xff: req.get("x-forwarded-for"),
+    cfConnectingIp: req.get("cf-connecting-ip"),
+    xRealIp: req.get("x-real-ip"),
+    remoteAddress: req.socket?.remoteAddress,
+  });
+});
+
 const statsBuckets = new Map();
 const STATS_BUCKET_MAX_SIZE = 10000;
 setInterval(() => {
