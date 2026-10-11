@@ -10,3 +10,4 @@ test('workers/hashWorker worker script parses successfully', () => {
   const fileContent = fs.readFileSync(path.resolve(__dirname, '../../public/js/workers/hashWorker.js'), 'utf-8');
   assert.ok(fileContent.length > 0);
 });
+//

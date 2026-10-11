@@ -6,5 +6,8 @@ test/package-lock.json
 
 test_files/
 
+public/version.txt
+server/version.txt
+
 *.md
 !README.md

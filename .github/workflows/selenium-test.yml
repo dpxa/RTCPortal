@@ -7,8 +7,7 @@ env:
 on:
   workflow_run:
     workflows:
-      - "Deploy Frontend to GitHub Pages"
-      - "Deploy Backend to Deploy Branch"
+      - "CI/CD"
     types:
       - completed
   workflow_dispatch:
@@ -18,7 +17,7 @@ on:
         required: false
         default: "https://dpxa.github.io/RTCPortal/"
       wait_seconds:
-        description: "Manual dispatch only: extra seconds to wait for deployment before testing (deploy-triggered runs always wait 300s)"
+        description: "Manual dispatch only: extra seconds to wait for deployment before testing (deploy-triggered runs poll until the site responds)"
         required: false
         default: "0"
 
@@ -39,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "18"
+          node-version: "20"
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v2.1.1
@@ -66,7 +65,16 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            sleep "$DEPLOYMENT_WAIT_SECONDS"
+            echo "Sanity-checking deployment at $TEST_URL..."
+            for i in $(seq 1 30); do
+              if curl -sf -o /dev/null "$TEST_URL"; then
+                echo "Deployment is reachable."
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "Deployment did not become reachable within 300s." >&2
+            exit 1
           elif [ "${{ github.event.inputs.wait_seconds }}" -gt "0" ] 2>/dev/null; then
             sleep ${{ github.event.inputs.wait_seconds }}
           fi

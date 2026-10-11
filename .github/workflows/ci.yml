@@ -1,0 +1,169 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "public/**"
+      - "server/**"
+      - "test/**"
+      - "package.json"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+
+      - name: Install Root Dependencies
+        run: npm install
+
+      - name: Install Test Dependencies
+        working-directory: ./test
+        run: npm install
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v2.1.1
+
+      - name: Install ChromeDriver
+        uses: nanasess/setup-chromedriver@v2.4.0
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run Full Regression Suite
+        working-directory: ./test
+        run: npm run test:regression
+
+      - name: Start Dev Server
+        run: |
+          node server/index.js > /tmp/rtcportal-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000/api/test > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run Selenium E2E against local dev server
+        working-directory: ./test
+        run: npm run test:selenium:local
+
+  deploy-frontend:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Detect changed paths
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'public/**'
+            backend:
+              - 'server/**'
+              - 'package.json'
+
+      - name: Write deploy version marker
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
+        run: |
+          echo "${{ github.sha }}" > public/version.txt
+
+      - name: Deploy to GitHub Pages
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./public
+          keep_files: false
+
+      - name: Wait for GitHub Pages to publish
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
+        shell: bash
+        run: |
+          EXPECTED="${{ github.sha }}"
+          echo "Waiting for GitHub Pages to serve version $EXPECTED..."
+          for i in $(seq 1 60); do
+            DEPLOYED=$( (curl -sf --connect-timeout 5 --max-time 15 -H "Cache-Control: no-cache, no-store" "https://dpxa.github.io/RTCPortal/version.txt?t=$(date +%s)" 2>/dev/null || true) | tr -d '\r\n[:space:]' )
+            if [ "$DEPLOYED" = "$EXPECTED" ]; then
+              echo "New version is live after $((i * 10))s."
+              exit 0
+            fi
+            echo "Attempt $i: Deployed is '$DEPLOYED', expected '$EXPECTED'. Retrying in 10s..."
+            sleep 10
+          done
+          echo "New version did not become live within 600s." >&2
+          exit 1
+
+  deploy-backend:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Detect changed paths
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'public/**'
+            backend:
+              - 'server/**'
+              - 'package.json'
+
+      - name: Write deploy version marker
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
+        run: |
+          echo "${{ github.sha }}" > server/version.txt
+
+      - name: Ensure package.json is in server directory
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
+        run: |
+          cp package.json server/
+
+      - name: Deploy to Deploy Branch
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: deploy
+          publish_dir: ./server
+          keep_files: false
+
+      - name: Wait for backend to redeploy
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
+        shell: bash
+        run: |
+          EXPECTED="${{ github.sha }}"
+          echo "Waiting for backend to serve version $EXPECTED..."
+          for i in $(seq 1 60); do
+            DEPLOYED=$( (curl -sf --connect-timeout 5 --max-time 15 -H "Cache-Control: no-cache, no-store" "https://rtcportal.onrender.com/api/version?t=$(date +%s)" 2>/dev/null || true) | jq -r '.version // empty' | tr -d '\r\n[:space:]' )
+            if [ "$DEPLOYED" = "$EXPECTED" ]; then
+              echo "Backend is serving the new version after $((i * 10))s."
+              exit 0
+            fi
+            echo "Attempt $i: backend version is '$DEPLOYED', expected '$EXPECTED'. Retrying in 10s..."
+            sleep 10
+          done
+          echo "Backend did not serve the new version within 600s." >&2
+          exit 1
