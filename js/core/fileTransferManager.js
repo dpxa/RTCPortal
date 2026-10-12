@@ -18,12 +18,7 @@ import {
 } from "../config/constants.js";
 import { appUtils } from "../utils/commonUtils.js";
 import { IncrementalSHA256 } from "../utils/incrementalSha256.js";
-import {
-  encryptFileChunk,
-  decryptTaggedPayload,
-  encryptMessage,
-  ENCRYPTION_TAGS,
-} from "../utils/encryption.js";
+import { encryptFileChunk, encryptMessage } from "../utils/encryption.js";
 import { uiManager } from "../ui/uiManager.js";
 import { webrtcManager } from "./webrtcManager.js";
 
@@ -1174,10 +1169,6 @@ class FileTransferManager {
         try {
           let offset = 0;
           let position = 0;
-          const currentFileNameForResume =
-            fileObj.customRelativePath ||
-            fileObj.webkitRelativePath ||
-            fileObj.name;
           const stream = fileObj.stream();
           const reader = stream.getReader();
 
@@ -1604,11 +1595,6 @@ class FileTransferManager {
 
   async _processIncomingBufferItem(data) {
     if (typeof data === "string") {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(data);
-      } catch {}
-
       await this.processControlInstruction(data);
     } else {
       await this.processIncomingChunk(data);
