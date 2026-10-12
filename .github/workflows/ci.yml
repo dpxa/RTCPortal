@@ -9,7 +9,9 @@ on:
       - "server/**"
       - "test/**"
       - "package.json"
+      - "eslint.config.cjs"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/selenium-test.yml"
   workflow_dispatch:
 
 concurrency:

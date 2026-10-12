@@ -74,4 +74,20 @@ module.exports = [
       ],
     },
   },
+  {
+    files: ["test/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: globals.node,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", caughtErrors: "none" },
+      ],
+    },
+  },
 ];

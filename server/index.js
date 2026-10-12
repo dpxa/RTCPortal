@@ -8,6 +8,7 @@ const path = require("path");
 
 const apiRoutes = require("./routes/api");
 const connectionStats = require("./utils/connectionStats");
+const { getClientIp } = require("./utils/clientIp");
 const { handleSocketConnection } = require("./socket/handlers");
 const {
   HTTP_STATUS,
@@ -67,6 +68,7 @@ const apiLimiter = rateLimit({
   message: { error: RATE_LIMIT.MESSAGES.API_LIMIT },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 const turnLimiter = rateLimit({
@@ -79,6 +81,7 @@ const turnLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 const turnTokenLimiter = rateLimit({
@@ -91,6 +94,7 @@ const turnTokenLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 if (!isProd) {
@@ -117,19 +121,6 @@ app.get("/api/version", (req, res) => {
   res.status(200).json({ version });
 });
 
-// TEMPORARY diagnostic — remove once proxy hop count is confirmed.
-app.get("/api/debug-ip", (req, res) => {
-  res.status(200).json({
-    ip: req.ip,
-    ips: req.ips,
-    ipsLength: req.ips.length,
-    xff: req.get("x-forwarded-for"),
-    cfConnectingIp: req.get("cf-connecting-ip"),
-    xRealIp: req.get("x-real-ip"),
-    remoteAddress: req.socket?.remoteAddress,
-  });
-});
-
 const statsBuckets = new Map();
 const STATS_BUCKET_MAX_SIZE = 10000;
 setInterval(() => {
@@ -142,7 +133,7 @@ setInterval(() => {
 }, 60000);
 
 const statsRateLimiter = (req, res, next) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const clientIp = getClientIp(req);
   let bucket = statsBuckets.get(clientIp);
   if (!bucket) {
     if (statsBuckets.size >= STATS_BUCKET_MAX_SIZE) {

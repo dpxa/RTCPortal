@@ -7,6 +7,7 @@ const {
   PER_IP_BANDWIDTH_QUOTA_BYTES,
   GLOBAL_BANDWIDTH_QUOTA_BYTES,
 } = require("../config/constants");
+const { getClientIp } = require("../utils/clientIp");
 const router = express.Router();
 
 const sendError = (res, status, error) => res.status(status).json({ error });
@@ -75,7 +76,7 @@ const isAuthorizedTurnRequest = (req) => {
 
   const expiresAtStr = payload.slice(0, colonIndex);
   const clientIp = payload.slice(colonIndex + 1);
-  const requestIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const requestIp = getClientIp(req);
 
   const expiresAt = parseInt(expiresAtStr, 10);
   if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
@@ -84,7 +85,7 @@ const isAuthorizedTurnRequest = (req) => {
 };
 
 router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const clientIp = getClientIp(req);
   const connectionStats = req.app.get("connectionStats");
 
   if (
@@ -122,7 +123,7 @@ router.get(API_ENDPOINTS.TURN_TOKEN, (req, res) => {
 });
 
 router.get(API_ENDPOINTS.TURN_CREDENTIALS, async (req, res) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+  const clientIp = getClientIp(req);
   const connectionStats = req.app.get("connectionStats");
 
   if (

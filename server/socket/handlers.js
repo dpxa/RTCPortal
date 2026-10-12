@@ -50,23 +50,11 @@ const NOUNS = [
   "stream",
 ];
 const crypto = require("crypto");
-const proxyaddr = require("proxy-addr");
+const { getClientIp } = require("../utils/clientIp");
 
 const getClientIpFromSocket = (socket) => {
   if (!socket) return "unknown";
-  const req = socket.request;
-  if (!req) return socket.handshake?.address || "unknown";
-  const directAddress =
-    req.connection?.remoteAddress ||
-    req.socket?.remoteAddress ||
-    socket.handshake?.address ||
-    "unknown";
-  const trustImmediateProxy = (ip) => ip === directAddress;
-  try {
-    return proxyaddr(req, trustImmediateProxy);
-  } catch {
-    return directAddress;
-  }
+  return getClientIp(socket.request);
 };
 
 const generatePin = () => {
@@ -151,12 +139,12 @@ const handleSocketConnection = (io, connectionStats) => {
           const completed = new Set();
           if (!s) completed.add(socketId);
           if (!t) completed.add(targetId);
-          
+
           pendingDisconnects.set(key, {
             sockets: [socketId, targetId],
             identities: {
               [socketId]: s ? getSocketIdentity(s) : socketId,
-              [targetId]: t ? getSocketIdentity(t) : targetId
+              [targetId]: t ? getSocketIdentity(t) : targetId,
             },
             completed,
             createdAt: now,
@@ -365,22 +353,22 @@ const handleSocketConnection = (io, connectionStats) => {
         timestamps = [];
         statsRateTracker.set(key, timestamps);
       }
-      
+
       const cutoff = now - STATS_RATE_LIMIT.windowMs;
       while (timestamps.length > 0 && timestamps[0] < cutoff) {
         timestamps.shift();
       }
-      
+
       if (timestamps.length >= STATS_RATE_LIMIT.maxEvents) {
         return true;
       }
       timestamps.push(now);
-      
+
       if (statsRateTracker.size > STATS_TRACKER_MAX_SIZE) {
         const oldestKey = statsRateTracker.keys().next().value;
         if (oldestKey) statsRateTracker.delete(oldestKey);
       }
-      
+
       return false;
     };
 
@@ -401,7 +389,9 @@ const handleSocketConnection = (io, connectionStats) => {
           if (sId !== socket.id) {
             const sSock = io.sockets.sockets.get(sId);
             if (sSock) {
-              const fromIdentity = info.identities ? info.identities[socket.id] : null;
+              const fromIdentity = info.identities
+                ? info.identities[socket.id]
+                : null;
               sSock.emit("peer-disconnected", {
                 from: fromIdentity,
                 reason: "peer-disconnected",
@@ -496,7 +486,8 @@ const handleSocketConnection = (io, connectionStats) => {
             const sSock = io.sockets.sockets.get(sId);
             if (sSock) {
               const otherId = info.sockets.find((x) => x !== sId) || null;
-              const fromIdentity = info.identities && otherId ? info.identities[otherId] : null;
+              const fromIdentity =
+                info.identities && otherId ? info.identities[otherId] : null;
               sSock.emit("peer-disconnected", {
                 from: fromIdentity,
                 reason: "ttl-expired-after-transfer",

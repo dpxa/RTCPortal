@@ -94,7 +94,6 @@ test("encryptFileChunk/decryptTaggedPayload round-trips binary data", async () =
   ).buffer;
   const encrypted = await encryption.encryptFileChunk(aliceKey, plaintext);
 
-  const cipherBytes = new Uint8Array(encrypted);
   const plainBytes = new Uint8Array(plaintext);
 
   const { tag, plaintext: decrypted } = await encryption.decryptTaggedPayload(
@@ -144,8 +143,6 @@ test("two different keypairs produce different session keys", async () => {
   const bob = await peerKeyPair();
   const eve = await peerKeyPair();
   const alicePub = await encryption.exportPublicKey(alice.publicKey);
-  const bobPub = await encryption.exportPublicKey(bob.publicKey);
-  const evePub = await encryption.exportPublicKey(eve.publicKey);
 
   const bobKey = await encryption.deriveSessionKey(bob.privateKey, alicePub);
   const eveKey = await encryption.deriveSessionKey(eve.privateKey, alicePub);
