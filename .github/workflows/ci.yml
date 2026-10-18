@@ -16,20 +16,21 @@ on:
 
 concurrency:
   group: ci-test-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   test:
+    name: "1. test"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install Root Dependencies
         run: npm install
@@ -39,10 +40,10 @@ jobs:
         run: npm install
 
       - name: Install Chrome
-        uses: browser-actions/setup-chrome@v2.1.1
+        uses: browser-actions/setup-chrome@v2.2.0
 
       - name: Install ChromeDriver
-        uses: nanasess/setup-chromedriver@v2.4.0
+        uses: nanasess/setup-chromedriver@v3
 
       - name: Lint
         run: npm run lint
@@ -65,16 +66,20 @@ jobs:
         working-directory: ./test
         run: npm run test:selenium:local
 
-  deploy-frontend:
-    needs: test
+  changes:
+    name: "2. changes"
     runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Detect changed paths
-        id: changes
-        uses: dorny/paths-filter@v3
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             frontend:
@@ -83,14 +88,23 @@ jobs:
               - 'server/**'
               - 'package.json'
 
+  deploy-frontend:
+    name: "3. deploy-frontend"
+    needs:
+      - test
+      - changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
       - name: Write deploy version marker
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
         run: |
           echo "${{ github.sha }}" > public/version.txt
 
       - name: Deploy to GitHub Pages
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
@@ -98,7 +112,6 @@ jobs:
           keep_files: false
 
       - name: Wait for GitHub Pages to publish
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.frontend == 'true' }}
         shell: bash
         run: |
           EXPECTED="${{ github.sha }}"
@@ -116,36 +129,26 @@ jobs:
           exit 1
 
   deploy-backend:
-    needs: test
+    name: "4. deploy-backend"
+    needs:
+      - test
+      - changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
-
-      - name: Detect changed paths
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            frontend:
-              - 'public/**'
-            backend:
-              - 'server/**'
-              - 'package.json'
+        uses: actions/checkout@v7
 
       - name: Write deploy version marker
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
         run: |
           echo "${{ github.sha }}" > server/version.txt
 
       - name: Ensure package.json is in server directory
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
         run: |
           cp package.json server/
 
       - name: Deploy to Deploy Branch
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: deploy
@@ -153,7 +156,6 @@ jobs:
           keep_files: false
 
       - name: Wait for backend to redeploy
-        if: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend == 'true' }}
         shell: bash
         run: |
           EXPECTED="${{ github.sha }}"
@@ -171,10 +173,14 @@ jobs:
           exit 1
 
   selenium-e2e:
+    name: "5. selenium-e2e"
     needs:
       - deploy-frontend
       - deploy-backend
     if: ${{ !cancelled() && !failure() && (needs.deploy-frontend.result == 'success' || needs.deploy-backend.result == 'success') }}
+    concurrency:
+      group: selenium-test-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'push' }}
     uses: ./.github/workflows/selenium-test.yml
     with:
       test_url: "https://dpxa.github.io/RTCPortal/"

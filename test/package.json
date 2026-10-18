@@ -21,8 +21,8 @@
     "lint:fix": "npm --prefix .. run lint:fix -- test/**/*.js"
   },
   "dependencies": {
-    "selenium-webdriver": "^4.27.0",
-    "socket.io-client": "^4.8.1"
+    "selenium-webdriver": "^4.51.0",
+    "socket.io-client": "^4.8.4"
   },
   "keywords": [
     "selenium",
@@ -37,6 +37,6 @@
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
-    "jsdom": "^29.1.1"
+    "jsdom": "^30.1.3"
   }
 }

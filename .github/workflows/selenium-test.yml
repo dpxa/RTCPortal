@@ -19,10 +19,6 @@ on:
         required: false
         default: "0"
 
-concurrency:
-  group: selenium-test
-  cancel-in-progress: true
-
 jobs:
   selenium-e2e:
     runs-on: ubuntu-latest
@@ -32,18 +28,18 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install Chrome
-        uses: browser-actions/setup-chrome@v2.1.1
+        uses: browser-actions/setup-chrome@v2.2.0
 
       - name: Install ChromeDriver
-        uses: nanasess/setup-chromedriver@v2.4.0
+        uses: nanasess/setup-chromedriver@v3
 
       - name: Install Test Dependencies
         working-directory: ./test
