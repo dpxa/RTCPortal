@@ -31,14 +31,6 @@ class TokenBucket {
     this._lastRefill = Date.now();
   }
 
-  setRate(bytesPerSec) {
-    this._bytesPerSec = Math.max(0, Number(bytesPerSec) || 0);
-  }
-
-  get bytesPerSec() {
-    return this._bytesPerSec;
-  }
-
   async consume(bytesNeeded) {
     if (this._bytesPerSec <= 0) return;
 
@@ -123,12 +115,6 @@ class SimpleQueue {
 
   get length() {
     return this._size;
-  }
-
-  clear() {
-    this._items = [];
-    this._head = 0;
-    this._size = 0;
   }
 }
 
@@ -820,7 +806,6 @@ class FileTransferManager {
             this.selectedFiles.length,
             totalBatchSize,
             totalBytesSent,
-            this._batchStartTime,
             fileHash,
           );
         } catch (err) {
@@ -1030,12 +1015,6 @@ class FileTransferManager {
 
     uiManager.resetSentTransferUI();
 
-    if (this._stopDoneResolve) {
-      this._stopDoneResolve();
-      this._stopDoneResolve = null;
-      this._stopDonePromise = null;
-    }
-
     this.isSending = false;
     this.isAutoThrottled = false;
     this.updateTransferButtonState();
@@ -1145,20 +1124,14 @@ class FileTransferManager {
     totalCount,
     totalBatchSize,
     totalBytesSentStart,
-    _batchStartTime,
     fileHash,
   ) {
     if (this.isStopped) return Promise.resolve();
 
     this.isSending = true;
-    this._stopDonePromise = null;
-    this._stopDoneResolve = null;
 
     return new Promise((resolve, reject) => {
       (async () => {
-        this._stopDonePromise = new Promise((stopResolve) => {
-          this._stopDoneResolve = stopResolve;
-        });
 
         const abortTransfer = (reason, error) => {
           console.error(reason, error || "");
@@ -1176,7 +1149,6 @@ class FileTransferManager {
             if (this.isStopped || this._shouldAbortTransfer()) {
               this.cleanupSentTransfer();
               resolve();
-              if (this._stopDoneResolve) this._stopDoneResolve();
               return;
             }
 
@@ -1215,7 +1187,6 @@ class FileTransferManager {
               ) {
                 this.cleanupSentTransfer();
                 resolve();
-                if (this._stopDoneResolve) this._stopDoneResolve();
                 return;
               }
             }
@@ -1285,7 +1256,6 @@ class FileTransferManager {
               }
 
               resolve();
-              if (this._stopDoneResolve) this._stopDoneResolve();
               return;
             }
 
@@ -1307,7 +1277,6 @@ class FileTransferManager {
                 ) {
                   this.cleanupSentTransfer();
                   resolve();
-                  if (this._stopDoneResolve) this._stopDoneResolve();
                   return;
                 }
               }
@@ -2430,11 +2399,6 @@ class FileTransferManager {
     if (this._batchConfirmationTimer) {
       clearTimeout(this._batchConfirmationTimer);
       this._batchConfirmationTimer = null;
-    }
-    if (this._stopDoneResolve) {
-      this._stopDoneResolve();
-      this._stopDoneResolve = null;
-      this._stopDonePromise = null;
     }
 
     if (this.isSending && !this.hasReportedTransferComplete) {

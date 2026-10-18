@@ -8,38 +8,23 @@ import { appUtils } from "../utils/commonUtils.js";
 class StatsService {
   constructor() {
     this.fetchInFlight = null;
-    this.lastSuccessfulFetchAt = 0;
-    this.fetchCooldownMs = 1200;
     this.statsIntervalId = null;
+    this.hasStats = false;
+    this.pushSeq = 0;
 
-    this.requestConnectionStats({ force: true });
-    this.statsIntervalId = setInterval(() => {
-      const req = this.requestConnectionStats();
-      if (req && typeof req.catch === "function") {
-        req.catch((err) => {
-          console.error("Stats fetch failed:", err);
-        });
-      }
-    }, STATS_FETCH_INTERVAL);
+    this.requestConnectionStats();
+    this.statsIntervalId = setInterval(
+      () => this.requestConnectionStats(),
+      STATS_FETCH_INTERVAL,
+    );
 
     if (uiManager && typeof uiManager.registerPageExitHandler === "function") {
       uiManager.registerPageExitHandler(() => this.cleanup());
     }
   }
 
-  async requestConnectionStats(options = {}) {
-    const { force = false } = options;
-
-    if (this.fetchInFlight) {
-      return this.fetchInFlight;
-    }
-
-    if (
-      !force &&
-      Date.now() - this.lastSuccessfulFetchAt < this.fetchCooldownMs
-    ) {
-      return;
-    }
+  requestConnectionStats() {
+    if (this.fetchInFlight) return this.fetchInFlight;
 
     this.fetchInFlight = this._fetchAndRender().finally(() => {
       this.fetchInFlight = null;
@@ -49,17 +34,36 @@ class StatsService {
   }
 
   async _fetchAndRender() {
+    const seqAtStart = this.pushSeq;
+
     try {
       const stats = await appUtils.requestJson(
         `${BASE_API_URL}${API_ENDPOINTS.CONNECTION_STATS}`,
         { errorPrefix: "Failed to fetch stats" },
       );
-      this.lastSuccessfulFetchAt = Date.now();
-      uiManager.updateConnectionStats(stats);
+      if (seqAtStart !== this.pushSeq) return;
+
+      this._render(stats);
     } catch (error) {
       console.error("Error fetching connection stats:", error.message || error);
-      uiManager.showConnectionStatsError();
+      if (!this.hasStats) {
+        uiManager.showConnectionStatsError();
+      }
     }
+  }
+
+  applyStats(stats) {
+    if (!stats || typeof stats !== "object") return;
+
+    this.pushSeq++;
+    this._render(stats);
+  }
+
+  _render(stats) {
+    if (!stats || typeof stats !== "object") return;
+
+    this.hasStats = true;
+    uiManager.updateConnectionStats(stats);
   }
 
   cleanup() {

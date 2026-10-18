@@ -38,6 +38,7 @@ class WebRTCManager {
 
     this.newConnTimer = null;
     this.connectionAttemptId = 0;
+    this._activeAttemptId = null;
 
     this.heartbeatInterval = null;
     this.disconnectTimer = null;
@@ -81,7 +82,6 @@ class WebRTCManager {
     if (!channel) return;
 
     try {
-      // Mark intentionally closing so _handleChannelClose ignores the event.
       channel._intentionalClose = true;
       channel.onopen = null;
       channel.onerror = null;
@@ -89,7 +89,6 @@ class WebRTCManager {
       if (typeof channel.close === "function") {
         channel.close();
       }
-      // Null the close handler after close() to be safe.
       channel.onclose = null;
     } catch (error) {
       console.warn("Failed to dispose data channel:", error);
@@ -536,7 +535,12 @@ class WebRTCManager {
       }
     });
 
+    this.socket.on("connection-stats", (stats) => {
+      statsService.applyStats(stats);
+    });
+
     this.socket.on("peer-not-found", () => {
+      this._emitAttemptFailure();
       this._resolveConnectionTeardown({ emitUserFailForPending: false });
       uiManager.showIdError("Peer ID not found");
     });
@@ -666,12 +670,13 @@ class WebRTCManager {
       return;
     }
 
-    this.socket.emit("connection-attempt");
     uiManager.clearAlert();
     this.abortPendingConnection();
-    uiManager.updateToWaiting();
 
     const attemptId = ++this.connectionAttemptId;
+    this._emitAttemptEvent("connection-attempt", attemptId);
+    this._activeAttemptId = attemptId;
+    uiManager.updateToWaiting();
 
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -700,7 +705,12 @@ class WebRTCManager {
     this.pendingPeerConnection = new RTCPeerConnection(
       turnService.getRtcConfig(),
     );
-    this.configureConnection(this.pendingPeerConnection, peerId, true);
+    this.configureConnection(
+      this.pendingPeerConnection,
+      peerId,
+      true,
+      attemptId,
+    );
 
     try {
       const offer = await this.pendingPeerConnection.createOffer();
@@ -780,8 +790,6 @@ class WebRTCManager {
     );
     this.abortPendingConnection(hadPending, { incrementAttemptId: false });
     if (this.peerConnection) {
-      // Preserve early ICE candidates from the new caller before
-      // resetCurrentConnection() wipes _pendingCandidates entirely.
       const savedCallerCandidates = this._pendingCandidates.get(data.caller);
       this.resetCurrentConnection({ suppressIdleUI: true });
       if (savedCallerCandidates?.length) {
@@ -790,6 +798,8 @@ class WebRTCManager {
     }
 
     const attemptId = ++this.connectionAttemptId;
+    this._emitAttemptEvent("connection-attempt", attemptId);
+    this._activeAttemptId = attemptId;
 
     const offerReceivedTime = performance.now();
 
@@ -802,7 +812,7 @@ class WebRTCManager {
       );
     }
     this.peerConnection = new RTCPeerConnection(turnService.getRtcConfig());
-    this.configureConnection(this.peerConnection, data.caller, false);
+    this.configureConnection(this.peerConnection, data.caller, false, attemptId);
 
     try {
       await this.peerConnection.setRemoteDescription(data.sdp);
@@ -991,9 +1001,8 @@ class WebRTCManager {
           this.dataChannel?.readyState === "open" &&
           this.controlChannel?.readyState === "open"
         ) {
-          this.peerConnection._successEmitted = true;
           this._pendingSuccessEmit = false;
-          this.socket.emit("connection-success");
+          this._emitAttemptSuccess(this.peerConnection);
           statsService.requestConnectionStats();
         }
       }
@@ -1048,8 +1057,7 @@ class WebRTCManager {
       this.controlChannel?.readyState === "open"
     ) {
       if (!conn._successEmitted) {
-        conn._successEmitted = true;
-        this.socket.emit("connection-success");
+        this._emitAttemptSuccess(conn);
         statsService.requestConnectionStats();
       }
     } else {
@@ -1141,8 +1149,9 @@ class WebRTCManager {
     }
   }
 
-  configureConnection(conn, targetId, isInitiator) {
+  configureConnection(conn, targetId, isInitiator, attemptId) {
     conn._successEmitted = false;
+    conn._attemptId = attemptId;
     conn._failureHandling = false;
     conn._peerId = targetId;
     conn._isInitiator = isInitiator;
@@ -1307,12 +1316,8 @@ class WebRTCManager {
   }
 
   _handleChannelClose(channel) {
-    // If the channel was closed intentionally by _disposeChannel, ignore.
     if (channel._intentionalClose) return;
 
-    // Ignore close events from channels that belong to a previous
-    // connection generation. This prevents stale close events from
-    // tearing down a newly established replacement connection.
     if (
       channel._connectionGeneration !== undefined &&
       channel._connectionGeneration !== this._connectionGeneration
@@ -1333,9 +1338,6 @@ class WebRTCManager {
         this.peerConnection.connectionState !== "failed" &&
         !this.peerConnection._failureHandling
       ) {
-        // If a new connection is already being negotiated, the old peer
-        // was evicted and closed from the remote side. Just clean up the
-        // stale connection without triggering the failure/reconnect path.
         if (this.pendingPeerConnection) {
           console.warn(
             "Old active channel closed while replacing connection — cleaning up stale peer.",
@@ -1490,6 +1492,34 @@ class WebRTCManager {
     }
   }
 
+  _emitAttemptEvent(eventName, attemptId) {
+    if (!this.socket) return;
+    this.socket.emit(eventName, { attemptId });
+  }
+
+  _emitAttemptSuccess(conn) {
+    if (!conn || conn._successEmitted) return;
+
+    const attemptId = conn._attemptId;
+    if (attemptId === null || attemptId === undefined) return;
+
+    conn._successEmitted = true;
+    if (attemptId === this._activeAttemptId) {
+      this._activeAttemptId = null;
+    }
+
+    this._emitAttemptEvent("connection-success", attemptId);
+  }
+
+  _emitAttemptFailure() {
+    const attemptId = this._activeAttemptId;
+    this._activeAttemptId = null;
+
+    if (attemptId === null || attemptId === undefined) return;
+
+    this._emitAttemptEvent("connection-user-failed", attemptId);
+  }
+
   sendChat(text) {
     if (typeof text !== "string") {
       return;
@@ -1536,8 +1566,8 @@ class WebRTCManager {
       this._resetEncryptionState();
     }
 
-    if (emitUserFail && hadPendingAttempt) {
-      this.socket.emit("connection-user-failed");
+    if (emitUserFail) {
+      this._emitAttemptFailure();
     }
 
     statsService.requestConnectionStats();
@@ -1579,9 +1609,6 @@ class WebRTCManager {
     }
     this._resetEncryptionState();
 
-    // Dispose channels BEFORE the peer connection so that
-    // _intentionalClose is set on each channel before closing
-    // the peer connection triggers their onclose events.
     this._disposeChannel(this.dataChannel);
     this.dataChannel = null;
 
@@ -1591,8 +1618,6 @@ class WebRTCManager {
     this._disposePeerConnection(this.peerConnection);
     this.peerConnection = null;
 
-    // Bump connection generation so any stale channel close
-    // events from the old connection are ignored.
     this._connectionGeneration++;
 
     if (notifyPeer) {
@@ -1607,7 +1632,7 @@ class WebRTCManager {
 
     if (this._pendingSuccessEmit) {
       this._pendingSuccessEmit = false;
-      this.socket.emit("connection-user-failed");
+      this._emitAttemptFailure();
     }
 
     statsService.requestConnectionStats();
@@ -1650,7 +1675,6 @@ class WebRTCManager {
   startHeartbeat() {
     this.stopHeartbeat();
     this._lastPongAt = Date.now();
-    this._pongTimeout = null;
 
     this.heartbeatInterval = setInterval(() => {
       try {

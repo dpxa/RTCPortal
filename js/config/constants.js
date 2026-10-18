@@ -1,6 +1,6 @@
 export const PROD_API_URL = "https://rtcportal.onrender.com";
-export const LOCAL_HOSTNAMES = ["localhost", "127.0.0.1"];
-export const _isLocalNetwork = (hostname) =>
+const LOCAL_HOSTNAMES = ["localhost", "127.0.0.1"];
+const _isLocalNetwork = (hostname) =>
   !hostname ||
   LOCAL_HOSTNAMES.includes(hostname) ||
   hostname === "::1" ||
@@ -55,4 +55,3 @@ export const STATS_FETCH_INTERVAL = 30000;
 export const UI_UPDATE_INTERVAL = 100;
 
 export const SOCKET_TRANSPORTS = ["websocket", "polling"];
-//
