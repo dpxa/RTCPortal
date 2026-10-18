@@ -116,7 +116,6 @@ app.get("/api/version", (req, res) => {
   try {
     version = fs.readFileSync(versionFile, "utf8").trim();
   } catch {
-    // version.txt missing — fall back to "unknown"
   }
   res.status(200).json({ version });
 });

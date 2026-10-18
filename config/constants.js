@@ -8,8 +8,6 @@ module.exports = {
     API: "/api",
   },
 
-  FRONTEND_URL: "https://dpxa.github.io/RTCPortal/",
-
   CORS_ORIGINS: {
     GITHUB_PAGES: "https://dpxa.github.io",
     LOCALHOST: [
@@ -52,7 +50,7 @@ module.exports = {
   },
 
   STATS_RATE_LIMIT: {
-    maxRequests: 5,
+    maxRequests: 60,
     windowMs: 10000,
   },
 

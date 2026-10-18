@@ -52,6 +52,9 @@ const NOUNS = [
 const crypto = require("crypto");
 const { getClientIp } = require("../utils/clientIp");
 
+const ATTEMPT_OUTCOME_SUCCESS = "success";
+const ATTEMPT_OUTCOME_FAILURE = "failure";
+
 const getClientIpFromSocket = (socket) => {
   if (!socket) return "unknown";
   return getClientIp(socket.request);
@@ -206,20 +209,15 @@ const handleSocketConnection = (io, connectionStats) => {
 
     pinMap.set(pin, socket.id);
     socket.pin = pin;
+    socket._pendingAttemptIds = new Set();
 
     console.log(`Socket connected: PIN ${pin}`);
 
     socket.emit("pin-assigned", { pin });
+    socket.emit("connection-stats", connectionStats.getStats());
 
     const handleMissingRelayTarget = (payloadTarget, options = {}) => {
-      const {
-        decrementAttemptsOnMissing = false,
-        emitPeerNotFoundOnMissing = false,
-      } = options;
-
-      if (decrementAttemptsOnMissing) {
-        connectionStats.decrementAttempts();
-      }
+      const { emitPeerNotFoundOnMissing = false } = options;
 
       if (emitPeerNotFoundOnMissing) {
         emitPeerNotFound(socket, payloadTarget);
@@ -230,7 +228,6 @@ const handleSocketConnection = (io, connectionStats) => {
 
     const resolveRelayTarget = (payload, options = {}) => {
       const {
-        decrementAttemptsOnMissing = false,
         emitPeerNotFoundOnMissing = false,
         preventSelfTarget = false,
         requireLiveSocket = false,
@@ -240,7 +237,6 @@ const handleSocketConnection = (io, connectionStats) => {
 
       if (!targetId) {
         return handleMissingRelayTarget(payload?.target, {
-          decrementAttemptsOnMissing,
           emitPeerNotFoundOnMissing,
         });
       }
@@ -251,7 +247,6 @@ const handleSocketConnection = (io, connectionStats) => {
 
       if (requireLiveSocket && !io.sockets.sockets.get(targetId)) {
         return handleMissingRelayTarget(payload?.target, {
-          decrementAttemptsOnMissing,
           emitPeerNotFoundOnMissing,
         });
       }
@@ -322,6 +317,44 @@ const handleSocketConnection = (io, connectionStats) => {
       });
     };
 
+    const attemptKeyFor = (attemptId) => {
+      if (attemptId === null || attemptId === undefined) return null;
+
+      const raw = String(attemptId);
+      if (raw.length === 0 || raw.length > 64) return null;
+
+      return `${socket.id}:${raw}`;
+    };
+
+    const beginPendingAttempt = (attemptId) => {
+      const key = attemptKeyFor(attemptId);
+      if (key === null) return;
+
+      socket._pendingAttemptIds.add(key);
+      connectionStats.beginAttempt(key);
+    };
+
+    const settlePendingAttempt = (outcome, attemptId) => {
+      const key = attemptKeyFor(attemptId);
+      if (key === null || !socket._pendingAttemptIds.has(key)) return;
+
+      socket._pendingAttemptIds.delete(key);
+      connectionStats.completeAttempt(outcome, key);
+    };
+
+    const broadcastStats = () => {
+      io.emit("connection-stats", connectionStats.getStats());
+    };
+
+    const releaseAllPendingAttempts = () => {
+      let released = 0;
+      for (const key of socket._pendingAttemptIds) {
+        if (connectionStats.releaseAttempt(key)) released++;
+      }
+      socket._pendingAttemptIds.clear();
+      return released;
+    };
+
     const cleanupSocketState = () => {
       const targetId = activePairings.get(socket.id);
       if (targetId) {
@@ -331,14 +364,14 @@ const handleSocketConnection = (io, connectionStats) => {
         pairingTimestamps.delete(targetId);
       }
 
+      if (releaseAllPendingAttempts() > 0) {
+        broadcastStats();
+      }
+
       if (socket.pin && pinMap.get(socket.pin) === socket.id) {
         pinMap.delete(socket.pin);
       }
       pairingTimestamps.delete(socket.id);
-      if (socket._hasPendingAttempt) {
-        socket._hasPendingAttempt = false;
-        connectionStats.decrementAttempts();
-      }
     };
 
     const statsRateTracker = new Map();
@@ -419,32 +452,27 @@ const handleSocketConnection = (io, connectionStats) => {
       }
     });
 
-    socket.on("connection-attempt", () => {
+    socket.on("connection-attempt", (payload) => {
       if (isStatsRateLimited("connection-attempt")) return;
-      if (!socket._hasPendingAttempt) {
-        socket._hasPendingAttempt = true;
-        connectionStats.incrementAttempts();
-      }
+      beginPendingAttempt(payload?.attemptId);
     });
 
-    socket.on("connection-success", () => {
+    socket.on("connection-success", (payload) => {
       if (isStatsRateLimited("connection-success")) return;
-      socket._hasPendingAttempt = false;
-      connectionStats.incrementSuccesses();
+      settlePendingAttempt(ATTEMPT_OUTCOME_SUCCESS, payload?.attemptId);
       const targetId = activePairings.get(socket.id);
       if (targetId) {
         const now = Date.now();
         pairingTimestamps.set(socket.id, now);
         pairingTimestamps.set(targetId, now);
       }
+      broadcastStats();
     });
 
-    socket.on("connection-user-failed", () => {
+    socket.on("connection-user-failed", (payload) => {
       if (isStatsRateLimited("connection-user-failed")) return;
-      if (socket._hasPendingAttempt) {
-        socket._hasPendingAttempt = false;
-        connectionStats.decrementAttempts();
-      }
+      settlePendingAttempt(ATTEMPT_OUTCOME_FAILURE, payload?.attemptId);
+      broadcastStats();
     });
 
     socket.on("transfer-complete", (payload) => {
@@ -507,7 +535,6 @@ const handleSocketConnection = (io, connectionStats) => {
       requiredFields: ["target", "sdp"],
       validatePayload: (data) => isValidObject(data.sdp),
       resolveOptions: {
-        decrementAttemptsOnMissing: true,
         emitPeerNotFoundOnMissing: true,
         preventSelfTarget: true,
         requireLiveSocket: true,
@@ -539,10 +566,6 @@ const handleSocketConnection = (io, connectionStats) => {
       },
       validatePayload: (data) => isValidObject(data.sdp),
       beforeRelay: (targetId) => {
-        socket._hasPendingAttempt = false;
-        const targetSocket = io.sockets.sockets.get(targetId);
-        if (targetSocket) targetSocket._hasPendingAttempt = false;
-
         const existingTargetPair = activePairings.get(targetId);
         if (existingTargetPair && existingTargetPair !== socket.id) {
           evictPeerAndNotify(io, existingTargetPair, targetId, socket);
