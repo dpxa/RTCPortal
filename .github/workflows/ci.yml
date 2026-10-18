@@ -169,3 +169,12 @@ jobs:
           done
           echo "Backend did not serve the new version within 600s." >&2
           exit 1
+
+  selenium-e2e:
+    needs:
+      - deploy-frontend
+      - deploy-backend
+    if: ${{ !cancelled() && !failure() && (needs.deploy-frontend.result == 'success' || needs.deploy-backend.result == 'success') }}
+    uses: ./.github/workflows/selenium-test.yml
+    with:
+      test_url: "https://dpxa.github.io/RTCPortal/"

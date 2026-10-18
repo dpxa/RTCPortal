@@ -25,6 +25,42 @@ async function readSuccessRate(driver) {
   return (await el.getText()).trim();
 }
 
+function resolveStatsApiUrl() {
+  const { hostname } = new URL(getUrl());
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
+
+  return isLocal
+    ? `${getUrl()}/api/connection-stats`
+    : "https://rtcportal.onrender.com/api/connection-stats";
+}
+
+async function readServerSuccessRate() {
+  const res = await fetch(resolveStatsApiUrl());
+  if (!res.ok) throw new Error(`stats request failed with ${res.status}`);
+  return (await res.json()).successRate;
+}
+
+async function waitForRateToMatchServer(driver, { timeout = 15000 } = {}) {
+  const deadline = Date.now() + timeout;
+  let displayed;
+  let server;
+
+  while (Date.now() < deadline) {
+    displayed = parseRate(await readSuccessRate(driver));
+    server = await readServerSuccessRate();
+    if (displayed !== null && displayed === server) return displayed;
+    await driver.sleep(500);
+  }
+
+  throw new Error(
+    `displayed success rate ${displayed}% never matched the server value ${server}%`,
+  );
+}
+
 async function waitForRatesToAgree(
   driverA,
   driverB,
@@ -92,16 +128,10 @@ async function runConnectionTest() {
       requirePositive: true,
     });
 
-    const expectedRate = await driver1.executeScript(`
-      return fetch("/api/connection-stats")
-        .then((r) => r.json())
-        .then((s) => s.successRate);
-    `);
-    if (rateAfterConnect !== expectedRate) {
-      throw new Error(
-        `displayed success rate ${rateAfterConnect}% != server ${expectedRate}%`,
-      );
-    }
+    const serverRate = await waitForRateToMatchServer(driver1);
+    console.log(
+      `Displayed success rate ${serverRate}% matches the server value`,
+    );
 
     await waitForVisible(
       driver1,

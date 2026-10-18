@@ -1,15 +1,13 @@
 name: Selenium Tests (Browser E2E)
 
-env:
-  FRONTEND_URL: "https://dpxa.github.io/RTCPortal/"
-  DEPLOYMENT_WAIT_SECONDS: 300
-
 on:
-  workflow_run:
-    workflows:
-      - "CI/CD"
-    types:
-      - completed
+  workflow_call:
+    inputs:
+      test_url:
+        description: "URL to test"
+        required: false
+        type: string
+        default: "https://dpxa.github.io/RTCPortal/"
   workflow_dispatch:
     inputs:
       test_url:
@@ -17,7 +15,7 @@ on:
         required: false
         default: "https://dpxa.github.io/RTCPortal/"
       wait_seconds:
-        description: "Manual dispatch only: extra seconds to wait for deployment before testing (deploy-triggered runs poll until the site responds)"
+        description: "Extra seconds to wait for deployment before testing"
         required: false
         default: "0"
 
@@ -27,9 +25,10 @@ concurrency:
 
 jobs:
   selenium-e2e:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TEST_URL: ${{ inputs.test_url }}
 
     steps:
       - name: Checkout Repository
@@ -50,45 +49,30 @@ jobs:
         working-directory: ./test
         run: npm install
 
-      - name: Determine test URL
-        id: test-url
+      - name: Wait for deployment
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.test_url }}" ]; then
-            URL="${{ github.event.inputs.test_url }}"
-          else
-            URL="$FRONTEND_URL"
-          fi
-          echo "TEST_URL=$URL" >> "$GITHUB_ENV"
-
-      - name: Wait for deployment (deploy-triggered runs)
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "Sanity-checking deployment at $TEST_URL..."
-            for i in $(seq 1 30); do
-              if curl -sf -o /dev/null "$TEST_URL"; then
-                echo "Deployment is reachable."
-                exit 0
-              fi
-              sleep 10
-            done
-            echo "Deployment did not become reachable within 300s." >&2
-            exit 1
-          elif [ "${{ github.event.inputs.wait_seconds }}" -gt "0" ] 2>/dev/null; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.wait_seconds }}" -gt "0" ] 2>/dev/null; then
             sleep ${{ github.event.inputs.wait_seconds }}
           fi
 
+          echo "Sanity-checking deployment at $TEST_URL..."
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null "$TEST_URL"; then
+              echo "Deployment is reachable."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Deployment did not become reachable within 300s." >&2
+          exit 1
+
       - name: Run Selenium UI Test (single peer)
         working-directory: ./test
-        run: |
-          if [ -n "$TEST_URL" ]; then export TEST_URL="$TEST_URL"; fi
-          node selenium/ui-test.js
+        run: node selenium/ui-test.js
         timeout-minutes: 5
 
       - name: Run Selenium Connection Test (two peers + transfer + chat)
         working-directory: ./test
-        run: |
-          if [ -n "$TEST_URL" ]; then export TEST_URL="$TEST_URL"; fi
-          node selenium/connection-test.js
+        run: node selenium/connection-test.js
         timeout-minutes: 5
