@@ -11,4 +11,3 @@ module.exports = {
   cors: CORS_ORIGINS.LOCALHOST,
   transports: SOCKET_TRANSPORTS,
 };
-//

@@ -49,16 +49,15 @@ after(() => {
 });
 
 beforeEach(() => {
-  stats.totalAttempts = 0;
-  stats.successfulConnections = 0;
+  stats.resetAttemptCounters();
   stats.totalBytesTransferred = 0;
   stats.totalFilesTransferred = 0;
   stats.ipBandwidth.clear();
 });
 
 test("GET /api/connection-stats returns stats with quota fields", async () => {
-  stats.incrementAttempts();
-  stats.incrementSuccesses();
+  stats.beginAttempt(1);
+  stats.completeAttempt("success", 1);
   stats.addTransfer(2048, 2);
 
   const res = await fetch(
@@ -69,6 +68,8 @@ test("GET /api/connection-stats returns stats with quota fields", async () => {
   assert.equal(body.successRate, 100);
   assert.equal(body.totalBytesTransferred, 2048);
   assert.equal(body.totalFilesTransferred, 2);
+  assert.equal(body.totalConnectionAttempts, 1);
+  assert.equal(body.successfulConnections, 1);
   assert.equal(typeof body.perIpBandwidthQuotaBytes, "number");
   assert.equal(typeof body.globalBandwidthQuotaBytes, "number");
   assert.equal(typeof body.globalBandwidthUsedBytes, "number");

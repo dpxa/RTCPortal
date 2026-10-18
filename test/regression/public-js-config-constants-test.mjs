@@ -8,7 +8,21 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(__dirname, "../../public/js/config/constants.js");
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-constants-"));
+const STAGING_PARENT = path.resolve(__dirname, "../../coverage-bundles");
+
+let tempDir;
+if (process.env.RTCPORTAL_COVERAGE === "1") {
+  fs.mkdirSync(STAGING_PARENT, { recursive: true });
+  tempDir = fs.mkdtempSync(path.join(STAGING_PARENT, "rtcportal-constants-"));
+} else {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-constants-"));
+}
+
+process.on("exit", () => {
+  if (process.env.RTCPORTAL_COVERAGE === "1") return;
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(STAGING_PARENT, { recursive: true, force: true });
+});
 
 const originalWindow = globalThis.window;
 

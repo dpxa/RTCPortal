@@ -15,7 +15,21 @@ const SRC = path.resolve(
   __dirname,
   "../../public/js/services/historyService.js",
 );
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-history-"));
+const STAGING_PARENT = path.resolve(__dirname, "../../coverage-bundles");
+
+let tempDir;
+if (process.env.RTCPORTAL_COVERAGE === "1") {
+  fs.mkdirSync(STAGING_PARENT, { recursive: true });
+  tempDir = fs.mkdtempSync(path.join(STAGING_PARENT, "rtcportal-history-"));
+} else {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-history-"));
+}
+
+process.on("exit", () => {
+  if (process.env.RTCPORTAL_COVERAGE === "1") return;
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(STAGING_PARENT, { recursive: true, force: true });
+});
 
 let loadCounter = 0;
 let historyService;

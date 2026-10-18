@@ -15,6 +15,42 @@ const {
 } = require("./helpers");
 
 
+function parseRate(text) {
+  const match = /^(\d+(?:\.\d+)?)%$/.exec(text);
+  return match ? Number(match[1]) : null;
+}
+
+async function readSuccessRate(driver) {
+  const el = await driver.findElement(By.id("success-rate-display"));
+  return (await el.getText()).trim();
+}
+
+async function waitForRatesToAgree(
+  driverA,
+  driverB,
+  { requirePositive = false, timeout = 15000 } = {},
+) {
+  const deadline = Date.now() + timeout;
+  let a;
+  let b;
+
+  while (Date.now() < deadline) {
+    a = parseRate(await readSuccessRate(driverA));
+    b = parseRate(await readSuccessRate(driverB));
+    const agree = a !== null && b !== null && a === b;
+    if (agree && (!requirePositive || a > 0)) return a;
+    await driverA.sleep(500);
+  }
+
+  if (a !== null && a === b) {
+    throw new Error(
+      `success rate never reflected the successful connection (stuck at ${a}%)`,
+    );
+  }
+  throw new Error(`success rate never converged across tabs: ${a} vs ${b}`);
+}
+
+
 async function runConnectionTest() {
   let driver1, driver2;
   let testFilePath = null;
@@ -52,6 +88,21 @@ async function runConnectionTest() {
     console.log("Establishing P2P Connection");
     await connectPeers(driver1, driver2, peer2Id, peer1Id);
 
+    const rateAfterConnect = await waitForRatesToAgree(driver1, driver2, {
+      requirePositive: true,
+    });
+
+    const expectedRate = await driver1.executeScript(`
+      return fetch("/api/connection-stats")
+        .then((r) => r.json())
+        .then((s) => s.successRate);
+    `);
+    if (rateAfterConnect !== expectedRate) {
+      throw new Error(
+        `displayed success rate ${rateAfterConnect}% != server ${expectedRate}%`,
+      );
+    }
+
     await waitForVisible(
       driver1,
       By.id("file-transfer-section"),
@@ -65,6 +116,9 @@ async function runConnectionTest() {
       "file transfer section on Peer 2",
     );
     console.log("File transfer sections visible on both peers");
+    console.log(
+      `Success rate after a successful connection: ${rateAfterConnect}% (both tabs agree)`,
+    );
 
     console.log("Testing chat both directions");
     const chatToggle1 = await driver1.findElement(By.id("toggle-chat-btn"));
@@ -122,14 +176,12 @@ async function runConnectionTest() {
     await driver1.executeScript("window.uiManager.webRtcHandlers.onDisconnect()");
     console.log("Finished calling onDisconnect");
 
-    // Wait for Peer 1 to finish its cleanup while it is still in the foreground
     await driver1.wait(async () => {
       const activeContainer = await driver1.findElement(By.id("active-connection-container"));
       const isHidden = await activeContainer.getAttribute("hidden");
       return isHidden !== null;
     }, 5000, "Waiting for Peer 1 to hide active connection container");
 
-    // Ensure we sleep in driver1 context to allow network flush before switching drivers
     await driver1.sleep(1000);
 
     await driver2.wait(async () => {
@@ -145,6 +197,7 @@ async function runConnectionTest() {
     console.log("Chat round-trip verified");
     console.log("Files appear in receiver history");
     console.log("Disconnection handled properly");
+    console.log(`Success rate ${rateAfterConnect}% matches across tabs`);
     console.log("All tests passed");
   } catch (error) {
     console.error("Test failed:", error.message);

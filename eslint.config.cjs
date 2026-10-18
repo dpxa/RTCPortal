@@ -9,6 +9,7 @@ module.exports = [
       "test_files/**",
       "public/images/**",
       "public/js/vendor/**",
+      "coverage-bundles/**",
     ],
   },
   {

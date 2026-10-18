@@ -103,6 +103,27 @@ function waitForEvent(client, event, { windowMs = 2500 } = {}) {
   });
 }
 
+function waitForStats(client, predicate = () => true, { windowMs = 5000 } = {}) {
+  return new Promise((resolve) => {
+    const onStats = (stats) => {
+      if (!predicate(stats)) return;
+      clearTimeout(timer);
+      client.off("connection-stats", onStats);
+      resolve(stats);
+    };
+    const timer = setTimeout(() => {
+      client.off("connection-stats", onStats);
+      resolve(null);
+    }, windowMs);
+    client.on("connection-stats", onStats);
+  });
+}
+
+async function readStats() {
+  const res = await fetch(`${SERVER_URL}/api/connection-stats`);
+  return res.json();
+}
+
 function sendOffer(from, to, { expectReplaced, windowMs = 2500 } = {}) {
   return new Promise((resolve) => {
     let onPeerReplaced = null;
@@ -241,4 +262,129 @@ test("disconnecting a paired peer notifies the partner", async () => {
   d.close();
   const fromD = await notice;
   assert.notEqual(fromD, null, "partner should receive peer-disconnected");
+});
+
+test("a newly connected socket is pushed the server-tracked stats", async () => {
+  const client = io(SERVER_URL, {
+    transports: ["websocket"],
+    forceNew: true,
+    reconnection: false,
+  });
+  clients.push(client);
+
+  const stats = await waitForEvent(client, "connection-stats", {
+    windowMs: 5000,
+  });
+  client.close();
+
+  assert.notEqual(stats, null, "expected an initial connection-stats push");
+  assert.equal(typeof stats.successRate, "number");
+  assert.equal(typeof stats.successfulConnections, "number");
+});
+
+test("every socket is broadcast the new value when an attempt settles", async () => {
+  const a = await connectClient("A");
+  const b = await connectClient("B");
+  await delay(200);
+
+  const baseline = await readStats();
+  const expected = baseline.successfulConnections + 1;
+  const over = (s) => s.successfulConnections >= expected;
+
+  const aPush = waitForStats(a, over);
+  const bPush = waitForStats(b, over);
+
+  a.emit("connection-attempt", { attemptId: "broadcast-1" });
+  a.emit("connection-success", { attemptId: "broadcast-1" });
+
+  const [aStats, bStats] = await Promise.all([aPush, bPush]);
+  assert.notEqual(aStats, null, "initiator should receive the broadcast");
+  assert.notEqual(bStats, null, "every other socket should receive it too");
+  assert.equal(aStats.successfulConnections, bStats.successfulConnections);
+});
+
+test("identical attempt ids from different sockets stay independent", async () => {
+  const a = await connectClient("A");
+  const b = await connectClient("B");
+  await delay(200);
+
+  const baseline = await readStats();
+  const expectedSuccesses = baseline.successfulConnections + 2;
+
+  const push = waitForStats(
+    a,
+    (s) => s.successfulConnections >= expectedSuccesses,
+  );
+
+  a.emit("connection-attempt", { attemptId: 1 });
+  b.emit("connection-attempt", { attemptId: 1 });
+  await delay(300);
+
+  const inFlight = await readStats();
+  assert.equal(
+    inFlight.totalConnectionAttempts,
+    baseline.totalConnectionAttempts + 2,
+    "both sockets' attempts must be counted",
+  );
+
+  a.emit("connection-success", { attemptId: 1 });
+  b.emit("connection-success", { attemptId: 1 });
+
+  const settled = await push;
+  assert.notEqual(settled, null, "both attempts should resolve");
+  assert.equal(
+    settled.successfulConnections,
+    expectedSuccesses,
+    "a colliding id on another socket must not swallow an outcome",
+  );
+});
+
+test("a socket cannot settle another socket's or an unknown attempt", async () => {
+  const a = await connectClient("A");
+  const b = await connectClient("B");
+  await delay(200);
+
+  b.emit("connection-attempt", { attemptId: 7 });
+  await delay(300);
+  const before = await readStats();
+
+  a.emit("connection-success", { attemptId: 7 });
+  a.emit("connection-user-failed", { attemptId: 7 });
+  a.emit("connection-user-failed", { attemptId: "never-started" });
+  await delay(500);
+
+  const after = await readStats();
+  assert.equal(
+    after.resolvedConnections,
+    before.resolvedConnections,
+    "another socket's attempt must not be resolvable",
+  );
+  assert.equal(after.successfulConnections, before.successfulConnections);
+});
+
+test("a socket that disconnects mid-handshake records a failure", async () => {
+  const a = await connectClient("A");
+  const observer = await connectClient("observer");
+  await delay(200);
+
+  const baseline = await readStats();
+  const expectedFailures = baseline.failedConnections + 1;
+
+  const push = waitForStats(
+    observer,
+    (s) => s.failedConnections >= expectedFailures,
+  );
+
+  a.emit("connection-attempt", { attemptId: "abandoned" });
+  await delay(200);
+  a.close();
+  clients = clients.filter((c) => c !== a);
+
+  const settled = await push;
+  assert.notEqual(settled, null, "teardown should settle the attempt");
+  assert.equal(
+    settled.failedConnections,
+    expectedFailures,
+    "an abandoned attempt must not linger as pending",
+  );
 });

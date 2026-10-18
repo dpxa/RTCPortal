@@ -18,7 +18,22 @@ const PURE_MODULES = {
   encryption: path.resolve(__dirname, "../../../public/js/utils/encryption.js"),
 };
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-tests-"));
+const PROJECT_ROOT = path.resolve(__dirname, "../../..");
+const STAGING_PARENT = path.join(PROJECT_ROOT, "coverage-bundles");
+
+let tempDir;
+if (process.env.RTCPORTAL_COVERAGE === "1") {
+  fs.mkdirSync(STAGING_PARENT, { recursive: true });
+  tempDir = fs.mkdtempSync(path.join(STAGING_PARENT, "rtcportal-tests-"));
+} else {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rtcportal-tests-"));
+}
+
+process.on("exit", () => {
+  if (process.env.RTCPORTAL_COVERAGE === "1") return;
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(STAGING_PARENT, { recursive: true, force: true });
+});
 
 export async function loadPureModule(name) {
   const src = PURE_MODULES[name];

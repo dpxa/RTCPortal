@@ -7,37 +7,121 @@ function freshStats() {
   return new ConnectionStats.constructor();
 }
 
-test("incrementAttempts increments totalAttempts", () => {
-  const stats = freshStats();
-  stats.incrementAttempts();
-  stats.incrementAttempts();
-  assert.equal(stats.totalAttempts, 2);
+test("attempt ids are required for begin/complete/release", () => {
+  const invalidIds = [undefined, null, "", "x".repeat(129)];
+
+  for (const invalidId of invalidIds) {
+    const stats = freshStats();
+    assert.equal(stats.beginAttempt(invalidId), false, `begin ${invalidId}`);
+    assert.equal(stats.totalConnectionAttempts, 0);
+
+    stats.beginAttempt(1);
+    assert.equal(
+      stats.completeAttempt("success", invalidId),
+      false,
+      `complete ${invalidId}`,
+    );
+    assert.equal(
+      stats.releaseAttempt(invalidId),
+      false,
+      `release ${invalidId}`,
+    );
+    assert.equal(stats.successfulConnections, 0);
+    assert.equal(stats.failedConnections, 0);
+
+    // The real attempt is untouched and still resolvable by its own id.
+    assert.equal(stats.completeAttempt("success", 1), true);
+    assert.equal(stats.successfulConnections, 1);
+  }
 });
 
-test("incrementSuccesses never exceeds totalAttempts", () => {
+test("beginAttempt counts attempts and is idempotent per id", () => {
   const stats = freshStats();
-  stats.incrementAttempts();
-  stats.incrementAttempts();
-  stats.incrementSuccesses();
-  stats.incrementSuccesses();
-  stats.incrementSuccesses();
-  assert.equal(stats.successfulConnections, 2);
+  stats.beginAttempt(1);
+  stats.beginAttempt(2);
+  assert.equal(stats.totalConnectionAttempts, 2);
+  assert.equal(stats.pendingAttemptIds.size, 2);
+
+  assert.equal(stats.beginAttempt(2), false);
+  assert.equal(stats.totalConnectionAttempts, 2);
 });
 
-test("decrementAttempts never goes below zero", () => {
+test("an id resolves its attempt exactly once, and only if it is known", () => {
   const stats = freshStats();
-  stats.decrementAttempts();
-  assert.equal(stats.totalAttempts, 0);
+  stats.beginAttempt(1);
+  stats.beginAttempt(2);
+
+  assert.equal(stats.completeAttempt("success", 1), true);
+  assert.equal(stats.completeAttempt("success", 1), false);
+  assert.equal(stats.successfulConnections, 1);
+  assert.equal(stats.pendingAttemptIds.size, 1);
+
+  const unknownIds = [99, "never-started"];
+  for (const unknownId of unknownIds) {
+    assert.equal(stats.completeAttempt("success", unknownId), false);
+    assert.equal(stats.releaseAttempt(unknownId), false);
+  }
+  assert.equal(stats.successfulConnections, 1);
+  assert.equal(stats.failedConnections, 0);
+  assert.equal(stats.pendingAttemptIds.size, 1);
 });
 
-test("decrementAttempts clamps successfulConnections to attempts", () => {
+test("releaseAttempt records an unresolved attempt as a failure", () => {
   const stats = freshStats();
-  stats.incrementAttempts();
-  stats.incrementAttempts();
-  stats.incrementSuccesses();
-  stats.incrementSuccesses();
-  stats.decrementAttempts();
-  assert.equal(stats.totalAttempts, 1);
+  stats.beginAttempt(1);
+  assert.equal(stats.releaseAttempt(1), true);
+
+  assert.equal(stats.failedConnections, 1);
+  assert.equal(stats.successfulConnections, 0);
+  assert.equal(stats.pendingAttemptIds.size, 0);
+
+  assert.equal(stats.releaseAttempt(1), false);
+  assert.equal(stats.failedConnections, 1);
+});
+
+test("success rate is derived from resolved attempts only", () => {
+  const stats = freshStats();
+  assert.equal(stats.getStats().successRate, 0);
+
+  stats.beginAttempt(1);
+  assert.equal(stats.getStats().successRate, 0);
+  stats.completeAttempt("success", 1);
+  assert.equal(stats.getStats().successRate, 100);
+
+  stats.beginAttempt(2);
+  assert.equal(stats.getStats().successRate, 100);
+  stats.completeAttempt("success", 2);
+  assert.equal(stats.getStats().successRate, 100);
+});
+
+test("a late failure never lowers the rate below what was already reported", () => {
+  const stats = freshStats();
+  stats.beginAttempt(1);
+  stats.completeAttempt("success", 1);
+  assert.equal(stats.getStats().successRate, 100);
+
+  stats.beginAttempt(2);
+  stats.beginAttempt(3);
+  assert.equal(stats.getStats().successRate, 100);
+
+  stats.completeAttempt("failure", 2);
+  stats.releaseAttempt(3);
+  assert.equal(stats.getStats().successRate, 33.3);
+});
+
+test("a success cannot be retracted by a later failure of another attempt", () => {
+  const stats = freshStats();
+  stats.beginAttempt(1);
+  stats.completeAttempt("success", 1);
+
+  stats.beginAttempt(2);
+  stats.completeAttempt("failure", 2);
+  const afterFirstFailure = stats.getStats().successRate;
+  assert.equal(afterFirstFailure, 50);
+
+  stats.completeAttempt("failure", 2);
+  stats.completeAttempt("success", 1);
+  assert.equal(stats.getStats().successRate, afterFirstFailure);
   assert.equal(stats.successfulConnections, 1);
 });
 
@@ -103,19 +187,18 @@ test("isGlobalOverQuota respects quota", () => {
 
 test("getStats reports success rate and totals", () => {
   const stats = freshStats();
-  stats.incrementAttempts();
-  stats.incrementAttempts();
-  stats.incrementSuccesses();
+  stats.beginAttempt(1);
+  stats.beginAttempt(2);
+  stats.completeAttempt("success", 1);
+  stats.completeAttempt("failure", 2);
   stats.addTransfer(1024, 2);
   const result = stats.getStats();
   assert.equal(result.successRate, 50);
   assert.equal(result.totalBytesTransferred, 1024);
   assert.equal(result.totalFilesTransferred, 2);
+  assert.equal(result.totalConnectionAttempts, 2);
+  assert.equal(result.successfulConnections, 1);
+  assert.equal(result.failedConnections, 1);
+  assert.equal(result.resolvedConnections, 2);
   assert.equal(typeof result.uptimeMs, "number");
-});
-
-test("getStats returns 0.0 success rate with no attempts", () => {
-  const stats = freshStats();
-  const result = stats.getStats();
-  assert.equal(result.successRate, 0);
 });

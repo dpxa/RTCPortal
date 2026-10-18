@@ -4,6 +4,13 @@ const path = require("path");
 
 const REGRESSION_DIR = path.join(__dirname, "regression");
 
+// Client modules are staged inside the repo for coverage runs, so they are
+// reported as relative paths against the source tree instead of being missed.
+const COVERAGE_INCLUDE = path
+  .join(__dirname, "..", "coverage-bundles", "**")
+  .replace(/\\/g, "/");
+const COVERAGE_STAGING = path.join(__dirname, "..", "coverage-bundles");
+
 function discoverTests() {
   return fs
     .readdirSync(REGRESSION_DIR)
@@ -12,25 +19,41 @@ function discoverTests() {
 }
 
 function runTestFile(file, coverage) {
+  if (coverage) {
+    fs.rmSync(COVERAGE_STAGING, { recursive: true, force: true });
+  }
+
   return new Promise((resolve) => {
     console.log("\n" + "=".repeat(70));
     console.log(`▶ Running: ${file}`);
     console.log("=".repeat(70));
 
     const args = ["--test"];
-    if (coverage) args.push("--experimental-test-coverage");
+    if (coverage) {
+      args.push("--experimental-test-coverage");
+      args.push(`--test-coverage-include=${COVERAGE_INCLUDE}`);
+    }
     args.push(path.join(REGRESSION_DIR, file));
 
     const child = spawn(process.execPath, args, {
       cwd: __dirname,
       stdio: "inherit",
+      env: coverage
+        ? { ...process.env, RTCPORTAL_COVERAGE: "1" }
+        : process.env,
     });
 
     child.on("error", (err) => {
+      if (coverage) {
+        fs.rmSync(COVERAGE_STAGING, { recursive: true, force: true });
+      }
       console.error(`  [${file}] failed to start: ${err.message}`);
       resolve({ file, passed: false });
     });
     child.on("exit", (code) => {
+      if (coverage) {
+        fs.rmSync(COVERAGE_STAGING, { recursive: true, force: true });
+      }
       const passed = code === 0;
       console.log(passed ? `  ✔ ${file} PASSED` : `  ✘ ${file} FAILED`);
       resolve({ file, passed });

@@ -25,7 +25,12 @@ export function setupJSDOMEnv() {
   window.matchMedia = mockMatchMedia;
   globalThis.matchMedia = mockMatchMedia;
 
-  window.navigator.storage = { getDirectory: async () => ({}) };
+  window.navigator.storage = {
+    getDirectory: async () => ({
+      entries: async function* () {},
+      removeEntry: async () => {},
+    }),
+  };
   Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true });
   
   globalThis.indexedDB = {

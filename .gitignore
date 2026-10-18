@@ -6,6 +6,8 @@ test/package-lock.json
 
 test_files/
 
+coverage-bundles/
+
 public/version.txt
 server/version.txt
 
